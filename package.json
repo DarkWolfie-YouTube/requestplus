@@ -1,0 +1,20 @@
+{
+  "name": "requestplus",
+  "dependencies": {
+    "body-parser": "^1.20.3",
+    "cors": "^2.8.5",
+    "electron": "^33.4.0",
+    "express": "^4.21.2",
+    "net": "^1.0.2",
+    "node-fetch": "^3.3.2",
+    "tmi.js": "^1.8.5",
+    "ws": "^8.18.0"
+  },
+  "scripts": {
+    "test": "electron .",
+    "pack": "electron-builder --dir",
+    "dist": "node build.js",
+    "build": "electron-builder --win --publish never",
+    "build:mac": "electron-builder --mac --publish never --universal -c.mac.identity=null"
+  }
+}

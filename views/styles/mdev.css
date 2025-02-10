@@ -1,0 +1,148 @@
+:root{
+    --main-color: linear-gradient(120deg, rgba(7,7,41,1) 15%, rgb(15, 155, 155) 60%, rgba(32,255,254,0) 90%);
+    --error: rgb(255, 0, 0)
+}
+.overlay-container {
+    position: absolute;
+    top: 100px;
+    left: 20px;
+    width: 570px;
+    height: 100px;
+    border-radius: 10px;
+    transition: background-color 0.5s;
+    background: var(--main-color);
+    transition: top 1.2s ease-in-out;
+}
+.overlay-container.hide {
+    top: -100px;
+}
+/* make the image rounded */
+.overlay-image {
+    position: absolute;
+    
+    width: 100px;
+    height: 100px;
+    
+    /*background: var(--main-color);*/
+    border-radius: 10px 0px 0px 10px;
+    
+}
+.cover{
+    position: absolute;
+    border-radius: 10px;
+    left: 10px;
+    top: 10px;
+
+    width: 80px;
+    height: 80px;
+}
+.overlay-text {
+    font-family: "Orbitron", sans-serif;
+    /*background: var(--main-color);*/
+    border-radius: 0px 10px 10px 0px;
+    position: absolute;
+    left: 100px;
+    width: 395px;
+    height: 100px;
+    overflow: hidden;
+  }
+  
+  .song-name-text {
+    position: absolute;
+    height: 50px;
+    top: 2px;
+    left: 10px;
+    font-size: 33px;
+    color: white;
+    white-space: nowrap;
+    overflow: hidden;
+    animation-delay: 0s;
+  }
+  
+  @keyframes scrollText {
+    0%, 25%{
+      transform: translateX(0);
+      left: 10px;
+    }
+    75%, 100% {
+      transform: translateX(-100%);
+      left: 385px
+    }
+  }
+.artist-name-text {
+    position: absolute;
+    top: 42px;
+    left: 10px;
+    font-size: 20px;
+    color: white;
+    white-space: nowrap;
+    overflow: hidden;
+}
+
+/* Going to make overlay timer css objects! */
+
+.overlay-timer {
+    position: absolute;
+    top: 40px;
+    left: 100px;
+    font-family: "Orbitron", sans-serif;
+    color: white;
+}
+
+.overlay-timer-text {
+    /*position: absolute;
+    top: 25px;
+    left: 9px;
+    color: white;
+    font-size: 10px;
+*/
+    display: none;
+}
+
+.overlay-timer-text2 {
+    /*
+    position: absolute;
+    top: 25px;
+    left: 359px;
+    color: white;
+    font-size: 10px;
+*/
+    display: none;
+}
+
+.overlay-timer-bg-bar {
+    position: absolute;
+    top: 38px;
+    left: 9px;
+    width: 375px;
+    height: 10px;
+    background-color: rgba(255, 255, 255, 0.5);
+    border-radius: 10px;
+
+}
+
+.overlay-timer-bar {
+    position: absolute;
+    top: 38px;
+    left: 9px;
+    height: 10px;
+    background-color: rgb(255, 255, 255);
+    border-radius: 10px;
+    transition: width 0.5s;
+}
+
+
+.overlay-container-error {
+    position: absolute;
+    top: 100px;
+    left: 20px;
+    width: 570px;
+    height: 100px;
+    border-radius: 10px;
+    background-color: var(--error);
+    transition: background-color 0.5s;
+    transition: top 1.2s ease-in-out;
+}
+.overlay-container-error.hide {
+    top: -100px;
+}

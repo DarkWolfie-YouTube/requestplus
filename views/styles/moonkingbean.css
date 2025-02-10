@@ -1,0 +1,132 @@
+:root{
+    --main-color: rgb(117, 1, 146);
+    --error: rgb(255, 0, 0)
+}
+.overlay-container {
+    position: absolute;
+    top: 20px;
+    left: 20px;
+    width: 600px;
+    height: 200px;
+    border-radius: 10px;
+    transition: background-color 0.5s;
+}/* make the image rounded */
+.overlay-image {
+    position: absolute;
+    
+    width: 200px;
+    height: 200px;
+    background-color: var(--main-color);
+    border-radius: 10px;
+    
+}
+.cover{
+    position: absolute;
+    border-radius: 10px;
+    left: 10px;
+    top: 10px;
+
+    width: 180px;
+    height: 180px;
+}
+.overlay-text {
+    font-family: "Orbitron", sans-serif;
+    background-color: var(--main-color);
+    border-radius: 10px;
+    position: absolute;
+    left: 205px;
+    width: 395px;
+    height: 200px;
+    overflow: hidden;
+  }
+  
+  .song-name-text {
+    position: absolute;
+    height: 50px;
+    top: 2px;
+    left: 10px;
+    font-size: 35px;
+    color: white;
+    white-space: nowrap;
+    overflow: hidden;
+    animation-delay: 0s;
+  }
+  
+  @keyframes scrollText {
+    0%, 25%{
+      transform: translateX(0);
+      left: 10px;
+    }
+    75%, 100% {
+      transform: translateX(-100%);
+      left: 385px;
+    }
+  }
+.artist-name-text {
+    position: absolute;
+    top: 55px;
+    left: 10px;
+    font-size: 20px;
+    color: white;
+}
+
+/* Going to make overlay timer css objects! */
+
+.overlay-timer {
+    position: absolute;
+    top: 140px;
+    left: 200px;
+    font-family: "Orbitron", sans-serif;
+    color: white;
+}
+
+.overlay-timer-text {
+    position: absolute;
+    top: 25px;
+    left: 9px;
+    color: white;
+    font-size: 10px;
+
+}
+
+.overlay-timer-text2 {
+    position: absolute;
+    top: 25px;
+    left: 359px;
+    color: white;
+    font-size: 10px;
+
+}
+
+.overlay-timer-bg-bar {
+    position: absolute;
+    top: 45px;
+    left: 9px;
+    width: 385px;
+    height: 10px;
+    background-color: rgba(255, 255, 255, 0.5);
+    border-radius: 10px;
+
+}
+
+.overlay-timer-bar {
+    position: absolute;
+    top: 45px;
+    left: 9px;
+    height: 10px;
+    background-color: rgb(255, 255, 255);
+    border-radius: 10px;
+    transition: width 0.5s;
+}
+
+
+.overlay-container-error {
+    position: absolute;
+    top: 20px;
+    left: 20px;
+    width: 600px;
+    height: 200px;
+    background-color: var(--error);
+    border-radius: 10px;
+    transition: background-color 0.5s;
+}
