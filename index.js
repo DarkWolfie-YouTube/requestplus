@@ -1,5 +1,5 @@
 const websocket = require('./websocket.js');
-const { app, BrowserWindow, ipcMain } = require('electron')
+const { app, BrowserWindow, ipcMain, dialog } = require('electron')
 const fs = require('node:fs');
 const path = require('node:path');
 const Auth = require('./authManager.js');
@@ -7,6 +7,7 @@ const logger = require('./logger.js');
 const ChatHandler = require('./chatHandler.js');
 const apiHandler = require('./apiHandler.js');
 const settingsHandler = require('./settingsHandler.js');
+const os = require('node:os');
 
 const TWITCH_CLIENT_ID = 'if6usvbqj58fwdbycnu6v77jjsluq5';
 const TWITCH_REDIRECT_URI = 'http://localhost:3000';
@@ -186,7 +187,6 @@ async function createWindow() {
     if (!APIHandler) {
         APIHandler = new apiHandler(mainWindow, WSServer, Logger, settings);
     }
-
     mainWindow.on('closed', () => {
         mainWindow = null;
     });
@@ -219,6 +219,11 @@ async function loadSavedSettings() {
             mainWindow.webContents.send('settings-loaded', settings);
         } else {
             Logger.info('No settings found.');
+            SettingsHandler.save({'theme': 'default'});
+            settings = {'theme': 'default'};
+            mainWindow.webContents.send('settings-loaded', settings);
+            APIHandler.theme = 'default';
+            return;
         }
     } catch (error) {
         Logger.error('Error loading settings:', error);
@@ -273,6 +278,10 @@ ipcMain.handle('send-settings', (event, settingss) => {
     APIHandler.theme = settingss.theme;
 });
 
+ipcMain.handle('runFirstTime', async () => {
+    await makeFirstRunPopup()
+})
+
 app.whenReady().then(createWindow);
 
 app.on('window-all-closed', () => {
@@ -300,3 +309,54 @@ setInterval(requestTrackInfo, 1000);
 
 
 
+// make a function to make popup text boxes when the user opens the program for the first time.
+async function makeFirstRunPopup() {
+    if (fs.existsSync(path.join(app.getPath('userData'), 'firstRun.txt'))) {
+        return;
+    }
+    fs.writeFileSync(path.join(app.getPath('userData'), 'firstRun.txt'), 'true');
+    dialog.showMessageBoxSync(mainWindow, {
+        type: 'info',
+        buttons: ['Cancel', 'OK'],
+        title: 'First Run',
+        message: 'Welcome to Request+! these boxes will show how how to get the program up and running for the first time!'
+    });
+    dialog.showMessageBoxSync(mainWindow,{
+        type: 'info',
+        buttons: ['Cancel', 'OK'],
+        title: 'Install Spicetify',
+        message: 'First, I need you to install Spicetify, which is a Spotify client mod. I will open their installation page for you.'
+    });
+    require('openurl').open('https://spicetify.app/docs/getting-started')
+    const installedSpicetify = await dialog.showMessageBox(null, {
+        type: 'info',
+        buttons: ['Cancel', 'No', 'Yes'],
+        defaultId: 2,
+        title: 'Have you installed Spicetify?',
+        message: 'If you have, please answer yes!'
+    })
+
+    if (installedSpicetify.response == 2) {
+        const authorize = await dialog.showMessageBox(null, {
+            type: 'info',
+            buttons: ['Cancel', 'OK'],
+            title: 'Since you installed Spicetify, let me spice it up?',
+            message: 'Do you authorize me to modify your Spotify Spicetify configuration?'
+        });
+        if (authorize.response == 1) {
+            // copy requestplus.js to the spicetify local roaming data folder.
+            const sourceFile = path.join(__dirname, 'requestplus.js');
+            const targetFile = path.join(app.getPath('appData'), 'spicetify', 'Extensions', 'requestplus.js');
+            fs.copyFileSync(sourceFile, targetFile);
+            //run the commands to apply spicetify changes
+            await require('child_process').exec('start cmd /c "spicetify config extensions requestplus.js"');
+            await require('child_process').exec('start cmd /c "spicetify apply"');
+            dialog.showMessageBoxSync(null, {
+                type: 'info',
+                buttons: ['Cancel', 'OK'],
+                title: 'Success!',
+                message: 'Welcome to Request+! Make sure to login with your twitch account to enable the requesting feature!'
+            })   
+        }
+    }
+}

@@ -13,5 +13,7 @@ contextBridge.exposeInMainWorld('api', {
     twitchLogout: () => ipcRenderer.invoke('twitch-logout'),
     authSuccess: (callback) => ipcRenderer.on('twitch-auth-success', (_, user) => { callback(user) }),
     getOverlayPath: () => ipcRenderer.invoke('get-overlay-path'),
-    sendSettings: (settings) => { ipcRenderer.invoke('send-settings', settings) }
+    sendSettings: (settings) => { ipcRenderer.invoke('send-settings', settings) },
+    preload: () => ipcRenderer.invoke('runFirstTime')
 });
+
