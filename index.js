@@ -351,6 +351,7 @@ async function makeFirstRunPopup() {
             //run the commands to apply spicetify changes
             await require('child_process').exec('start cmd /c "spicetify config extensions requestplus.js"');
             await require('child_process').exec('start cmd /c "spicetify apply"');
+            await wait(7000)
             dialog.showMessageBoxSync(null, {
                 type: 'info',
                 buttons: ['Cancel', 'OK'],

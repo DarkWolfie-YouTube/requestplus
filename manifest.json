@@ -1,0 +1,13 @@
+[
+    {
+      "name": "Request+",
+      "description": "Spicetify extension to request songs.",
+      "preview": "screenshot.png",
+      "main": "requestplus.js",
+      "readme": "SPICETIFY.md",
+      "authors": [
+        { "name": "DarkWolfieVT", "url": "https://github.com/darkwolfie37" }
+      ],
+      "tags": ["music", "twitch"]
+    }
+]

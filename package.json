@@ -12,7 +12,7 @@
     "ws": "^8.18.0"
   },
   "scripts": {
-    "test": "electron .",
+    "test": "nodemon --watch . --exec \"electron .\"",
     "pack": "electron-builder --dir",
     "dist": "node build.js",
     "build": "electron-builder --win --publish never",
