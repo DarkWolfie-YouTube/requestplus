@@ -14,6 +14,7 @@ contextBridge.exposeInMainWorld('api', {
     authSuccess: (callback) => ipcRenderer.on('twitch-auth-success', (_, user) => { callback(user) }),
     getOverlayPath: () => ipcRenderer.invoke('get-overlay-path'),
     sendSettings: (settings) => { ipcRenderer.invoke('send-settings', settings) },
-    preload: () => ipcRenderer.invoke('runFirstTime')
+    preload: () => ipcRenderer.invoke('runFirstTime'),
+    settingsLoaded: (callback) => ipcRenderer.on('settings-loaded', (_, settings) => { callback(settings) })
 });
 

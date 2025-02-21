@@ -276,6 +276,7 @@ ipcMain.handle('send-settings', (event, settingss) => {
     SettingsHandler.save(settingss);
     settings = settingss;
     APIHandler.theme = settingss.theme;
+    APIHandler.refresh = true;
 });
 
 ipcMain.handle('runFirstTime', async () => {

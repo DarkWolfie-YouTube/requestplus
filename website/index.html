@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Request+</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #121212;
+            color: #ffffff;
+        }
+        .hero {
+            background: linear-gradient(62deg, #00D40E 0%, #0053A8 100%);
+            color: white;
+            text-align: center;
+            padding: 100px 20px;
+        }
+        .feature-icon {
+            font-size: 3rem;
+            color: #bb86fc;
+        }
+        .btn-primary {
+            background: linear-gradient(75deg, #0053A8 0%, #00D40E 100%);
+            border: none;
+            color: white;
+            transition: background 1.5s;
+        }
+        .btn-primary:hover {
+            background: linear-gradient(75deg, #00D40E 0%, #0053A8 100%);
+            transition: background 1.5s;
+        }
+        .btn-success {
+            background: linear-gradient(75deg, #03dac6 0%, #00c4b4 100%);
+            border: none;
+            color: white;
+        }
+        .btn-success:hover {
+            background: linear-gradient(75deg, #00c4b4 0%, #03dac6 100%);
+        }
+        .carousel {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            position: relative;
+            overflow: hidden;
+            width: 100%;
+            max-width: 800px;
+            margin: auto;
+        }
+        .carousel-inner {
+            display: flex;
+            transition: transform 0.5s ease;
+        }
+        .carousel-item {
+            flex: 0 0 33.333%;
+            opacity: 0.6;
+            transform: scale(0.9);
+            transition: all 0.5s ease;
+            text-align: center;
+        }
+        .carousel-item.active {
+            flex: 0 0 33.333%;
+            opacity: 1;
+            transform: scale(1.1);
+            z-index: 2;
+        }
+        .carousel img {
+            width: 300px;
+            height: 150px;
+            border-radius: 10px;
+            object-fit: cover;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+        }
+    </style>
+</head>
+<body>
+    <div class="hero">
+        <h1 class="display-3">Request+</h1>
+        <p class="lead">A powerful song request overlay for streamers.</p>
+        <div class="container text-center py-5" id="screenshots">
+            <div id="screenshotCarousel" class="carousel slide" data-bs-ride="carousel">
+                <div class="carousel-inner">
+                    <div class="carousel-item active">
+                        <img src="https://raw.githubusercontent.com/DarkWolfie-YouTube/requestplus/refs/heads/main/screenshot.png" class="d-block" alt="Screenshot 1">
+                    </div>
+                    <div class="carousel-item">
+                        <img src="https://raw.githubusercontent.com/DarkWolfie-YouTube/requestplus/refs/heads/main/screenshot.png" class="d-block" alt="Screenshot 2">
+                    </div>
+                    <div class="carousel-item">
+                        <img src="https://raw.githubusercontent.com/DarkWolfie-YouTube/requestplus/refs/heads/main/screenshot.png" class="d-block" alt="Screenshot 3">
+                    </div>
+                </div>
+                <a class="carousel-control-prev" href="#screenshotCarousel" role="button" data-bs-slide="prev">
+                    <span class="carousel-control-prev-icon" aria-hidden="true"></span>
+                </a>
+                <a class="carousel-control-next" href="#screenshotCarousel" role="button" data-bs-slide="next">
+                    <span class="carousel-control-next-icon" aria-hidden="true"></span>
+                </a>
+            </div>
+        </div>
+        <a href="#download" class="btn btn-lg btn-primary">Install Now</a>
+    </div>
+  
+    <div class="container text-center py-5">
+        <h2 class="mb-4">Features</h2>
+        <div class="row">
+            <div class="col-md-4">
+                <div class="feature-icon">🎵</div>
+                <h4>Seamless Song Requests</h4>
+                <p>Allow your chat to request songs effortlessly.</p>
+            </div>
+            <div class="col-md-4">
+                <div class="feature-icon">⚡</div>
+                <h4>Fast & Lightweight</h4>
+                <p>Runs locally on your machine with minimal impact.</p>
+            </div>
+            <div class="col-md-4">
+                <div class="feature-icon">🔧</div>
+                <h4>Customizable Overlay</h4>
+                <p>Personalize the UI to match your stream’s theme.</p>
+            </div>
+        </div>
+    </div>
+    <div class="text-center py-5" id="download">
+        <h2>Get Request+</h2>
+        <p>Start using Request+ today and enhance your stream experience.</p>
+        <a href="download-link" class="btn btn-lg btn-success">Download Now</a>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

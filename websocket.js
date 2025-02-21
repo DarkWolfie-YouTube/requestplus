@@ -11,6 +11,7 @@ class WebSocketServer {
         this.mainWindow = mainWindow;
         this.logger = logger;
         this.lastInfo = null;
+        this.lastReq = null;
         
         // Load theme settings from file
 
@@ -65,6 +66,10 @@ class WebSocketServer {
                     this.lastInfo = data;
 
                     this.mainWindow.webContents.send('song-info', data);
+                }
+                if (parsed.command = "requestHandled") {
+                    this.logger.info('Request handled for: ', parsed.data);
+                    this.lastReq = parsed.data;
                 }
 
 

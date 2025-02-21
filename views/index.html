@@ -557,7 +557,8 @@
 
             const dataTitle = info.title;
             const dataArtists = []
-            const dataImage = info.image_large_url;
+            const dataImage = info?.image_large_url || null;
+            let newImage;
 
             if (info.artist_name) {
                 dataArtists.push(info.artist_name);
@@ -578,7 +579,11 @@
             if (info['artist_name:5']) {
                 dataArtists.push(info['artist_name:5']);
             }
-            let newImage = dataImage.replace('spotify:image:', 'https://i.scdn.co/image/');
+            if (dataImage != null){
+                newImage = dataImage.replace('spotify:image:', 'https://i.scdn.co/image/');
+            } else { 
+                newImage = "styles/unknown.png";
+            }
             trackArt.src = newImage;
             trackTitle.textContent = dataTitle;
             trackArtists.textContent = dataArtists.join(', ');

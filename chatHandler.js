@@ -19,7 +19,7 @@ class ChatHandler {
             },
             channels: [twitchAuth.login]
         });
-        this.Client.on('message', (channel, tags, message, self) => {
+        this.Client.on('message', async (channel, tags, message, self) => {
             console.log(message)
             if (message.toLowerCase().startsWith('!sr ')) {
 
@@ -47,7 +47,10 @@ class ChatHandler {
                         id = ida
                     }
                     this.WSServer.WSSend({'command':'addTrack', 'data': { 'uri': `spotify:track:${id}`}})
-                    this.Client.say(channel, `Request+: Song now queued.`)
+                    await wait(300)
+                    if (this.WSServer.lastReq) {
+                        this.Client.say(channel, `Request+: Song now queued.`)
+                    }
                 }
                
             }

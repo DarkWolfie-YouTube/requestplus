@@ -130,6 +130,15 @@ var requestplus = (() => {
                                             progress: Spicetify.Player.getProgress(),
                                         })
                                     );
+                                    let newURI = messageData.data.uri.replace("spotify:track:", "");
+                                    let data = null;
+                                    Spicetify.CosmosAsync.get('https://api.spotify.com/v1/tracks/' + newURI, (err, data) => {
+                                        
+                                    })
+                                    ws.send(JSON.stringify({
+                                        command: "requestHandled",
+                                        data: data
+                                    }))
                                 } else {
                                     console.warn("No URI provided in addTrack command.");
                                     ws.send(

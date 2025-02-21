@@ -12,6 +12,7 @@ class APIHandler {
         this.WSServer = WSServer;
         this.logger = logger;
         this.theme = settings.theme
+        this.refresh = null;
 
 
         this.app.use(bodyParser.json());
@@ -23,6 +24,11 @@ class APIHandler {
         }));
 
         this.app.get("/info", (req, res) => {
+            if (this.refresh) {
+                res.json({...this.WSServer.lastInfo, refresh: this.refresh})
+                this.refresh = null;
+                return
+            }
             res.json(this.WSServer.lastInfo)
         })
         this.app.get("/settings", (req, res) => {

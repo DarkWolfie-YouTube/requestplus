@@ -61,7 +61,7 @@
                             document.getElementById("theme-css").href = "styles/ichinyan.css";
                         } else if (response.theme == "mdev") {
                             document.getElementById("theme-css").href = "styles/mdev.css";
-                        } else if (response.theme == "moonkingBEAN") {
+                        } else if (response.theme == "moonkingbean") {
                             document.getElementById("theme-css").href = "styles/moonkingBEAN.css";
                         } else if (response.theme == "twinGhost") {
                             document.getElementById("theme-css").href = "styles/twinGhost.css";
@@ -92,6 +92,11 @@
                 type: 'GET',
                 crossDomain: true,
                 success: function(response) {
+
+                    if (response.refresh) {
+                        settingsReload()
+                        return
+                    }
                     if (response.isPlaying == false) {
                         songText.textContent = "No Song Playing";
                         artistText.textContent = "";
@@ -109,6 +114,7 @@
                         songText.textContent = response.title;
                         const dataArtists = []
                         const dataImage = response.image_large_url;
+                        let newImage;
                         if (response.artist_name) {
                             dataArtists.push(response.artist_name);
                         }
@@ -128,7 +134,11 @@
                             dataArtists.push(response['artist_name:5']);
                         }
                         artistText.textContent = dataArtists.join(", ");
-                        let newImage = dataImage.replace('spotify:image:', 'https://i.scdn.co/image/');
+                        if (dataImage != null) {
+                            newImage = dataImage.replace('spotify:image:', 'https://i.scdn.co/image/');
+                        } else {
+                            newImage = "styles/unknown.png";
+                        }
                         songImg.src = newImage;
                         durationText.textContent = convertTime(response.duration);
                         timeText.textContent = convertTime(response.progress);
@@ -182,6 +192,33 @@
 
         async function wait(ms) {
             return new Promise(resolve => setTimeout(resolve, ms));
+        }
+        function settingsReload() {
+            $.ajax({
+                url: 'http://localhost:444/settings',
+                type: 'GET',
+                crossDomain: true,
+                success: function(response) {
+                    if (response.theme) {
+                        if (response.theme == "default") {
+                            document.getElementById("theme-css").href = "styles/style.css";
+                        } else if (response.theme == "gojo") {
+                            document.getElementById("theme-css").href = "styles/gojo.css";
+                        } else if (response.theme == "hologram") {
+                            document.getElementById("theme-css").href = "styles/hologram.css";
+                        } else if (response.theme == "ichinyan") {
+                            document.getElementById("theme-css").href = "styles/ichinyan.css";
+                        } else if (response.theme == "mdev") {
+                            document.getElementById("theme-css").href = "styles/mdev.css";
+                        } else if (response.theme == "moonkingbean") {
+                            document.getElementById("theme-css").href = "styles/moonkingBEAN.css";
+                        } else if (response.theme == "twinGhost") {
+                            document.getElementById("theme-css").href = "styles/twinGhost.css";
+                        }
+                    }
+                }
+
+            });
         }
 
 
