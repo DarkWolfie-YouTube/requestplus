@@ -132,8 +132,8 @@ var requestplus = (() => {
                                     );
                                     let newURI = messageData.data.uri.replace("spotify:track:", "");
                                     let data = null;
-                                    Spicetify.CosmosAsync.get('https://api.spotify.com/v1/tracks/' + newURI, (err, data) => {
-                                        
+                                    Spicetify.CosmosAsync.get('https://api.spotify.com/v1/tracks/' + newURI, (err, deta) => {
+                                        data = deta;
                                     })
                                     ws.send(JSON.stringify({
                                         command: "requestHandled",
