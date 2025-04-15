@@ -18,5 +18,8 @@
     "dist": "node build.js",
     "build": "electron-builder --win --publish never",
     "build:mac": "electron-builder --mac --publish never --universal -c.mac.identity=null"
+  },
+  "devDependencies": {
+    "electron-builder": "^26.0.12"
   }
 }
