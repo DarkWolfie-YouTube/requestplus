@@ -55,8 +55,10 @@ class WebSocketServer {
                     }
                 });
                 let parsed = JSON.parse(message);
+                console.log(parsed.command, (parsed.command === "currentTrack"))
+                
 
-                if (parsed.command = "currentTrack") {
+                if (parsed.command === "currentTrack") {
                     let data = {
                         ...parsed.data,
                         isPlaying: parsed.isPlaying,
@@ -66,10 +68,13 @@ class WebSocketServer {
                     this.lastInfo = data;
 
                     this.mainWindow.webContents.send('song-info', data);
+                    return;
                 }
                 if (parsed.command = "requestHandled") {
+                    console.log(parsed.command, parsed.data)
                     this.logger.info('Request handled for: ', parsed.data);
                     this.lastReq = parsed.data;
+                    return;
                 }
 
 

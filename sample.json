@@ -1,27 +1,93 @@
 {
-    "command": "currentTrack",
-    "data": {
-      "context_uri": "spotify:internal:local-files",
-      "marked_for_download": "false",
-      "title": "sample this too - trazox",
-      "track_player": "audio",
-      "artist_name": "",
-      "local_file_path": "C:\\Users\\DarkWolfie\\Music\\sample this too - trazox.wav",
-      "duration": "128000",
-      "collection.can_add": "true",
-      "artist_uri": "spotify:local:",
-      "actions.skipping_next_past_track": "resume",
-      "entity_uri": "spotify:internal:local-files",
-      "collection.is_banned": "false",
-      "collection.in_collection": "false",
-      "iteration": "0",
-      "collection.can_ban": "false",
-      "album_artist_name": "",
-      "local_file_size": "22579280",
-      "actions.skipping_prev_past_track": "resume",
-      "is_local": "true",
-      "album_title": ""
+    "album": {
+        "album_type": "album",
+        "artists": [
+            {
+                "external_urls": {
+                    "spotify": "https://open.spotify.com/artist/0UpuH5U4nZ3UGGUJi0Zfbp"
+                },
+                "href": "https://api.spotify.com/v1/artists/0UpuH5U4nZ3UGGUJi0Zfbp",
+                "id": "0UpuH5U4nZ3UGGUJi0Zfbp",
+                "name": "Blue Swede",
+                "type": "artist",
+                "uri": "spotify:artist:0UpuH5U4nZ3UGGUJi0Zfbp"
+            }
+        ],
+        "available_markets": [
+            "CA",
+            "US"
+        ],
+        "external_urls": {
+            "spotify": "https://open.spotify.com/album/12UILuDVbIIjLZhcRBNcOJ"
+        },
+        "href": "https://api.spotify.com/v1/albums/12UILuDVbIIjLZhcRBNcOJ",
+        "id": "12UILuDVbIIjLZhcRBNcOJ",
+        "images": [
+            {
+                "url": "https://i.scdn.co/image/ab67616d0000b273e0114a86a2a0a7d8762951d9",
+                "width": 640,
+                "height": 640
+            },
+            {
+                "url": "https://i.scdn.co/image/ab67616d00001e02e0114a86a2a0a7d8762951d9",
+                "width": 300,
+                "height": 300
+            },
+            {
+                "url": "https://i.scdn.co/image/ab67616d00004851e0114a86a2a0a7d8762951d9",
+                "width": 64,
+                "height": 64
+            }
+        ],
+        "name": "Hooked On A Feeling - 40th Anniversary Collection",
+        "release_date": "2014-09-30",
+        "release_date_precision": "day",
+        "total_tracks": 19,
+        "type": "album",
+        "uri": "spotify:album:12UILuDVbIIjLZhcRBNcOJ"
     },
-    "isPlaying": false,
-    "progress": 13413
-  }
+    "artists": [
+        {
+            "external_urls": {
+                "spotify": "https://open.spotify.com/artist/0UpuH5U4nZ3UGGUJi0Zfbp"
+            },
+            "href": "https://api.spotify.com/v1/artists/0UpuH5U4nZ3UGGUJi0Zfbp",
+            "id": "0UpuH5U4nZ3UGGUJi0Zfbp",
+            "name": "Blue Swede",
+            "type": "artist",
+            "uri": "spotify:artist:0UpuH5U4nZ3UGGUJi0Zfbp"
+        },
+        {
+            "external_urls": {
+                "spotify": "https://open.spotify.com/artist/1Ek3VdZ8EPmcvgRIqnHlrF"
+            },
+            "href": "https://api.spotify.com/v1/artists/1Ek3VdZ8EPmcvgRIqnHlrF",
+            "id": "1Ek3VdZ8EPmcvgRIqnHlrF",
+            "name": "Björn Skifs",
+            "type": "artist",
+            "uri": "spotify:artist:1Ek3VdZ8EPmcvgRIqnHlrF"
+        }
+    ],
+    "available_markets": [
+        "CA",
+        "US"
+    ],
+    "disc_number": 1,
+    "duration_ms": 172866,
+    "explicit": false,
+    "external_ids": {
+        "isrc": "SEAMA7343050"
+    },
+    "external_urls": {
+        "spotify": "https://open.spotify.com/track/2Nz6aF1umHh5Et6I5H581L"
+    },
+    "href": "https://api.spotify.com/v1/tracks/2Nz6aF1umHh5Et6I5H581L",
+    "id": "2Nz6aF1umHh5Et6I5H581L",
+    "is_local": false,
+    "name": "Hooked On A Feeling",
+    "popularity": 65,
+    "preview_url": "https://p.scdn.co/mp3-preview/349b959f3339c75b269ab47a0f576c5f39ba46cd?cid=65b708073fc0480ea92a077233ca87bd",
+    "track_number": 1,
+    "type": "track",
+    "uri": "spotify:track:2Nz6aF1umHh5Et6I5H581L"
+}

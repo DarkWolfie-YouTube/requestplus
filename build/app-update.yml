@@ -1,0 +1,6 @@
+owner: DarkWolfie-YouTube
+repo: requestplus
+provider: github
+updaterCacheDirName: requestplus-updater
+publisherName:
+  - DarkWolfieVT

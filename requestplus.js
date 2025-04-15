@@ -131,13 +131,10 @@ var requestplus = (() => {
                                         })
                                     );
                                     let newURI = messageData.data.uri.replace("spotify:track:", "");
-                                    let data = null;
-                                    Spicetify.CosmosAsync.get('https://api.spotify.com/v1/tracks/' + newURI, (err, deta) => {
-                                        data = deta;
-                                    })
-                                    ws.send(JSON.stringify({
+                                    let deta = await Spicetify.CosmosAsync.get('https://api.spotify.com/v1/tracks/' + newURI)
+                                    await ws.send(JSON.stringify({
                                         command: "requestHandled",
-                                        data: data
+                                        data: deta
                                     }))
                                 } else {
                                     console.warn("No URI provided in addTrack command.");

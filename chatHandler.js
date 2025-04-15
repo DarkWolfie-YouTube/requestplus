@@ -1,5 +1,5 @@
 const tmi = require('tmi.js');
-
+const wait = require('node:timers/promises').setTimeout;
 
 class ChatHandler {
     constructor(mainWindow, logger, twitchAuth, WSServer) {
@@ -21,7 +21,7 @@ class ChatHandler {
         });
         this.Client.on('message', async (channel, tags, message, self) => {
             console.log(message)
-            if (message.toLowerCase().startsWith('!sr ')) {
+            if (message.toLowerCase().startsWith('!sr')) {
 
                 var requesta = message.split(' ').splice(1).join(' ')
                 console.log(requesta)
@@ -47,10 +47,26 @@ class ChatHandler {
                         id = ida
                     }
                     this.WSServer.WSSend({'command':'addTrack', 'data': { 'uri': `spotify:track:${id}`}})
-                    await wait(300)
-                    if (this.WSServer.lastReq) {
-                        this.Client.say(channel, `Request+: Song now queued.`)
+                    await wait(2000)
+                    if (this.WSServer.lastReq){
+                        var dataArtists = []
+                        var response = this.WSServer.lastReq
+                        console.log(response.name)
+                        console.log(response.artists != null)
+                        if (response.artists != null) {
+                            for (var artist in response.artists) {
+                                dataArtists.push(response.artists[artist].name)
+                            } 
+                        }
+                       
+                        var artists = dataArtists.join(", ");
+                        var title = response.name;
+                        this.Client.say(channel, `Request+: Song ${title} by ${artists} has been queued.`)
+                    } else {
+                        this.Client.say(channel, "Request+: the song was sent to queue, but didn't return any song information. Song maybe is queued. ERR: RPLUS_SONG_KINDA_QUEUED")
                     }
+                } else {
+                    this.Client.say(channel, `Request+: Please provide a spotify track link! Useage: !sr <link>`)
                 }
                
             }

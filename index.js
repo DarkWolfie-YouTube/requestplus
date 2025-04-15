@@ -8,6 +8,8 @@ const ChatHandler = require('./chatHandler.js');
 const apiHandler = require('./apiHandler.js');
 const settingsHandler = require('./settingsHandler.js');
 const os = require('node:os');
+const wait = require('node:timers/promises').setTimeout;
+
 
 const TWITCH_CLIENT_ID = 'if6usvbqj58fwdbycnu6v77jjsluq5';
 const TWITCH_REDIRECT_URI = 'http://localhost:3000';
@@ -306,7 +308,7 @@ function requestTrackInfo() {
 
 }
 
-setInterval(requestTrackInfo, 1000);
+setInterval(requestTrackInfo, 3000);
 
 
 
