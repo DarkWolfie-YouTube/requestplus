@@ -102,6 +102,17 @@ class Logger {
             console.error('Error clearing log file:', error);
         }
     }
+
+    /**
+     * Clear the Log File Folder to clear space on the drive.
+     */
+    async clearLogFolder() {
+        try {
+            await fs.promises.rm(this.logFolderPath, { recursive: true, force: true });
+        } catch (error) {
+            console.error('Error clearing log folder:', error);
+        }
+    }
 }
 
 module.exports = Logger;

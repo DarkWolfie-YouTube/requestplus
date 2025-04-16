@@ -22,7 +22,11 @@ class ChatHandler {
         this.Client.on('message', async (channel, tags, message, self) => {
             console.log(message)
             if (message.toLowerCase().startsWith('!sr')) {
-
+                if (this.WSServer.clients.size === 0) {
+                    this.Client.say(channel, `Request+: Currently, ${channel.split("#")[1]}, doesn't have Request+ connected to Spotify. Please send them a screenshot of this error to them. ERR:RPLUS_NOT_CONNECTED`)
+                    this.logger.error(`Request+: Currently, ${channel.split("#")[1]}, doesn't have Request+ connected to Spotify. ERR:RPLUS_NOT_CONNECTED`);
+                    return
+                }
                 var requesta = message.split(' ').splice(1).join(' ')
                 console.log(requesta)
                 if (requesta.includes("https://open.spotify.com/")){
@@ -63,10 +67,10 @@ class ChatHandler {
                         var title = response.name;
                         this.Client.say(channel, `Request+: Song ${title} by ${artists} has been queued.`)
                     } else {
-                        this.Client.say(channel, "Request+: the song was sent to queue, but didn't return any song information. Song maybe is queued. ERR: RPLUS_SONG_KINDA_QUEUED")
+                        this.Client.say(channel, "Request+: The song was sent to queue, but didn't return any song information. Song maybe is queued. ERR: RPLUS_SONG_KINDA_QUEUED")
                     }
                 } else {
-                    this.Client.say(channel, `Request+: Please provide a spotify track link! Useage: !sr <link>`)
+                    this.Client.say(channel, `Request+: Please provide a spotify track link! Usage: !sr <link>`)
                 }
                
             }

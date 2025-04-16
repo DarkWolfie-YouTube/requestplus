@@ -203,7 +203,7 @@ async function checkStoredToken() {
             twitchUser = storedToken;
             mainWindow.webContents.send('twitch-auth-success', twitchUser);
             if (!chatHandler) {
-                chatHandler = new ChatHandler(Logger, mainWindow, storedToken, WSServer);
+                chatHandler = new ChatHandler(mainWindow, Logger, storedToken, WSServer);
                 chatHandler.connect();
             }
         }
@@ -347,6 +347,7 @@ async function makeFirstRunPopup() {
             message: 'Do you authorize me to modify your Spotify Spicetify configuration?'
         });
         if (authorize.response == 1) {
+            //TODO: MAC DONT WORK HERE FIXING LATER
             // copy requestplus.js to the spicetify local roaming data folder.
             const sourceFile = path.join(__dirname, 'requestplus.js');
             const targetFile = path.join(app.getPath('appData'), 'spicetify', 'Extensions', 'requestplus.js');
