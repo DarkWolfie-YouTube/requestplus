@@ -3,7 +3,6 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('api', {
     minimize: () => ipcRenderer.invoke('window-minimize'),
     close: () => ipcRenderer.invoke('window-close'),
-    
     play: () => ipcRenderer.invoke('song-play'),
     pause: () => ipcRenderer.invoke('song-pause'),
     skip: () => ipcRenderer.invoke('song-skip'),
@@ -15,6 +14,9 @@ contextBridge.exposeInMainWorld('api', {
     getOverlayPath: () => ipcRenderer.invoke('get-overlay-path'),
     sendSettings: (settings) => { ipcRenderer.invoke('send-settings', settings) },
     preload: () => ipcRenderer.invoke('runFirstTime'),
+    checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
+    getUpdateSettings: () => ipcRenderer.invoke('get-update-settings'),
+    setPreReleaseCheck: (enabled) => ipcRenderer.invoke('set-pre-release-check', enabled),
     settingsLoaded: (callback) => ipcRenderer.on('settings-loaded', (_, settings) => { callback(settings) })
 });
 

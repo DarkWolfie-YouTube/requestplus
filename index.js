@@ -9,6 +9,7 @@ const apiHandler = require('./apiHandler.js');
 const settingsHandler = require('./settingsHandler.js');
 const os = require('node:os');
 const wait = require('node:timers/promises').setTimeout;
+const { checkForUpdates } = require('./updateChecker');
 
 
 const TWITCH_CLIENT_ID = 'if6usvbqj58fwdbycnu6v77jjsluq5';
@@ -159,7 +160,8 @@ async function createWindow() {
         autoHideMenuBar: true,
         titleBarStyle: 'hidden',
         titleBarOverlay: false,
-        resizable: false
+        resizable: false,
+        icon: path.join(__dirname, 'website', 'the_letter.png'),
     });
 
     mainWindow.loadFile(path.join(__dirname, 'views/index.html'));
@@ -184,6 +186,8 @@ async function createWindow() {
     await loadSavedSettings();
     // Check for existing valid token
     await checkStoredToken();
+
+    await checkForUpdates(mainWindow, false, Logger);
 
 
     if (!APIHandler) {
@@ -285,6 +289,21 @@ ipcMain.handle('runFirstTime', async () => {
     await makeFirstRunPopup()
 })
 
+// Add update checker IPC handler
+ipcMain.handle('check-for-updates', () => {
+    checkForUpdates(mainWindow, false, Logger);
+});
+
+ipcMain.handle('get-update-settings', () => {
+    const { getSettings } = require('./updateChecker');
+    return getSettings();
+});
+
+ipcMain.handle('set-pre-release-check', (event, enabled) => {
+    const { setPreReleaseCheck } = require('./updateChecker');
+    setPreReleaseCheck(enabled);
+});
+
 app.whenReady().then(createWindow);
 
 app.on('window-all-closed', () => {
@@ -348,6 +367,10 @@ async function makeFirstRunPopup() {
         });
         if (authorize.response == 1) {
             //TODO: MAC DONT WORK HERE FIXING LATER
+
+            //check to see if they are using windows or mac
+            if (process.platform === 'win32') {
+
             // copy requestplus.js to the spicetify local roaming data folder.
             const sourceFile = path.join(__dirname, 'requestplus.js');
             const targetFile = path.join(app.getPath('appData'), 'spicetify', 'Extensions', 'requestplus.js');
@@ -363,5 +386,21 @@ async function makeFirstRunPopup() {
                 message: 'Welcome to Request+! Make sure to login with your twitch account to enable the requesting feature!'
             })   
         }
+        else if (process.platform === 'darwin') {
+            // MacOS specific code
+            const sourceFile = path.join(__dirname, 'requestplus.js');
+            const targetFile = path.join(os.homedir(), 'Library', 'Application Support', 'spicetify', 'Extensions', 'requestplus.js');
+            fs.copyFileSync(sourceFile, targetFile);
+            await require('child_process').exec('open -a Terminal "spicetify config extensions requestplus.js"');
+            await require('child_process').exec('open -a Terminal "spicetify apply"');
+            await wait(7000)
+            dialog.showMessageBoxSync(null, {
+                type: 'info',
+                buttons: ['Cancel', 'OK'],
+                title: 'Success!',
+                message: 'Welcome to Request+! Make sure to login with your twitch account to enable the requesting feature!'
+            })   
+        }        
+     }
     }
 }

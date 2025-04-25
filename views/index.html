@@ -486,7 +486,21 @@
                         </form>
                     </div>
                 </div>
-
+                <div class="card bg-dark text-white mt-3">
+                    <div class="card-body">
+                        <h5 class="card-title">Updates</h5>
+                        <div class="form-check mb-3">
+                            <input class="form-check-input" type="checkbox" id="check-pre-releases">
+                            <label class="form-check-label" for="check-pre-releases">
+                                Include pre-release versions
+                            </label>
+                            <small class="form-text text-muted d-block">Pre-releases may contain experimental features and bugs</small>
+                        </div>
+                        <button type="button" class="btn btn-primary" id="check-updates-btn">
+                            <i class="bi bi-cloud-download"></i> Check for Updates
+                        </button>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -660,6 +674,21 @@
 
         }
         window.api.preload();
+        document.getElementById('check-updates-btn').addEventListener('click', async () => {
+            await window.api.checkForUpdates();
+        });
+
+        const preReleaseCheckbox = document.getElementById('check-pre-releases');
+        
+        // Load initial pre-release setting
+        window.api.getUpdateSettings().then(settings => {
+            preReleaseCheckbox.checked = settings.checkPreReleases;
+        });
+
+        // Handle pre-release setting changes
+        preReleaseCheckbox.addEventListener('change', async (e) => {
+            await window.api.setPreReleaseCheck(e.target.checked);
+        });
     </script>
 </body>
 </html>

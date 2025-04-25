@@ -30,6 +30,7 @@ const config = {
             target: 'nsis',
             arch: ['x64']
         }],
+        icon: 'build/icon.ico',
         // Only include certificate settings if CERT_PASSWORD is present
         ...(process.env.CERT_PASSWORD && {
             signtoolOptions: {

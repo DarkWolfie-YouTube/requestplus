@@ -55,7 +55,6 @@ class WebSocketServer {
                     }
                 });
                 let parsed = JSON.parse(message);
-                console.log(parsed.command, (parsed.command === "currentTrack"))
                 
 
                 if (parsed.command === "currentTrack") {
