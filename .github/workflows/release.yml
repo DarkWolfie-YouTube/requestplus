@@ -58,7 +58,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: macos-artifact
-          path: ./dist/requestplus*.dmg
+          path: ./dist/Request+*.dmg
           if-no-files-found: error
 
   create-release:
@@ -80,7 +80,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          name: Request+ ${{ github.ref_name }}
+          name: Twitch Marathon Timer ${{ github.ref_name }}
           files: |
             ./artifacts/windows-artifact/*.exe
             ./artifacts/macos-artifact/*.dmg
