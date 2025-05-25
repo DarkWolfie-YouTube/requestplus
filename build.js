@@ -1,4 +1,5 @@
 require('dotenv').config();
+const { publicDecrypt } = require('crypto');
 const builder = require('electron-builder');
 const Platform = builder.Platform;
 const os = require('os');
@@ -47,7 +48,8 @@ const config = {
         createDesktopShortcut: true,
         createStartMenuShortcut: true,
         shortcutName: "Request+"
-    }
+    },
+    publish: false
 };
 
 async function build() {

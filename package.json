@@ -14,7 +14,7 @@
   "scripts": {
     "test": "nodemon --watch . --exec \"electron .\"",
     "pack": "electron-builder --dir",
-    "dist": "node build.js",
+    "dist": "node build.js --publish never",
     "build": "electron-builder --win --publish never",
     "build:mac": "electron-builder --mac --publish never --universal -c.mac.identity=null"
   },
