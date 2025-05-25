@@ -223,6 +223,7 @@ async function loadSavedSettings() {
         if (settings) {
             Logger.info('Loaded settings:', settings);
             mainWindow.webContents.send('settings-loaded', settings);
+            APIHandler.theme = settings.theme;
         } else {
             Logger.info('No settings found.');
             SettingsHandler.save({'theme': 'default'});
