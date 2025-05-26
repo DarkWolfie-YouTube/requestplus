@@ -65,7 +65,7 @@ class ChatHandler {
                         this.Client.say(channel, "Request+: the song was sent to queue, but didn't return any song information. Song maybe is queued. ERR: RPLUS_SONG_KINDA_QUEUED")
                     }
                 } else {
-                    this.Client.say(channel, `Request+: Please provide a spotify track link! Useage: !sr <link>`)
+                    this.Client.say(channel, `Request+: Please provide a spotify track link! Usage: !sr <link>`)
                 }
                
             }
