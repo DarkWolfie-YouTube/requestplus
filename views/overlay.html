@@ -115,7 +115,7 @@
                         }
                         songText.textContent = response.title;
                         const dataArtists = []
-                        const dataImage = response.image_large_url;
+                        const dataImage = response.image || response.image_large_url || null;
                         let newImage;
                         if (response.artist_name) {
                             dataArtists.push(response.artist_name);
@@ -136,8 +136,14 @@
                             dataArtists.push(response['artist_name:5']);
                         }
                         artistText.textContent = dataArtists.join(", ");
-                        if (dataImage != null) {
-                            newImage = dataImage.replace('spotify:image:', 'https://i.scdn.co/image/');
+                        if (dataImage != null){
+                            if (dataImage.includes('spotify:image:')) {
+                                newImage = dataImage.replace('spotify:image:', 'https://i.scdn.co/image/');
+                            } else if (dataImage.includes('data:image/')) {
+                                newImage = dataImage;
+                            } else { 
+                                newImage = "styles/unknown.png";
+                            }
                         } else {
                             newImage = "styles/unknown.png";
                         }

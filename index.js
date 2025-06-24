@@ -328,7 +328,7 @@ function requestTrackInfo() {
 
 }
 
-setInterval(requestTrackInfo, 3000);
+setInterval(requestTrackInfo, 1000);
 
 
 
@@ -344,13 +344,17 @@ async function makeFirstRunPopup() {
         title: 'First Run',
         message: 'Welcome to Request+! these boxes will show how how to get the program up and running for the first time!'
     });
-    dialog.showMessageBoxSync(mainWindow,{
+    const havealready = await dialog.showMessageBoxSync(mainWindow,{
         type: 'info',
-        buttons: ['Cancel', 'OK'],
+        buttons: ['No', 'Yes'],
         title: 'Install Spicetify',
-        message: 'First, I need you to install Spicetify, which is a Spotify client mod. I will open their installation page for you.'
+        message: 'First, I need you to install Spicetify, which is a Spotify client mod. Have you already installed Spicetify?'
     });
-    require('openurl').open('https://spicetify.app/docs/getting-started')
+
+    if (havealready.response == 0) {
+        require('openurl').open('https://spicetify.app/docs/getting-started')
+    
+    
     const installedSpicetify = await dialog.showMessageBox(null, {
         type: 'info',
         buttons: ['Cancel', 'No', 'Yes'],
@@ -366,42 +370,87 @@ async function makeFirstRunPopup() {
             title: 'Since you installed Spicetify, let me spice it up?',
             message: 'Do you authorize me to modify your Spotify Spicetify configuration?'
         });
-        if (authorize.response == 1) {
-            //TODO: MAC DONT WORK HERE FIXING LATER
+            if (authorize.response == 1) {
+                //TODO: MAC DONT WORK HERE FIXING LATER
 
-            //check to see if they are using windows or mac
-            if (process.platform === 'win32') {
+                //check to see if they are using windows or mac
+                if (process.platform === 'win32') {
 
-            // copy requestplus.js to the spicetify local roaming data folder.
-            const sourceFile = path.join(__dirname, 'requestplus.js');
-            const targetFile = path.join(app.getPath('appData'), 'spicetify', 'Extensions', 'requestplus.js');
-            fs.copyFileSync(sourceFile, targetFile);
-            //run the commands to apply spicetify changes
-            await require('child_process').exec('start cmd /c "spicetify config extensions requestplus.js"');
-            await require('child_process').exec('start cmd /c "spicetify apply"');
-            await wait(7000)
-            dialog.showMessageBoxSync(null, {
-                type: 'info',
-                buttons: ['Cancel', 'OK'],
-                title: 'Success!',
-                message: 'Welcome to Request+! Make sure to login with your twitch account to enable the requesting feature!'
-            })   
+                    // copy requestplus.js to the spicetify local roaming data folder.
+                    const sourceFile = path.join(__dirname, 'requestplus.js');
+                    const targetFile = path.join(app.getPath('appData'), 'spicetify', 'Extensions', 'requestplus.js');
+                    fs.copyFileSync(sourceFile, targetFile);
+                    //run the commands to apply spicetify changes
+                    await require('child_process').exec('start cmd /c "spicetify config extensions requestplus.js"');
+                    await require('child_process').exec('start cmd /c "spicetify apply"');
+                    await wait(7000)
+                    dialog.showMessageBoxSync(null, {
+                        type: 'info',
+                        buttons: ['Cancel', 'OK'],
+                        title: 'Success!',
+                        message: 'Welcome to Request+! Make sure to login with your twitch account to enable the requesting feature!'
+                    })   
+                }
+                else if (process.platform === 'darwin') {
+                    // MacOS specific code
+                    const sourceFile = path.join(__dirname, 'requestplus.js');
+                    const targetFile = path.join(os.homedir(), 'Library', 'Application Support', 'spicetify', 'Extensions', 'requestplus.js');
+                    fs.copyFileSync(sourceFile, targetFile);
+                    await require('child_process').exec('open -a Terminal "spicetify config extensions requestplus.js"');
+                    await require('child_process').exec('open -a Terminal "spicetify apply"');
+                    await wait(7000)
+                    dialog.showMessageBoxSync(null, {
+                        type: 'info',
+                        buttons: ['Cancel', 'OK'],
+                        title: 'Success!',
+                        message: 'Welcome to Request+! Make sure to login with your twitch account to enable the requesting feature!'
+                    })   
+                }        
+            }
         }
-        else if (process.platform === 'darwin') {
-            // MacOS specific code
-            const sourceFile = path.join(__dirname, 'requestplus.js');
-            const targetFile = path.join(os.homedir(), 'Library', 'Application Support', 'spicetify', 'Extensions', 'requestplus.js');
-            fs.copyFileSync(sourceFile, targetFile);
-            await require('child_process').exec('open -a Terminal "spicetify config extensions requestplus.js"');
-            await require('child_process').exec('open -a Terminal "spicetify apply"');
-            await wait(7000)
-            dialog.showMessageBoxSync(null, {
-                type: 'info',
-                buttons: ['Cancel', 'OK'],
-                title: 'Success!',
-                message: 'Welcome to Request+! Make sure to login with your twitch account to enable the requesting feature!'
-            })   
-        }        
-     }
+    } else {
+        const authorize = await dialog.showMessageBox(null, {
+            type: 'info',
+            buttons: ['Cancel', 'OK'],
+            title: 'Since you installed Spicetify, let me spice it up?',
+            message: 'Do you authorize me to modify your Spotify Spicetify configuration?'
+        });
+            if (authorize.response == 1) {
+                //TODO: MAC DONT WORK HERE FIXING LATER
+
+                //check to see if they are using windows or mac
+                if (process.platform === 'win32') {
+
+                // copy requestplus.js to the spicetify local roaming data folder.
+                const sourceFile = path.join(__dirname, 'requestplus.js');
+                const targetFile = path.join(app.getPath('appData'), 'spicetify', 'Extensions', 'requestplus.js');
+                fs.copyFileSync(sourceFile, targetFile);
+                //run the commands to apply spicetify changes
+                await require('child_process').exec('start cmd /c "spicetify config extensions requestplus.js"');
+                await require('child_process').exec('start cmd /c "spicetify apply"');
+                await wait(7000)
+                dialog.showMessageBoxSync(null, {
+                    type: 'info',
+                    buttons: ['Cancel', 'OK'],
+                    title: 'Success!',
+                    message: 'Welcome to Request+! Make sure to login with your twitch account to enable the requesting feature!'
+                })   
+            }
+            else if (process.platform === 'darwin') {
+                // MacOS specific code
+                const sourceFile = path.join(__dirname, 'requestplus.js');
+                const targetFile = path.join(os.homedir(), 'Library', 'Application Support', 'spicetify', 'Extensions', 'requestplus.js');
+                fs.copyFileSync(sourceFile, targetFile);
+                await require('child_process').exec('open -a Terminal "spicetify config extensions requestplus.js"');
+                await require('child_process').exec('open -a Terminal "spicetify apply"');
+                await wait(7000)
+                dialog.showMessageBoxSync(null, {
+                    type: 'info',
+                    buttons: ['Cancel', 'OK'],
+                    title: 'Success!',
+                    message: 'Welcome to Request+! Make sure to login with your twitch account to enable the requesting feature!'
+                })   
+            }        
+        }  
     }
 }

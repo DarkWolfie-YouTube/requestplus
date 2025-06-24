@@ -2,6 +2,7 @@ const WebSocket = require('ws');
 const fs = require('fs');
 const path = require('path');
 const net = require('net');
+const musicmetadata = require('music-metadata');
 
 class WebSocketServer {
     constructor(port, mainWindow, logger) {
@@ -47,7 +48,7 @@ class WebSocketServer {
             this.logger.info('New client connected');
             this.logger.info(`Total clients connected: ${this.clients.size}`);
 
-            ws.on('message', (message) => {
+            ws.on('message', async (message) => {
                 // Send message to all clients but not the client that sent the message
                 this.clients.forEach((client) => {
                     if (client !== ws) {
@@ -64,12 +65,22 @@ class WebSocketServer {
                         progress: parsed.progress
                     }
 
+                    if (data.local_file_path) {
+                       var metadata = await musicmetadata.parseFile(data.local_file_path)
+                       var imageB64 = Buffer.from(metadata.common.picture[0].data).toString('base64');
+                        data.image = `data:${metadata.common.picture[0].format};base64,${imageB64}`; 
+                        this.lastInfo = data;
+
+                    this.mainWindow.webContents.send('song-info', data);
+                       return;
+                    } else {
+
                     this.lastInfo = data;
 
                     this.mainWindow.webContents.send('song-info', data);
                     return;
-                }
-                if (parsed.command = "requestHandled") {
+                    }
+                } if (parsed.command = "requestHandled") {
                     console.log(parsed.command, parsed.data)
                     this.logger.info('Request handled for: ', parsed.data);
                     this.lastReq = parsed.data;

@@ -1,10 +1,11 @@
 {
   "name": "requestplus",
-  "version": "0.8.2-BETA-PreRe1",
+  "version": "0.8.3-BETA-PreRe1",
   "dependencies": {
     "body-parser": "^1.20.3",
     "cors": "^2.8.5",
     "express": "^4.21.2",
+    "music-metadata": "^11.3.0",
     "net": "^1.0.2",
     "node-fetch": "^3.3.2",
     "openurl": "^1.1.1",

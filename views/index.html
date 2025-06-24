@@ -572,7 +572,7 @@
 
             const dataTitle = info.title;
             const dataArtists = []
-            const dataImage = info?.image_large_url || null;
+            const dataImage = info?.image ||info?.image_large_url || null;
             let newImage;
 
             if (info.artist_name) {
@@ -595,8 +595,14 @@
                 dataArtists.push(info['artist_name:5']);
             }
             if (dataImage != null){
-                newImage = dataImage.replace('spotify:image:', 'https://i.scdn.co/image/');
-            } else { 
+                if (dataImage.includes('spotify:image:')) {
+                    newImage = dataImage.replace('spotify:image:', 'https://i.scdn.co/image/');
+                } else if (dataImage.includes('data:image/')) {
+                    newImage = dataImage;
+                } else { 
+                    newImage = "styles/unknown.png";
+                }
+            } else {
                 newImage = "styles/unknown.png";
             }
             trackArt.src = newImage;

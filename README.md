@@ -3,6 +3,9 @@
 ## Overview
 A powerful song request overlay for streamers. Request+ enhances the interaction with various APIs, providing a streamlined way to send requests and handle responses efficiently.
 
+# REQUIREMENT
+This program requires Spicetify to operate with the Spotify Client. After installing Request+, we have a guide to setup this program. You can download and install it here first if you would like.
+
 ## Features
 - **Seamless Song Requests**: Allow your chat to request songs effortlessly.
 - **Fast & Lightweight**: Runs locally on your machine with minimal impact.
