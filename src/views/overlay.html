@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="preconnect" href="https://overlayapi.darkwolfie.com" crossorigin>
+    <script
+  src="https://code.jquery.com/jquery-3.7.1.min.js"
+  integrity="sha256-/JqT3SQfawRcv/BIHPThkBvs0OEvtFFmqPF/lYI/Cxo="
+  crossorigin="anonymous"></script>
+  <link rel="stylesheet" href="styles/style.css" id="theme-css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400..900&display=swap" rel="stylesheet">
+    <title>Overlay</title>
+</head>
+<body onload="init()">
+    <!-- make a overlay with an image 2 text prompts and a timer bar-->
+    <div class="overlay-container" id="overlay-container">
+        <div class="overlay-image">
+            <img src="https://static-cdn.jtvnw.net/jtv_user_pictures/7447fcd0-d407-4f62-8e39-d568b140ffe9-profile_image-70x70.png" alt="overlay" class="cover">
+        </div>
+        <div class="overlay-text">
+            <div class="song-name-text">
+                Song Name Here!
+            </div>
+            <div class="artist-name-text">
+                Artist Name Here!
+            </div>
+        </div>
+        <div class="overlay-timer">
+            <div class="overlay-timer-text">00:00</div>
+            <div class="overlay-timer-bar" style="width: 0px"></div>
+            <div class="overlay-timer-bg-bar"></div>
+            <div class="overlay-timer-text2">00:00</div>
+        </div>
+    </div>
+    <script>
+        var songProgress = document.querySelector(".overlay-timer-bar");
+
+        function init() {
+            apiInit()
+            songProgress.style.width = "100px"
+        }
+
+
+        function apiInit() {
+            $.ajax({
+                url: 'http://localhost:444/settings',
+                type: 'GET',
+                crossDomain: true,
+                success: function(response) {
+                    if (response.theme) {
+                        if (response.theme == "default") {
+                            document.getElementById("theme-css").href = "styles/style.css";
+                        } else if (response.theme == "gojo") {
+                            document.getElementById("theme-css").href = "styles/gojo.css";
+                        } else if (response.theme == "hologram") {
+                            document.getElementById("theme-css").href = "styles/hologram.css";
+                        } else if (response.theme == "ichinyan") {
+                            document.getElementById("theme-css").href = "styles/ichinyan.css";
+                        } else if (response.theme == "mdev") {
+                            document.getElementById("theme-css").href = "styles/mdev.css";
+                        } else if (response.theme == "moonkingbean") {
+                            document.getElementById("theme-css").href = "styles/moonkingBEAN.css";
+                        } else if (response.theme == "twinGhost") {
+                            document.getElementById("theme-css").href = "styles/twinGhost.css";
+                        } else if (response.theme == "custom") {
+                            document.getElementById("theme-css").href = "styles/custom.css";
+                        }
+                    }
+
+                    //theme done, init song info loop
+                    songInfoLoop();
+                    setInterval(songInfoLoop, 1000);
+                }
+
+            });
+        }
+        const overlayContainer = document.getElementById('overlay-container');
+
+
+        
+        const songText = document.querySelector('.song-name-text');
+        const artistText = document.querySelector('.artist-name-text');
+        const songImg = document.querySelector('.cover');
+        const timeText = document.querySelector('.overlay-timer-text');
+        const durationText = document.querySelector('.overlay-timer-text2');
+        const timeBar = document.querySelector('.overlay-timer-bar');
+        let timeElapsed = 0;
+        function songInfoLoop() {
+            $.ajax({
+                url: 'http://localhost:444/info',
+                type: 'GET',
+                crossDomain: true,
+                success: function(response) {
+
+                    if (response.refresh) {
+                        settingsReload()
+                        return
+                    }
+                    if (response.isPlaying == false) {
+                        songText.textContent = "No Song Playing";
+                        artistText.textContent = "";
+                        songImg.src = "styles/unknown.png";
+                        if (timeElapsed < 2){
+                            timeElapsed++ 
+                        } else {
+                            overlayContainer.classList.add('hide');
+                        }
+                    } else {
+                        if (timeElapsed > 0) {
+                            overlayContainer.classList.remove('hide');
+                            timeElapsed = 0
+                        }
+                        songText.textContent = response.title;
+                        const dataArtists = []
+                        const dataImage = response.image || response.image_large_url || null;
+                        let newImage;
+                        if (response.artist_name) {
+                            dataArtists.push(response.artist_name);
+                        }
+                        if (response['artist_name:1']) {
+                            dataArtists.push(response['artist_name:1']); 
+                        }
+                        if (response['artist_name:2']) {
+                            dataArtists.push(response['artist_name:2']); 
+                        }
+                        if (response['artist_name:3']) {
+                            dataArtists.push(response['artist_name:3']); 
+                        }
+                        if (response['artist_name:4']) {
+                            dataArtists.push(response['artist_name:4']); 
+                        }
+                        if (response['artist_name:5']) {
+                            dataArtists.push(response['artist_name:5']);
+                        }
+                        artistText.textContent = dataArtists.join(", ");
+                        if (dataImage != null){
+                            if (dataImage.includes('spotify:image:')) {
+                                newImage = dataImage.replace('spotify:image:', 'https://i.scdn.co/image/');
+                            } else if (dataImage.includes('data:image/')) {
+                                newImage = dataImage;
+                            } else { 
+                                newImage = "styles/unknown.png";
+                            }
+                        } else {
+                            newImage = "styles/unknown.png";
+                        }
+                        songImg.src = newImage;
+                        durationText.textContent = convertTime(response.duration);
+                        timeText.textContent = convertTime(response.progress);
+                        const trackDuration = response.duration;
+                        const currentDuration = response.progress;
+                        var timeBarWidth = (currentDuration / trackDuration) * 385; // Max width is 385px
+                        timeBar.style.width = Math.min(timeBarWidth, 385) + "px";
+                    }
+                }
+
+            });
+        }
+
+        function convertTime(ms) {
+        var ms = ms / 1000;
+        var mins = Math.floor(ms / 60);
+        var secs = Math.floor(ms % 60);
+        if (secs < 10) {
+            secs = "0" + secs;
+        }
+        if (mins < 10) {
+            mins = "0" + mins;
+        }
+
+        return mins + ":" + secs;
+        }
+
+
+        setInterval(() => {
+    
+
+
+            const maxWidth = 375;
+            const songText = document.querySelector(".song-name-text");
+        
+            if (  songText.getBoundingClientRect().width > maxWidth
+            
+            ) {
+            songText.style.animation = "scrollText 6.78s linear infinite alternate";
+            } else {
+            songText.style.animation = "none";
+            }
+
+            if (artistText.getBoundingClientRect().width > maxWidth) {
+                artistText.style.animation = "scrollText 6.78s linear infinite alternate";
+            } else {
+                artistText.style.animation = "none";
+            }
+    
+        }, 10)
+
+        async function wait(ms) {
+            return new Promise(resolve => setTimeout(resolve, ms));
+        }
+        function settingsReload() {
+            $.ajax({
+                url: 'http://localhost:444/settings',
+                type: 'GET',
+                crossDomain: true,
+                success: function(response) {
+                    if (response.theme) {
+                        if (response.theme == "default") {
+                            document.getElementById("theme-css").href = "styles/style.css";
+                        } else if (response.theme == "gojo") {
+                            document.getElementById("theme-css").href = "styles/gojo.css";
+                        } else if (response.theme == "hologram") {
+                            document.getElementById("theme-css").href = "styles/hologram.css";
+                        } else if (response.theme == "ichinyan") {
+                            document.getElementById("theme-css").href = "styles/ichinyan.css";
+                        } else if (response.theme == "mdev") {
+                            document.getElementById("theme-css").href = "styles/mdev.css";
+                        } else if (response.theme == "moonkingbean") {
+                            document.getElementById("theme-css").href = "styles/moonkingBEAN.css";
+                        } else if (response.theme == "twinGhost") {
+                            document.getElementById("theme-css").href = "styles/twinGhost.css";
+                        }
+                    }
+                }
+
+            });
+        }
+
+
+    </script>
+
+    
+</body>
+</html>

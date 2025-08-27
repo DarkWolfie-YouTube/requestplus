@@ -1,0 +1,701 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Request+ App</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            color: #FFFFFF;
+            user-select: none;
+            -webkit-user-select: none;
+            overflow: hidden;
+            background-color: #454545;
+        }
+
+        .titlebar {
+            -webkit-app-region: drag;
+            height: 32px;
+            background: #202225;
+            padding: 0;
+            margin: 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            z-index: 1000;
+        }
+
+        .titlebar-text {
+            margin-left: 12px;
+            font-size: 14px;
+            font-weight: 500;
+            color: #dcddde;
+        }
+
+        .titlebar-controls {
+            -webkit-app-region: no-drag;
+            display: flex;
+            align-items: center;
+        }
+
+        .titlebar-button {
+            -webkit-app-region: no-drag;
+            height: 32px;
+            width: 46px;
+            border: none;
+            background: transparent;
+            outline: none;
+            color: #696969;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            cursor: pointer;
+        }
+
+        .titlebar-button:hover {
+            background: #2f3136;
+        }
+
+        #close-button:hover {
+            background: #ed4245;
+            color: white;
+        }
+
+        .sidebar {
+            width: 200px;
+            min-height: 100vh;
+            background-color: #1f1f1f;
+            padding: 20px;
+            position: fixed;
+            left: 0;
+            top: 32px;
+        }
+
+        .main-content {
+            margin-left: 200px;
+            padding: 20px;
+        }
+
+        .nav-link {
+            color: #ffffff;
+            padding: 10px;
+            border-radius: 5px;
+            transition: all 0.3s;
+        }
+
+        .nav-link:hover {
+            background-color: #2f2f2f;
+            color: #ffffff;
+        }
+
+        .nav-link.active {
+            background-color: #0d6efd;
+            color: #ffffff;
+        }
+
+        .nav-link i {
+            margin-right: 8px;
+        }
+
+        .card.bg-dark.text-white.mb-3 {
+            margin-bottom: 1.5rem !important;
+        }
+
+        .card.bg-dark.text-white {
+            background-color: #2f3136;
+            color: #dcddde;
+        }
+
+        .card-body.text-center {
+            text-align: center;
+        }
+
+        .display-1.mb-3 {
+            font-size: 2.5rem;
+            font-weight: 300;
+            line-height: 1.2;
+            margin-bottom: 1rem;
+        }
+
+        .d-flex.justify-content-center.gap-2 {
+            display: flex;
+            justify-content: center;
+            gap: 0.5rem;
+        }
+
+        .btn.btn-success {
+            background-color: #3ba55d;
+            color: #ffffff;
+            border-color: #3ba55d;
+        }
+
+        .btn.btn-warning {
+            background-color: #f7dc6f;
+            color: #000000;
+            border-color: #f7dc6f;
+        }
+
+        .btn.btn-danger {
+            background-color: #ed4245;
+            color: #ffffff;
+            border-color: #ed4245;
+        }
+
+        .card.bg-dark.text-white.mb-4 {
+            margin-bottom: 1.5rem !important;
+        }
+
+        .card.bg-dark.text-white {
+            background-color: #2f3136;
+            color: #dcddde;
+        }
+
+        .card-body {
+            padding: 1rem;
+        }
+
+        .card-title {
+            margin-bottom: 0.5rem;
+        }
+
+        .form-group {
+            margin-bottom: 1rem;
+        }
+
+        .form-label {
+            margin-bottom: 0.5rem;
+        }
+
+        .form-control.bg-secondary.text-white {
+            background-color: #2f3136;
+            color: #dcddde;
+            border-color: #2f3136;
+        }
+
+        .form-control {
+            display: block;
+            width: 100%;
+            padding: 0.375rem 0.75rem;
+            font-size: 1rem;
+            font-weight: 400;
+            line-height: 1.5;
+            color: #dcddde;
+            background-color: #2f3136;
+            background-clip: padding-box;
+            border: 1px solid #2f3136;
+            -webkit-appearance: none;
+            -moz-appearance: none;
+            appearance: none;
+            border-radius: 0.25rem;
+            transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+        }
+
+        .input-group {
+            position: relative;
+            display: flex;
+            flex-wrap: wrap;
+            align-items: stretch;
+            width: 100%;
+        }
+
+        .btn.btn-primary {
+            background-color: #0d6efd;
+            color: #ffffff;
+            border-color: #0d6efd;
+        }
+
+        .btn.btn-info {
+            background-color: #63ace5;
+            color: #ffffff;
+            border-color: #63ace5;
+        }
+
+        .btn.btn-secondary {
+            background-color: #6c757d;
+            color: #ffffff;
+            border-color: #6c757d;
+        }
+
+        .btn.btn-outline-danger {
+            color: #dc3545;
+            border-color: #dc3545;
+        }
+
+        .btn.btn-sm {
+            padding: 0.25rem 0.5rem;
+            font-size: 0.875rem;
+            border-radius: 0.2rem;
+        }
+
+        .alert.alert-success {
+            background-color: #d4edda;
+            color: #155724;
+            border-color: #c6ebd9;
+        }
+
+        .alert {
+            position: relative;
+            padding: 0.75rem 1.25rem;
+            margin-bottom: 1rem;
+            border: 1px solid transparent;
+            border-radius: 0.25rem;
+        }
+
+        .d-none {
+            display: none !important;
+        }
+
+        .d-flex {
+            display: flex !important;
+        }
+
+        .justify-content-center {
+            justify-content: center !important;
+        }
+
+        .gap-2 {
+            gap: 0.5rem !important;
+        }
+
+        .mb-0 {
+            margin-bottom: 0 !important;
+        }
+
+        .mb-2 {
+            margin-bottom: 0.5rem !important;
+        }
+
+        .mb-3 {
+            margin-bottom: 1rem !important;
+        }
+
+        .mb-4 {
+            margin-bottom: 1.5rem !important;
+        }
+
+        .mt-3 {
+            margin-top: 1rem !important;
+        }
+
+        .text-muted {
+            color: #6c757d !important;
+        }
+
+        .text-success {
+            color: #198754 !important;
+        }
+
+        .text-white {
+            color: #ffffff !important;
+        }
+
+        .rounded-circle {
+            border-radius: 50% !important;
+        }
+
+        #settings {
+            max-height: calc(100vh - 100px);
+            overflow-y: auto;
+        }
+
+        #settings::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        #settings::-webkit-scrollbar-track {
+            background: #1a1a1a;
+            border-radius: 4px;
+        }
+
+        #settings::-webkit-scrollbar-thumb {
+            background: #333;
+            border-radius: 4px;
+        }
+
+        #settings::-webkit-scrollbar-thumb:hover {
+            background: #444;
+        }
+        .info-box {
+            margin-top: 20px;
+            padding: 15px;
+            background-color: #2f3136;
+            color: #dcddde;
+            border-radius: 5px;
+            font-size: 16px;
+        }
+
+        .track-container {
+            display: flex;
+            align-items: flex-start;
+            gap: 20px;
+        }
+
+        .track-image {
+            flex-shrink: 0;
+            width: 100px;
+            height: 100px;
+        }
+
+        .track-details {
+            flex-grow: 1;
+        }
+
+        .track-details h3 {
+            margin: 0;
+            margin-bottom: 8px;
+        }
+
+        .track-details h5 {
+            margin: 0;
+            color: #a0a0a0;
+        }
+
+        .progress-container {
+            margin-top: 20px;
+            width: 100%;
+        }
+
+        progress {
+            width: 100%;
+            height: 10px;
+            border-radius: 5px;
+            background-color: #4a4a4a;
+        }
+
+        progress::-webkit-progress-bar {
+            background-color: #4a4a4a;
+            border-radius: 5px;
+        }
+
+        progress::-webkit-progress-value {
+            background-color: #a1a1a1;
+            border-radius: 5px;
+            transition: width 0.5s;
+
+        }
+    </style>
+</head>
+<body>
+    <div class="titlebar">
+        <div class="titlebar-text">Request+</div>
+        <div class="titlebar-controls">
+            <button class="titlebar-button" id="minimize-button">
+                <i class="bi bi-dash-lg"></i>
+            </button>
+            <button class="titlebar-button" id="close-button">
+                <i class="bi bi-x-lg"></i>
+            </button>
+        </div>
+    </div>
+
+    <div class="sidebar">
+        <div class="nav flex-column nav-pills" role="tablist" aria-orientation="vertical">
+            <button class="nav-link active mb-2" id="player-tab" data-bs-toggle="tab" data-bs-target="#player" type="button" role="tab" aria-controls="player" aria-selected="true">
+                <i class="bi bi-music-note"></i> Player
+            </button>
+            <button class="nav-link mb-2" id="settings-tab" data-bs-toggle="tab" data-bs-target="#settings" type="button" role="tab" aria-controls="settings" aria-selected="false">
+                <i class="bi bi-gear"></i> Settings
+            </button>
+        </div>
+    </div>
+
+    <div class="main-content">
+        <div class="tab-content" id="myTabContent">
+            <!-- Player Tab -->
+            <div id="player" class="tab-pane fade show active" role="tabpanel" aria-labelledby="player-tab">
+                <h2>Player</h2>
+                <div class="player-controls text-center">
+                    <button class="btn btn-info" id="prevBtn"><i class="bi bi-skip-backward-fill"></i> Previous</button>
+                    <button class="btn btn-primary" id="playPauseBtn"><i class="bi bi-play-fill"></i> Play</button>
+                    <button class="btn btn-info" id="nextBtn"><i class="bi bi-skip-forward-fill"></i> Skip</button>
+                </div>
+                <div class="info-box" id="trackInfo">
+                    <div class="track-container">
+                        <img class="track-image" src="unknown.png" alt="Track artwork" id="trackArt">
+                        <div class="track-details">
+                            <h3 id="trackTitle">TITLE</h3>
+                            <h5 id="trackArtists">Artists</h5>
+                        </div>
+                    </div>
+                    <div class="progress-container">
+                        <progress value="0" max="100" id="trackProgress"></progress>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Settings Tab -->
+            <div id="settings" class="tab-pane fade" role="tabpanel" aria-labelledby="settings-tab">
+                <h2>Settings</h2>
+                <div class="card bg-dark text-white mb-4">
+                    <div class="card-body">
+                        <h5 class="card-title">Twitch Account</h5>
+                        <div id="twitch-login-section">
+                            <div class="d-flex align-items-center gap-3 mb-3">
+                                <img id="twitch-avatar" src="" class="rounded-circle d-none" style="width: 48px; height: 48px;" alt="Profile Picture">
+                                <div>
+                                    <p class="mb-0" id="twitch-username">Not logged in</p>
+                                </div>
+                            </div>
+                            <button id="twitch-login-btn" class="btn btn-primary">
+                                <i class="bi bi-twitch me-2"></i>Login with Twitch
+                            </button>
+                            <button id="twitch-logout-btn" class="btn btn-outline-danger d-none">
+                                Logout
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="card bg-dark text-white mb-3">
+                    <div class="card-body">
+                        <h5 class="card-title">OBS Overlay URL</h5>
+                        <div class="input-group mb-3">
+                            <input type="text" class="form-control bg-secondary text-white" id="overlayPath" readonly>
+                            <button class="btn btn-primary" id="copyOverlayPath">
+                                <i class="fas fa-copy"></i> Copy
+                            </button>
+                        </div>
+                        <small class="text-muted">Add this as a Browser Source in OBS</small>
+                    </div>
+                </div>
+
+                <div class="card bg-dark text-white">
+                    <div class="card-body">
+                        <h5 class="card-title">Overlay Settings</h5>
+                        <form id="settingsForm">
+                            <div class="form-group">
+                                <!-- Theme Selector -->
+                                <label for="theme">Theme</label>
+                                <select class="form-control" id="theme">
+                                    <option value="default">Default</option>
+                                    <option value="custom">Custom (CHECK THE WIKI)</option>
+                                    <option value="gojo">Gojo</option>
+                                    <option value="hologram">Hologram</option>
+                                    <option value="ichinyan">Ichinyan</option>
+                                    <option value="mdev">MDev</option>
+                                    <option value="moonkingbean">MoonKingBean</option>
+                                    <option value="twinGhost">TwinGhost</option>
+                                </select>
+                            </div>
+                            <button type="submit" class="btn btn-primary">Save Settings</button>
+                            <div id="settingsAlert" class="alert alert-success d-none mt-3" role="alert">
+                                Settings saved successfully!
+                            </div>
+                        </form>
+                    </div>
+                </div>
+                <div class="card bg-dark text-white mt-3">
+                    <div class="card-body">
+                        <h5 class="card-title">Updates</h5>
+                        <div class="form-check mb-3">
+                            <input class="form-check-input" type="checkbox" id="check-pre-releases">
+                            <label class="form-check-label" for="check-pre-releases">
+                                Include pre-release versions
+                            </label>
+                            <small class="form-text text-muted d-block">Pre-releases may contain experimental features and bugs</small>
+                        </div>
+                        <button type="button" class="btn btn-primary" id="check-updates-btn">
+                            <i class="bi bi-cloud-download"></i> Check for Updates
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        let isPlaying = false;
+
+        const playPauseBtn = document.getElementById('playPauseBtn');
+
+
+        playPauseBtn.addEventListener('click', () => {
+            if (isPlaying) {
+                isPlaying = false;
+                window.api.pause();
+                playPauseBtn.innerHTML = '<i class="bi bi-play-fill"></i> Play';
+                console.log('Music paused');
+            } else {
+                isPlaying = true;
+                window.api.play();
+                playPauseBtn.innerHTML = '<i class="bi bi-pause-fill"></i> Pause';
+                console.log('Music playing');
+            }// Electron status update
+        });
+
+        document.getElementById('minimize-button').addEventListener('click', () => {
+            window.api.minimize(); // Electron minimize window
+        });
+
+        document.getElementById('close-button').addEventListener('click', () => {
+            window.api.close(); // Electron close window
+        });
+
+        document.getElementById('prevBtn').addEventListener('click', () => {
+            window.api.previous();
+        });
+
+        document.getElementById('nextBtn').addEventListener('click', () => {
+            window.api.skip();
+        });
+
+        document.getElementById('twitch-login-btn').addEventListener('click', () => {
+            window.api.twitchLogin();
+        });
+
+        document.getElementById('twitch-logout-btn').addEventListener('click', () => {
+            window.api.twitchLogout();
+        });
+
+        // document.getElementById('enableRequests').addEventListener('change', (e) => {
+        //     console.log('Enable Requests:', e.target.checked);
+        // });
+
+        // document.getElementById('modsOnly').addEventListener('change', (e) => {
+        //     console.log('Mods Only:', e.target.checked);
+        // });
+
+        // document.getElementById('requestLimit').addEventListener('change', (e) => {
+        //     console.log('Request Limit:', e.target.value);
+        // });
+
+        window.api.getInfo((info) => {
+            const trackArt = document.getElementById('trackArt');
+            const trackTitle = document.getElementById('trackTitle');
+            const trackArtists = document.getElementById('trackArtists');
+            const trackProgress = document.getElementById('trackProgress');
+
+
+            const dataTitle = info.title;
+            const dataArtists = []
+            const dataImage = info?.image ||info?.image_large_url || null;
+            let newImage;
+
+            if (info.artist_name) {
+                dataArtists.push(info.artist_name);
+            }
+
+            if (info['artist_name:1']) {
+                dataArtists.push(info['artist_name:1']); 
+            }
+            if (info['artist_name:2']) {
+                dataArtists.push(info['artist_name:2']); 
+            }
+            if (info['artist_name:3']) {
+                dataArtists.push(info['artist_name:3']); 
+            }
+            if (info['artist_name:4']) {
+                dataArtists.push(info['artist_name:4']); 
+            }
+            if (info['artist_name:5']) {
+                dataArtists.push(info['artist_name:5']);
+            }
+            if (dataImage != null){
+                if (dataImage.includes('spotify:image:')) {
+                    newImage = dataImage.replace('spotify:image:', 'https://i.scdn.co/image/');
+                } else if (dataImage.includes('data:image/')) {
+                    newImage = dataImage;
+                } else { 
+                    newImage = "styles/unknown.png";
+                }
+            } else {
+                newImage = "styles/unknown.png";
+            }
+            trackArt.src = newImage;
+            trackTitle.textContent = dataTitle;
+            trackArtists.textContent = dataArtists.join(', ');
+            // get percetnage from total duration and current duration
+            const trackDuration = info.duration;
+            const currentDuration = info.progress;
+
+            //make a percentage based on how long the song is played out of the total duration
+            const percentage = (currentDuration / trackDuration) * 100;
+            trackProgress.value = percentage;
+            isPlaying = info.isPlaying;
+
+            if (isPlaying) {
+                playPauseBtn.innerHTML = '<i class="bi bi-pause-fill"></i> Pause';
+            } else {
+                playPauseBtn.innerHTML = '<i class="bi bi-play-fill"></i> Play';
+            }
+        });
+        const loginBtn = document.getElementById('twitch-login-btn');
+        const logoutBtn = document.getElementById('twitch-logout-btn');
+        const avatar = document.getElementById('twitch-avatar');
+        const username = document.getElementById('twitch-username');
+
+
+        window.api.authSuccess((user) => {
+            loginBtn.classList.add('d-none');
+            logoutBtn.classList.remove('d-none');
+            avatar.src = user.profile_image_url;
+            avatar.classList.remove('d-none');
+            username.textContent = user.display_name;
+        });
+
+
+
+
+        // Initialize overlay path
+        const overlayPathInput = document.getElementById('overlayPath');
+        const copyOverlayPathBtn = document.getElementById('copyOverlayPath');
+
+        // Get and display overlay path
+        window.api.getOverlayPath().then(path => {
+            overlayPathInput.value = path;
+        });
+
+        // Copy overlay path
+        copyOverlayPathBtn.addEventListener('click', () => {
+            overlayPathInput.select();
+            document.execCommand('copy');
+            
+            // Visual feedback
+            const originalText = copyOverlayPathBtn.innerHTML;
+            copyOverlayPathBtn.innerHTML = '<i class="fas fa-check"></i> Copied!';
+            setTimeout(() => {
+                copyOverlayPathBtn.innerHTML = originalText;
+            }, 2000);
+        });
+
+        document.getElementById('settingsForm').addEventListener('submit', (e) => {
+            e.preventDefault();
+            saveSettings();
+        });
+
+        function saveSettings() {
+            const settings = {
+                theme: document.getElementById('theme').value
+            }
+            localStorage.setItem('settings', JSON.stringify(settings));
+            const settingsAlert = document.getElementById('settingsAlert');
+            settingsAlert.classList.remove('d-none');
+            setTimeout(() => {
+                settingsAlert.classList.add('d-none');
+            }, 2000);
+            window.api.sendSettings(settings);
+
+        }
+        window.api.preload();
+        document.getElementById('check-updates-btn').addEventListener('click', async () => {
+            await window.api.checkForUpdates();
+        });
+
+        const preReleaseCheckbox = document.getElementById('check-pre-releases');
+        
+        // Load initial pre-release setting
+        window.api.getUpdateSettings().then(settings => {
+            preReleaseCheckbox.checked = settings.checkPreReleases;
+        });
+
+        // Handle pre-release setting changes
+        preReleaseCheckbox.addEventListener('change', async (e) => {
+            await window.api.setPreReleaseCheck(e.target.checked);
+        });
+    </script>
+</body>
+</html>
