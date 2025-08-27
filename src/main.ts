@@ -296,6 +296,39 @@ ipcMain.handle('song-previous', (): void => {
     }
 });
 
+ipcMain.handle('song-like', (): void => {
+    if (WSServer) {
+        WSServer.WSSend({ command: 'like' } as WSCommand);
+    }
+});
+
+ipcMain.handle('song-volume', (event: Electron.IpcMainInvokeEvent, level: number): void => {
+    if (WSServer) {
+        WSServer.WSSend({ command: 'volume', data: { volume: level } } as WSCommand);
+    }
+});
+
+ipcMain.handle('song-seek', (event: Electron.IpcMainInvokeEvent, position: number): void => {
+    if (WSServer) {
+        WSServer.WSSend({ command: 'seek', data: { position } } as WSCommand);
+    }
+});
+
+ipcMain.handle('song-shuffle', (): void => {
+    if (WSServer) {
+        WSServer.WSSend({ command: 'shuffle' } as WSCommand);
+    }
+});
+
+ipcMain.handle('song-repeat', (): void => {
+    if (WSServer) {
+        WSServer.WSSend({ command: 'repeat' } as WSCommand);
+    }
+
+});
+
+
+
 ipcMain.handle('twitch-login', (): void => {
     createAuthWindow();
 });

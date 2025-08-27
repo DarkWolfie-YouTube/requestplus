@@ -14,7 +14,11 @@ interface Track {
   progress: number;
   cover: string;
   isPlaying: boolean;
+  volume: number;
+  shuffle: boolean;
+  repeat: number;
 }
+
 
 interface MusicPlayerProps {
   currentTrack: Track;
@@ -66,8 +70,33 @@ export function MusicPlayer({ currentTrack, setCurrentTrack }: MusicPlayerProps)
     });
 
     // You might want to add a seek API call here
-    // const api = (window as any).api;
-    // api.seek?.(newTime);
+    seek(newTime);
+  };
+
+  const seek = (newTime: number) => {
+    const api = (window as any).api;
+    api.seek?.(progressPercentage / 100);
+  };
+
+  const handleLike = () => {
+    setIsLiked(!isLiked);
+    const api = (window as any).api;
+    api.like?.();
+  };
+  const sVolume = (volume: number) => {
+    const api = (window as any).api;
+    api.volume?.(volume / 100);
+    setVolume(volume);
+  };
+
+  const handleRepeat = () => {
+    const api = (window as any).api;
+    api.repeat?.();
+  };
+
+  const handleShuffle = () => {
+    const api = (window as any).api;
+    api.shuffle?.();
   };
 
   const progressPercentage = currentTrack.duration > 0 
@@ -135,10 +164,10 @@ export function MusicPlayer({ currentTrack, setCurrentTrack }: MusicPlayerProps)
         {/* Secondary Controls */}
         <div className="flex items-center justify-between pt-1">
           <div className="flex items-center gap-1">
-            <Button variant="ghost" size="icon">
+            <Button variant="ghost" size="icon" onClick={handleShuffle}>
               <Shuffle className="h-4 w-4" />
             </Button>
-            <Button variant="ghost" size="icon">
+            <Button variant="ghost" size="icon" onClick={handleRepeat}>
               <Repeat className="h-4 w-4" />
             </Button>
           </div>
@@ -146,7 +175,7 @@ export function MusicPlayer({ currentTrack, setCurrentTrack }: MusicPlayerProps)
           <Button
             variant="ghost"
             size="icon"
-            onClick={() => setIsLiked(!isLiked)}
+            onClick={handleLike}
           >
             <Heart className={`h-5 w-5 ${isLiked ? 'fill-red-500 text-red-500' : ''}`} />
           </Button>
@@ -157,7 +186,7 @@ export function MusicPlayer({ currentTrack, setCurrentTrack }: MusicPlayerProps)
           <Volume2 className="h-4 w-4 text-muted-foreground" />
           <Slider
             value={volume}
-            onValueChange={setVolume}
+            onValueChange={sVolume}
             max={100}
             step={1}
             className="flex-1"

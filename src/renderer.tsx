@@ -29,6 +29,9 @@ interface TrackInfo {
   duration: number;
   progress: number;
   isPlaying: boolean;
+  volume?: number;
+  shuffle?: boolean;
+  repeat?: number;
 }
 
 interface TwitchUser {
@@ -107,7 +110,10 @@ const App = () => {
         duration: info.duration,
         progress: info.progress,
         cover: newImage,
-        isPlaying: info.isPlaying
+        isPlaying: info.isPlaying,
+        volume: info.volume || 100,
+        shuffle: info.shuffle || false,
+        repeat: info.repeat || 0
       });
     };
 

@@ -17,6 +17,9 @@ interface TrackData {
     image?: string;
     isPlaying?: boolean;
     progress?: number;
+    volume?: number;
+    shuffle?: boolean;
+    repeat?: number;
     [key: string]: any;
 }
 

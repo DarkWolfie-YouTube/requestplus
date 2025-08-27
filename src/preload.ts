@@ -10,6 +10,11 @@ interface ElectronAPI {
   playPause: () => Promise<void>;
   skip: () => Promise<void>;
   previous: () => Promise<void>;
+  like: () => Promise<void>;
+  volume: (level: number) => Promise<void>;
+  seek: (position: number) => Promise<void>;
+  shuffle: () => Promise<void>;
+  repeat: () => Promise<void>;
 
   // Twitch authentication
   twitchLogin: () => Promise<void>;
@@ -37,6 +42,8 @@ interface ElectronAPI {
 
   // Preload function
   preload: () => void;
+
+
 }
 
 // Create the API object
@@ -49,6 +56,11 @@ const electronAPI: ElectronAPI = {
   playPause: () => ipcRenderer.invoke('song-play'),
   skip: () => ipcRenderer.invoke('song-skip'),
   previous: () => ipcRenderer.invoke('song-previous'),
+  volume: (level) => ipcRenderer.invoke('song-volume', level),
+  seek: (position) => ipcRenderer.invoke('song-seek', position),
+  shuffle: () => ipcRenderer.invoke('song-shuffle'),
+  repeat: () => ipcRenderer.invoke('song-repeat'),
+  like: () => ipcRenderer.invoke('song-like'),
 
   // Twitch authentication
   twitchLogin: () => ipcRenderer.invoke('twitch-login'),
