@@ -36,10 +36,14 @@ module.exports = {
       },
     },
     {
-      name: '@electron-forge/maker-zip',
+      name: '@electron-forge/maker-dmg',
       platforms: ['darwin'],
       config: {
-        icon: 'build/icon.icns'
+        name: 'RequestPlus',
+        icon: path.resolve('build/icon.icns'),
+        format: 'ULFO',
+        overwrite: true,
+        debug: false
       }
     },
     {
