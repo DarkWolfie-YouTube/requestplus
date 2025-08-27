@@ -70,6 +70,9 @@ var requestplus = (() => {
                                     data: Spicetify.Queue.nextTracks[0].contextTrack.metadata,
                                     isPlaying: Spicetify.Player.isPlaying(),
                                     progress: 0,
+                                    volume: Spicetify.Player.getVolume(),
+                                    shuffle: Spicetify.Player.getShuffle(),
+                                    repeat: Spicetify.Player.getRepeat(),
                                 })
                             );
                             break;
@@ -82,6 +85,9 @@ var requestplus = (() => {
                                     data: Spicetify.Queue.track.contextTrack.metadata,
                                     isPlaying: Spicetify.Player.isPlaying(),
                                     progress: 0,
+                                    volume: Spicetify.Player.getVolume(),
+                                    shuffle: Spicetify.Player.getShuffle(),
+                                    repeat: Spicetify.Player.getRepeat(),
                                 })
                             );
                             break;
@@ -94,6 +100,9 @@ var requestplus = (() => {
                                     data: Spicetify.Queue.track.contextTrack.metadata,
                                     isPlaying: Spicetify.Player.isPlaying(),
                                     progress: Spicetify.Player.getProgress(),
+                                    volume: Spicetify.Player.getVolume(),
+                                    shuffle: Spicetify.Player.getShuffle(),
+                                    repeat: Spicetify.Player.getRepeat(),
                                 })
                             );
                             break;
@@ -106,6 +115,9 @@ var requestplus = (() => {
                                     data: Spicetify.Queue.track.contextTrack.metadata,
                                     isPlaying: Spicetify.Player.isPlaying(),
                                     progress: Spicetify.Player.getProgress(),
+                                    volume: Spicetify.Player.getVolume(),
+                                    shuffle: Spicetify.Player.getShuffle(),
+                                    repeat: Spicetify.Player.getRepeat(),
                                 })
                             );
                             break;
@@ -117,6 +129,9 @@ var requestplus = (() => {
                                     data: Spicetify.Queue.track.contextTrack.metadata,
                                     isPlaying: Spicetify.Player.isPlaying(),
                                     progress: Spicetify.Player.getProgress(),
+                                    volume: Spicetify.Player.getVolume(),
+                                    shuffle: Spicetify.Player.getShuffle(),
+                                    repeat: Spicetify.Player.getRepeat(),
                                 })
                             );
                             break;
@@ -131,6 +146,9 @@ var requestplus = (() => {
                                             data: Spicetify.Queue.track.contextTrack.metadata,
                                             isPlaying: Spicetify.Player.isPlaying(),
                                             progress: Spicetify.Player.getProgress(),
+                                            volume: Spicetify.Player.getVolume(),
+                                            shuffle: Spicetify.Player.getShuffle(),
+                                            repeat: Spicetify.Player.getRepeat(),
                                         })
                                     );
                                     let newURI = messageData.data.uri.replace("spotify:track:", "");
