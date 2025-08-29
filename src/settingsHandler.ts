@@ -4,6 +4,11 @@ import * as path from 'node:path';
 // Type definitions for settings structure
 interface Settings {
     theme?: string;
+    showNotifications?: boolean;
+    enableRequests?: boolean;
+    modsOnly?: boolean;
+    requestLimit?: number;
+    autoPlay?: boolean;
     [key: string]: any; // Allow additional properties
 }
 

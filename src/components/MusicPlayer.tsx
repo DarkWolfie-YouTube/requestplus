@@ -1,9 +1,9 @@
 import * as React from 'react';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from './ui/button';
 import { Card } from './ui/card';
 import { Slider } from './ui/slider';
-import { Volume2, Heart, SkipBack, Play, Pause, SkipForward, Repeat, Shuffle } from 'lucide-react';
+import { Volume2, Heart, SkipBack, Play, Pause, SkipForward, Repeat, Shuffle, Repeat1 } from 'lucide-react';
 import { ImageWithFallback } from './figma/ImageWithFallback';
 
 interface Track {
@@ -17,8 +17,8 @@ interface Track {
   volume: number;
   shuffle: boolean;
   repeat: number;
+  isLiked: boolean;
 }
-
 
 interface MusicPlayerProps {
   currentTrack: Track;
@@ -26,8 +26,14 @@ interface MusicPlayerProps {
 }
 
 export function MusicPlayer({ currentTrack, setCurrentTrack }: MusicPlayerProps) {
-  const [volume, setVolume] = useState([75]);
-  const [isLiked, setIsLiked] = useState(false);
+  const [volume, setVolume] = useState([Math.floor(currentTrack.volume * 100)]);
+  const [isLiked, setIsLiked] = useState(currentTrack.isLiked);
+
+  // Update local state when currentTrack changes
+  useEffect(() => {
+    setVolume([Math.floor(currentTrack.volume * 100)]);
+    setIsLiked(currentTrack.isLiked);
+  }, [currentTrack.volume, currentTrack.isLiked]);
 
   const formatTime = (milliseconds: number) => {
     const totalSeconds = Math.floor(milliseconds / 1000);
@@ -75,18 +81,35 @@ export function MusicPlayer({ currentTrack, setCurrentTrack }: MusicPlayerProps)
 
   const seek = (newTime: number) => {
     const api = (window as any).api;
-    api.seek?.(progressPercentage / 100);
+    api.seek?.(newTime);
   };
 
   const handleLike = () => {
-    setIsLiked(!isLiked);
+    const newLikedState = !isLiked;
+    setIsLiked(newLikedState);
+    
+    // Update the track state as well
+    setCurrentTrack({
+      ...currentTrack,
+      isLiked: newLikedState
+    });
+    
     const api = (window as any).api;
     api.like?.();
   };
-  const sVolume = (volume: number) => {
+
+  const handleVolumeChange = (value: number[]) => {
+    const newVolume = value[0];
+    setVolume([newVolume]);
+    
+    // Update the track state as well
+    setCurrentTrack({
+      ...currentTrack,
+      volume: newVolume / 100
+    });
+    
     const api = (window as any).api;
-    api.volume?.(volume / 100);
-    setVolume(volume);
+    api.volume?.(newVolume / 100);
   };
 
   const handleRepeat = () => {
@@ -165,10 +188,21 @@ export function MusicPlayer({ currentTrack, setCurrentTrack }: MusicPlayerProps)
         <div className="flex items-center justify-between pt-1">
           <div className="flex items-center gap-1">
             <Button variant="ghost" size="icon" onClick={handleShuffle}>
-              <Shuffle className="h-4 w-4" />
+              { currentTrack.shuffle ? (
+                <Shuffle className="h-4 w-4 text-muted-foreground" />
+              ) : (
+                <Shuffle className="h-4 w-4" />
+              ) }
             </Button>
             <Button variant="ghost" size="icon" onClick={handleRepeat}>
-              <Repeat className="h-4 w-4" />
+              {/* make a repeat button on 3 different states */}
+              { currentTrack.repeat == 0? (
+                <Repeat className="h-4 w-4" />
+              ) : currentTrack.repeat == 1? (
+                <Repeat className="h-4 w-4 text-muted-foreground" />
+              ) : (
+                <Repeat1 className="h-4 w-4 text-muted-foreground" />
+              )}
             </Button>
           </div>
 
@@ -177,7 +211,11 @@ export function MusicPlayer({ currentTrack, setCurrentTrack }: MusicPlayerProps)
             size="icon"
             onClick={handleLike}
           >
-            <Heart className={`h-5 w-5 ${isLiked ? 'fill-red-500 text-red-500' : ''}`} />
+            {isLiked ? (
+              <Heart className="h-4 w-4 text-red-500 fill-red-500" />
+            ) : (
+              <Heart className="h-4 w-4" />
+            )}
           </Button>
         </div>
 
@@ -186,7 +224,7 @@ export function MusicPlayer({ currentTrack, setCurrentTrack }: MusicPlayerProps)
           <Volume2 className="h-4 w-4 text-muted-foreground" />
           <Slider
             value={volume}
-            onValueChange={sVolume}
+            onValueChange={handleVolumeChange}
             max={100}
             step={1}
             className="flex-1"

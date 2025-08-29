@@ -68,6 +68,7 @@ interface RetrievedTokenData {
     display_name: string;
     access_token: string;
     expiresAt: number;
+    scopes: string[];
 }
 
 interface Logger {
@@ -226,11 +227,11 @@ class AuthManager {
 
     async getStoredToken(): Promise<RetrievedTokenData | null> {
         try {
-            console.log('Retrieving stored token from:', this.tokenFilePath);
+            
             if (!fs.existsSync(this.tokenFilePath)) {
                 return null;
             }
-            console.log('Token file exists, reading data...');
+            
             const tokenData: StoredTokenData = JSON.parse(fs.readFileSync(this.tokenFilePath, 'utf8'));
 
             // Check if token has expired
@@ -241,25 +242,24 @@ class AuthManager {
                 this.clearToken();
                 return null;
             }
-            console.log('Token is still valid, proceeding to decrypt and validate.');
-
+            
             // Decrypt the access token
             const accessToken = this.decrypt(
                 tokenData.encryptedToken.content,
                 tokenData.encryptedToken.key,
                 tokenData.encryptedToken.iv
             );
-            console.log('Decrypted access token:', accessToken);
+            
             
             // Validate the token
             const validationResult = await this.validateToken(accessToken);
-            console.log('Token validation result:', validationResult);
+            
             if (!validationResult.valid) {
                 this.logger.warn('Stored token is invalid:', validationResult.error);
                 this.clearToken();
                 return null;
             }
-            console.log('Token is valid, returning user data.');
+           
             
             return {
                 id: tokenData.id,
@@ -268,7 +268,8 @@ class AuthManager {
                 profile_image_url: tokenData.profile_image_url,
                 display_name: tokenData.display_name,
                 access_token: accessToken,
-                expiresAt: tokenData.expiresAt
+                expiresAt: tokenData.expiresAt,
+                scopes: validationResult.data?.scopes || []
             };
         } catch (error) {
             this.logger.error('Error retrieving token:', error);

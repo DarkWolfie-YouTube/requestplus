@@ -1,6 +1,9 @@
 import * as tmi from 'tmi.js';
 import { setTimeout as wait } from 'node:timers/promises';
 import { BrowserWindow } from 'electron';
+import { Settings } from './settingsHandler';
+import { RequestData } from './websocket';
+import QueueHandler from './queueHandler';
 
 // Type definitions
 interface TwitchAuth {
@@ -24,17 +27,9 @@ interface WSCommand {
 
 interface WSServerInterface {
     WSSend(message: WSCommand): void;
-    lastReq: SpotifyTrackInfo | null;
+    lastReq: RequestData | null;
 }
 
-interface SpotifyArtist {
-    name: string;
-}
-
-interface SpotifyTrackInfo {
-    name: string;
-    artists: SpotifyArtist[] | null;
-}
 
 interface TMIClientOptions {
     options: {
@@ -56,14 +51,18 @@ class ChatHandler {
     private mainWindow: BrowserWindow | null;
     private WSServer: WSServerInterface;
     private Client: tmi.Client;
+    private settings: Settings;
+    private queueHandler: QueueHandler;
 
-    constructor(logger: Logger, mainWindow: BrowserWindow, twitchAuth: TwitchAuth, WSServer: WSServerInterface) {
+    constructor(logger: Logger, mainWindow: BrowserWindow, twitchAuth: TwitchAuth, WSServer: WSServerInterface, settings: Settings, queueHandler: QueueHandler) {
         this.mainWindow = mainWindow;
         this.logger = logger;
         this.WSServer = WSServer;
+        this.settings = settings;
+        this.queueHandler = queueHandler;
 
         const clientOptions: TMIClientOptions = {
-            options: { debug: true },
+            options: { debug: false },
             connection: {
                 reconnect: true,
                 secure: true
@@ -81,11 +80,17 @@ class ChatHandler {
 
     private setupEventHandlers(): void {
         this.Client.on('message', async (channel: string, tags: tmi.ChatUserstate, message: string, self: boolean): Promise<void> => {
-            console.log(message);
             
             if (message.toLowerCase().startsWith('!sr')) {
                 const request = message.split(' ').slice(1).join(' ');
-                console.log(request);
+                if (this.settings.enableRequests === false) { 
+                    this.Client.say(channel, `Request+: Song requests are currently disabled.`);
+                    return;
+                }
+                if (this.settings.modsOnly === true && !tags.mod && tags.username?.toLowerCase() !== channel.replace('#', '').toLowerCase()) {
+                    this.Client.say(channel, `Request+: Only moderators can use song requests.`);
+                    return;
+                }
                 
                 if (request.includes("https://open.spotify.com/")) {
                     // Check for invalid link types
@@ -109,15 +114,48 @@ class ChatHandler {
                     } else {
                         id = ida;
                     }
-                    
+                    if (this.settings.autoPlay) {
+                        this.WSServer.WSSend({ command: 'getInfo', data: { uri: `spotify:track:${id}` } });
+                        await wait(500);
+                        if (this.WSServer.lastReq) {
+                            const response = this.WSServer.lastReq as RequestData;
+                            if (response.artists != null) {
+                                const dataArtists: string[] = [];
+                                for (const artist of response.artists) {
+                                    dataArtists.push(artist.name);
+                                } 
+                                const artists = dataArtists.join(", ");
+                                const title = response.name;
+                                
+                                // Get album art URL
+                                let coverUrl = 'styles/unknown.png';
+                                if (response.album?.images && response.album.images.length > 0) {
+                                    // Use the largest image (first in array)
+                                    coverUrl = response.album.images[0].url;
+                                }
+                                
+                                this.Client.say(channel, `Request+: Added ${title} by ${artists} to the moderation queue.`);
+                                await this.queueHandler.addToQueue({
+                                    id: id,
+                                    title: title,
+                                    artist: artists,
+                                    album: response.album.name,
+                                    duration: response.duration_ms,
+                                    requestedBy: tags.username || "Unknown",
+                                    iscurrentlyPlaying: false,
+                                    cover: coverUrl // Add the cover image
+                                });
+                                return;
+                            } 
+                        }
+                    }
+                
                     this.WSServer.WSSend({ command: 'addTrack', data: { uri: `spotify:track:${id}` } });
-                    await wait(2000);
+                    await wait(500);
                     
                     if (this.WSServer.lastReq) {
                         const dataArtists: string[] = [];
                         const response = this.WSServer.lastReq;
-                        console.log(response.name);
-                        console.log(response.artists != null);
                         
                         if (response.artists != null) {
                             for (const artist of response.artists) {
@@ -134,8 +172,32 @@ class ChatHandler {
                 } else {
                     this.Client.say(channel, `Request+: Please provide a spotify track link! Usage: !sr <link>`);
                 }
+        }
+            if (message.toLowerCase().startsWith('!srhelp')) {
+                this.Client.say(channel, `Request+ Commands: !sr <spotify track link> - Request a song. !srhelp - Show this help message.`);
+            }
+            if (message.toLowerCase().startsWith('!remove')) {
+                if (!tags.mod && tags.username?.toLowerCase() !== channel.replace('#', '').toLowerCase()) {
+                    this.Client.say(channel, `Request+: Only moderators can remove songs from the queue.`);
+                    return;
+                }
+                const indexStr = message.split(' ')[1];
+                const indexraw = parseInt(indexStr, 10);
+                const index = indexraw - 1; // Convert to zero-based index
+
+                if (isNaN(index)) {
+                    this.Client.say(channel, `Request+: Please provide a valid number.`);
+                    return;
+                }
+                if (index < 0 || index >= this.queueHandler.queue.items.length) {
+                    this.Client.say(channel, `Request+: Please provide a valid number.`);
+                    return;
+                }
+                this.Client.say(channel, `Request+: Removed ${this.queueHandler.queue.items[index].title} by ${this.queueHandler.queue.items[index].artist} from the queue.`);
+                await this.queueHandler.removeFromQueue(index);
             }
         });
+        
     }
 
     async connect(): Promise<void> {
@@ -144,6 +206,10 @@ class ChatHandler {
 
     async disconnect(): Promise<void> {
         await this.Client.disconnect();
+    }
+
+    async updateSettings(settinga: Settings): Promise<void> {
+        this.settings = settinga;
     }
 }
 

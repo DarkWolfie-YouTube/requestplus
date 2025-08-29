@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
+import { Queue } from './queueHandler';
 
 // Define the API interface
 interface ElectronAPI {
@@ -15,6 +16,14 @@ interface ElectronAPI {
   seek: (position: number) => Promise<void>;
   shuffle: () => Promise<void>;
   repeat: () => Promise<void>;
+
+  // Queue controls
+  getQueue: () => Promise<Queue>;
+  removeFromQueue: (index: number) => Promise<boolean>;
+  clearQueue: () => Promise<boolean>;
+  playTrackAtIndex: (index: number) => Promise<boolean>;
+  updateQueuePage: (callback: (queue: Queue) => void) => void;
+  removeQueueListener: () => void;
 
   // Twitch authentication
   twitchLogin: () => Promise<void>;
@@ -40,10 +49,15 @@ interface ElectronAPI {
   // First time setup
   runFirstTime: () => Promise<void>;
 
+  // Toast notifications
+  onToast: (callback: (event: any, toastData: any) => void) => void;
+  removeToastListener: () => void;
+
+  // Debug function
+  debugAddQueueItem?: () => Promise<void>;
+
   // Preload function
   preload: () => void;
-
-
 }
 
 // Create the API object
@@ -61,6 +75,46 @@ const electronAPI: ElectronAPI = {
   shuffle: () => ipcRenderer.invoke('song-shuffle'),
   repeat: () => ipcRenderer.invoke('song-repeat'),
   like: () => ipcRenderer.invoke('song-like'),
+
+  // Queue controls
+  getQueue: () => {
+    console.log('Getting queue via IPC');
+    return ipcRenderer.invoke('get-queue');
+  },
+  
+  removeFromQueue: (index) => {
+    console.log('Removing from queue index:', index);
+    return ipcRenderer.invoke('remove-from-queue', index);
+  },
+  
+  clearQueue: () => {
+    console.log('Clearing queue via IPC');
+    return ipcRenderer.invoke('clear-queue');
+  },
+  
+  playTrackAtIndex: (index) => {
+    console.log('Playing track at index:', index);
+    return ipcRenderer.invoke('play-track-at-index', index);
+  },
+  
+  // Queue update listener - this is the key fix
+  updateQueuePage: (callback) => {
+    console.log('Setting up queue update listener in preload');
+    
+    // Remove any existing listeners first
+    ipcRenderer.removeAllListeners('update-queue');
+    
+    // Set up the new listener
+    ipcRenderer.on('update-queue', (event, queue) => {
+      console.log('Queue update received in preload:', queue);
+      callback(queue); // Call the renderer callback with just the queue data
+    });
+  },
+  
+  removeQueueListener: () => {
+    console.log('Removing queue update listener');
+    ipcRenderer.removeAllListeners('update-queue');
+  },
 
   // Twitch authentication
   twitchLogin: () => ipcRenderer.invoke('twitch-login'),
@@ -89,6 +143,22 @@ const electronAPI: ElectronAPI = {
 
   // First time setup
   runFirstTime: () => ipcRenderer.invoke('runFirstTime'),
+
+  // Toast handling
+  onToast: (callback) => {
+    console.log('Setting up toast listener in preload');
+    ipcRenderer.on('show-toast', (event, toastData) => {
+      console.log('Toast received in preload:', toastData);
+      callback(event, toastData);
+    });
+  },
+  
+  removeToastListener: () => {
+    ipcRenderer.removeAllListeners('show-toast');
+  },
+
+  // Debug function (optional - for testing)
+  debugAddQueueItem: () => ipcRenderer.invoke('debug-add-queue-item'),
 
   // Preload function
   preload: () => {

@@ -1,4 +1,5 @@
 import websocket from './websocket';
+import { TrackData } from './websocket';
 import { app, BrowserWindow, ipcMain, dialog, shell, MessageBoxOptions, MessageBoxReturnValue } from 'electron';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -11,6 +12,7 @@ import { Settings } from './settingsHandler';
 import * as os from 'node:os';
 import { setTimeout as wait } from 'node:timers/promises';
 import { checkForUpdates } from './updateChecker';
+import QueueHandler, { Queue } from './queueHandler';
 import { exec } from 'child_process';
 
 // Type definitions
@@ -59,18 +61,167 @@ const TWITCH_REDIRECT_URI: string = 'http://localhost:444';
 const TWITCH_SCOPES: string[] = ['user:read:email', 'chat:read', 'chat:edit'];
 
 // Global variables with proper typing
-let WSServer: any; // Type this according to your websocket class
-let currentSongInformation: any;
+let WSServer: websocket; // Type this according to your websocket class
+let currentSongInformation: TrackData; // Define currentTrackInfo interface as needed
 let mainWindow: BrowserWindow | null = null;
-let AuthManager: any; // Type this according to your Auth class
-let Logger: any; // Type this according to your logger class
-let chatHandler: any | null = null; // Type this according to your ChatHandler class
+let AuthManager: Auth; // Type this according to your Auth class
+let Logger: logger; // Type this according to your logger class
+let chatHandler: ChatHandler; // Type this according to your ChatHandler class
 let settings: Settings;
 let overlayPath: string;
 let apiHandler: APIHandler; // Type this according to your apiHandler class
 let settingsHandler: SettingsHandler; // Type this according to your settingsHandler class
 let twitchAccessToken: string | undefined;
 let twitchUser: TwitchUser | undefined;
+let queueHandler: QueueHandler;
+let currentTrackId: string | null = null;
+let currentTrackId2: string | null = null;
+let autoQueueTriggered: boolean = false;
+let lastTrackProgress: number = 0;
+
+
+// Auto-queue monitor function
+function monitorTrackProgress(trackData: TrackData): void {
+    if (!queueHandler || !trackData) return;
+
+    // Skip if track is not currently playing
+    if (!trackData.isPlaying) return;
+
+    // Skip if track progress is not available
+    if (!trackData.progress) return;
+
+    // Skip if track duration is not available
+    if (!trackData.duration) return;
+
+
+
+    const queue = queueHandler.getQueue();
+    if (queue.items.length === 0) return;
+
+    // Get current track info
+    const progress = trackData.progress || 0;
+    const duration = trackData.duration || 0;
+    const trackId = trackData.id || trackData.uri;
+
+    // Reset auto-queue trigger when a new track starts
+    if (currentTrackId !== trackId) {
+        currentTrackId = trackId;
+        autoQueueTriggered = false;
+        lastTrackProgress = progress;
+        Logger.info(`New track detected: ${trackId}`);
+        
+        // Check if this track matches any queue item and mark as currently playing
+        checkCurrentlyPlayingTrack(trackData);
+        return;
+    }
+
+    // Skip if duration is not available
+    if (duration <= 0) return;
+
+    // Calculate time remaining in milliseconds
+    const timeRemaining = duration - progress;
+    const TEN_SECONDS = 10000; // 10 seconds in milliseconds
+
+    // Trigger auto-queue when 10 seconds remaining and not already triggered
+    if (timeRemaining <= TEN_SECONDS && timeRemaining > 0 && !autoQueueTriggered) {
+        Logger.info(`Track ending soon (${Math.floor(timeRemaining / 1000)}s remaining), adding next queue item`);
+        autoQueueNextTrack();
+        autoQueueTriggered = true;
+    }
+
+    lastTrackProgress = progress;
+}
+
+// Function to add the next track from queue to Spotify queue
+async function autoQueueNextTrack(): Promise<void> {
+    if (!queueHandler || !WSServer) return;
+
+    const queue = queueHandler.getQueue();
+    if (queue.items.length === 0) {
+        Logger.info('No items in queue to auto-add');
+        return;
+    }
+
+    // Get the first item in queue (index 0)
+    const nextTrack = queue.items[0];
+    
+    try {
+        // Add track to Spotify queue
+        WSServer.WSSend({
+            command: 'addTrack',
+            data: { uri: `spotify:track:${nextTrack.id}` }
+        });
+
+        Logger.info(`Auto-queued track: ${nextTrack.title} by ${nextTrack.artist}`);
+        
+        // Show toast notification
+        sendToast(
+            `Auto-queued: ${nextTrack.title} by ${nextTrack.artist}`,
+            'info',
+            4000
+        );
+
+        // Mark this track as queued for auto-play (we'll handle the currently playing update when it actually starts)
+        await queueHandler.setTrackAsQueued(0);
+
+    } catch (error) {
+        Logger.error('Error auto-queueing track:', error);
+        sendToast('Failed to auto-queue next track', 'error', 3000);
+    }
+}
+
+// Function to check if currently playing track matches any queue item
+async function checkCurrentlyPlayingTrack(trackData: TrackData): Promise<void> {
+    if (!queueHandler || !trackData) return;
+
+    const queue = queueHandler.getQueue();
+    if (queue.items.length === 0) return;
+
+    // Extract track ID from various possible sources
+    let trackId = trackData.id;
+    if (!trackId && trackData.uri) {
+        trackId = trackData.uri.replace('spotify:track:', '');
+    }
+    if (!trackId) return;
+
+    if (trackId.includes('spotify:track:')) {
+        trackId = trackId.replace('spotify:track:', '');
+    }
+
+    // Find matching track in queue by ID
+    const matchingTrackIndex = queue.items.findIndex(item => item.id === trackId);
+
+
+    if (matchingTrackIndex !== -1) {
+        if (currentTrackId2 === trackId) {
+            // Already marked as currently playing
+            return;
+        }
+        Logger.info(`Currently playing track matches queue item at index ${matchingTrackIndex}`);
+        
+        // Set this track as currently playing
+        await queueHandler.setCurrentlyPlaying(matchingTrackIndex);
+        
+        // Show notification
+        const track = queue.items[matchingTrackIndex];
+        sendToast(
+            `Now Playing from Queue: ${track.title}`,
+            'success',
+            3000
+        );
+        Logger.info(`Now playing from queue: ${track.title} by ${track.artist}`);
+        
+        // Mark this track as currently playing
+        currentTrackId2 = trackId;
+
+        // Remove the track from queue after a short delay (it's now playing)
+        setTimeout(async () => {
+            await queueHandler.removeFromQueue(matchingTrackIndex);
+            Logger.info(`Removed played track from queue: ${track.title}`);
+            currentTrackId2 = '';
+        }, 20000);
+    }
+}
 
 // Declare global variables that might be set by build process
 declare const MAIN_WINDOW_VITE_DEV_SERVER_URL: string | undefined;
@@ -84,45 +235,6 @@ async function createAuthWindow(): Promise<void> {
     shell.openExternal(authUrl);
 }
 
-async function handleAuthCallback(event: any, url: string): Promise<void> {
-    Logger.info('Navigated to:', url);
-    if (url.includes('#access_token=')) {
-        const token: string = url.split('#access_token=')[1].split('&')[0];
-        twitchAccessToken = token;
-        
-        // Get user info
-        try {
-            const response = await fetch('https://api.twitch.tv/helix/users', {
-                headers: {
-                    'Client-ID': TWITCH_CLIENT_ID,
-                    'Authorization': `Bearer ${token}`
-                }
-            });
-            const data: TwitchApiResponse = await response.json();
-            twitchUser = data.data[0];
-            mainWindow?.webContents.send('twitch-auth-success', twitchUser);
-
-            // Save token to file
-            const tokenData: TwitchTokenData = {
-                access_token: token,
-                id: twitchUser.id,
-                login: twitchUser.login,
-                display_name: twitchUser.display_name,
-                profile_image_url: twitchUser.profile_image_url,
-                email: twitchUser.email,
-                scopes: TWITCH_SCOPES
-            };
-            await AuthManager.saveToken(tokenData);
-
-            if (!chatHandler) {
-                chatHandler = new ChatHandler(Logger, mainWindow, tokenData, WSServer);
-                chatHandler.connect();
-            }
-        } catch (error) {
-            Logger.error('Error fetching user data:', error);
-        }
-    }
-}
 
 async function ensureOverlayFile(): Promise<string> {
     const userDataPath: string = app.getPath('userData');
@@ -166,9 +278,11 @@ async function ensureOverlayFile(): Promise<string> {
 async function createWindow(): Promise<void> {
     ensureOverlayFile();
 
+    
+
     mainWindow = new BrowserWindow({
         width: 500,
-        height: 900,
+        height: 1080,
         webPreferences: {
             nodeIntegration: false,
             contextIsolation: true,
@@ -201,6 +315,7 @@ async function createWindow(): Promise<void> {
         Logger = new logger();
         Logger.info('Logger initialized');
     }
+    queueHandler = new QueueHandler(Logger, WSServer, mainWindow, settings);
 
     AuthManager = new Auth(userDataPath, Logger, mainWindow);
     if (!WSServer) {
@@ -210,7 +325,7 @@ async function createWindow(): Promise<void> {
     // Check for existing valid token
     await checkStoredToken();
 
-    await checkForUpdates(mainWindow, false, Logger);
+    await checkForUpdates(mainWindow, Logger);
 
     if (!apiHandler) {
         apiHandler = new APIHandler(mainWindow, WSServer, Logger, settings, (tokenData: TwitchTokenData) => AuthManager.saveToken(tokenData));
@@ -224,14 +339,12 @@ async function createWindow(): Promise<void> {
 async function checkStoredToken(): Promise<void> {
     try {
         const storedToken: TwitchTokenData | null = await AuthManager.getStoredToken();
-        console.log('Stored token:', storedToken);
         if (storedToken) {
             twitchAccessToken = storedToken.access_token;
             twitchUser = storedToken as TwitchUser;
-            console.log('Twitch user from stored token:', twitchUser);
             mainWindow?.webContents.send('twitch-auth-success', twitchUser);
             if (!chatHandler) {
-                chatHandler = new ChatHandler(Logger, mainWindow, ({ login: twitchUser.login, access_token: twitchAccessToken }), WSServer);
+                chatHandler = new ChatHandler(Logger, mainWindow, ({ login: twitchUser.login, access_token: twitchAccessToken }), WSServer, settings, queueHandler);
                 chatHandler.connect();
             }
         }
@@ -246,10 +359,13 @@ ipcMain.handle('load-settings', async (): Promise<Settings> => {
     return settingsHandler.load();
 });
 
-ipcMain.handle('save-settings', (event: Electron.IpcMainInvokeEvent, settings: Settings): Promise<void> => {
+ipcMain.handle('save-settings', (event: Electron.IpcMainInvokeEvent, settinga: Settings): Promise<void> => {
     return new Promise((resolve, reject) => {
-        var saved = settingsHandler.save(settings);
+        var saved = settingsHandler.save(settinga);
+
         if (saved) {
+            settings = settinga;
+            chatHandler.updateSettings(settings);
             resolve();
         } else {
             reject(new Error('Failed to save settings'));
@@ -400,9 +516,9 @@ ipcMain.handle('runFirstTime', async (): Promise<void> => {
     await makeFirstRunPopup();
 });
 
-// Add update checker IPC handler
+// Add update checker IPC handlers
 ipcMain.handle('check-for-updates', (): void => {
-    checkForUpdates(mainWindow, false, Logger);
+    checkForUpdates(mainWindow, Logger);
 });
 
 ipcMain.handle('get-update-settings', (): UpdateSettings => {
@@ -429,9 +545,54 @@ app.on('activate', (): void => {
     }
 });
 
-function requestTrackInfo(): void {
+ipcMain.handle('get-queue', (): Queue => {
+    if (queueHandler) {
+        return queueHandler.getQueue();
+    }
+    return { items: [], currentCount: 0, currentlyPlayingIndex: -1 };
+});
+
+ipcMain.handle('remove-from-queue', async  (event: Electron.IpcMainInvokeEvent, index: number): Promise<boolean> => {
+    return queueHandler ? queueHandler.removeFromQueue(index) : false;
+});
+
+ipcMain.handle('clear-queue', async (): Promise<boolean> => {
+    return queueHandler ? queueHandler.clearQueue() : false;
+});
+
+async function requestTrackInfo(): Promise<void> {
     if (WSServer) {
         WSServer.WSSend({ command: 'getdata' } as WSCommand);
+        
+        currentSongInformation = WSServer.lastInfo;
+        if (currentSongInformation) {
+            monitorTrackProgress(currentSongInformation);
+            await wait(2000);
+            checkCurrentlyPlayingTrack(currentSongInformation);
+        }
+    }
+}
+
+
+function sendToast(message: string, type: 'info' | 'success' | 'error' | 'warning' = 'info', duration: number = 5000): void {
+    if (!mainWindow || mainWindow.isDestroyed()) {
+        console.warn('Cannot send toast - window is null or destroyed');
+        return;
+    }
+    
+    try {
+        // Create a simple, serializable object
+        const toastData = {
+            message: String(message),
+            type: String(type),
+            duration: Number(duration)
+        };
+    
+        
+        // Send the toast data to the renderer
+        mainWindow.webContents.send('show-toast', toastData);
+    } catch (error) {
+        console.error('Error sending toast:', error);
     }
 }
 

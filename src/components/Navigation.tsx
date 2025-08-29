@@ -1,5 +1,5 @@
 import { Button } from './ui/button';
-import { Music, Settings, Home } from 'lucide-react';
+import { Music, Settings, Home, List} from 'lucide-react';
 import * as React from 'react';
 import { useState } from 'react';
 
@@ -21,6 +21,16 @@ export function Navigation({ currentView, onViewChange }: NavigationProps) {
           >
             <Music className="h-4 w-4" />
             Player
+          </Button>
+
+          <Button
+            variant={currentView === 'queue' ? 'default' : 'ghost'}
+            size="sm"
+            onClick={() => onViewChange('queue')}
+            className="flex-1 gap-2"
+          >
+            <List className="h-4 w-4" />
+            Queue
           </Button>
           
           <Button

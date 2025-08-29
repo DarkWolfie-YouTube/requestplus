@@ -20,6 +20,8 @@ interface TrackData {
     volume?: number;
     shuffle?: boolean;
     repeat?: number;
+    isLiked?: boolean;
+    id?: string;
     [key: string]: any;
 }
 
@@ -28,6 +30,12 @@ interface ParsedMessage {
     data?: TrackData;
     isPlaying?: boolean;
     progress?: number;
+    volume?: number;
+    shuffle?: boolean;
+    repeat?: number;
+    isLiked?: boolean;
+    id?: string;
+    [key: string]: any;
 }
 
 interface WSCommand {
@@ -39,8 +47,26 @@ interface WSCommand {
 interface RequestData {
     name: string;
     artists: Array<{ name: string }>;
+    album: SpotifyAlbum | null;
     [key: string]: any;
 }
+
+interface SpotifyAlbum {
+    album_type: string;
+    total_tracks: number;
+    available_markets: string[];
+    external_urls: { spotify: string };
+    href: string;
+    id: string;
+    images: Array<{ height: number; width: number; url: string }>;
+    name: string;
+    release_date: string;
+    release_date_precision: string;
+    restrictions?: { reason: string };
+    type: string;
+    uri: string;
+}
+
 
 class WebSocketServer {
     private port: number;
@@ -104,11 +130,31 @@ class WebSocketServer {
                     });
 
                     if (parsed.command === "currentTrack") {
-                        const data: TrackData = {
+                         const data: TrackData = {
                             ...parsed.data,
                             isPlaying: parsed.isPlaying,
-                            progress: parsed.progress
+                            progress: parsed.progress,
+                            volume: parsed.volume,
+                            shuffle: parsed.shuffle,
+                            repeat: parsed.repeat,
+                            isLiked: parsed.isLiked,
+                            id: parsed.id
                         };
+
+                        // Add track ID extraction for auto-queue system
+                        if (parsed.data) {
+                            // Extract track ID from URI or use existing ID
+                            if (parsed.data.uri && parsed.data.uri.includes('spotify:track:')) {
+                                data.id = parsed.data.uri.replace('spotify:track:', '');
+                            } else if (parsed.data.id) {
+                                data.id = parsed.data.id;
+                            }
+
+                            // Extract duration if available
+                            if (parsed.data.duration_ms) {
+                                data.duration = parsed.data.duration_ms;
+                            }
+                        }
 
                         if (data.local_file_path) {
                             try {
@@ -124,11 +170,21 @@ class WebSocketServer {
 
                         this.lastInfo = data;
                         this.mainWindow.webContents.send('song-info', data);
+                        
+                        // Notify main process for auto-queue monitoring
+                        try {
+                            // Import the global function (you'll need to set this up in main.ts)
+                            if ((global as any).setCurrentSongInformation) {
+                                (global as any).setCurrentSongInformation(data);
+                            }
+                        } catch (error) {
+                            this.logger.error('Error updating current song information:', error);
+                        }
+                        
                         return;
                     }
                     
                     if (parsed.command === "requestHandled") {
-                        console.log(parsed.command, parsed.data);
                         this.logger.info('Request handled for: ', parsed.data);
                         this.lastReq = parsed.data as RequestData;
                         return;
@@ -185,3 +241,4 @@ class WebSocketServer {
 }
 
 export default WebSocketServer;
+export {TrackData, RequestData, ParsedMessage}

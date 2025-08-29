@@ -58,6 +58,8 @@ var requestplus = (() => {
                                     volume: Spicetify.Player.getVolume(),
                                     shuffle: Spicetify.Player.getShuffle(),
                                     repeat: Spicetify.Player.getRepeat(),
+                                    isLiked: Spicetify.Player.getHeart(),
+                                    id: Spicetify.Queue.track.contextTrack.uri
                                 })
                             );
                             break;
@@ -73,6 +75,8 @@ var requestplus = (() => {
                                     volume: Spicetify.Player.getVolume(),
                                     shuffle: Spicetify.Player.getShuffle(),
                                     repeat: Spicetify.Player.getRepeat(),
+                                    isLiked: Spicetify.Player.getHeart(),
+                                    id: Spicetify.Queue.track.contextTrack.uri
                                 })
                             );
                             break;
@@ -88,6 +92,8 @@ var requestplus = (() => {
                                     volume: Spicetify.Player.getVolume(),
                                     shuffle: Spicetify.Player.getShuffle(),
                                     repeat: Spicetify.Player.getRepeat(),
+                                    isLiked: Spicetify.Player.getHeart(),
+                                    id: Spicetify.Queue.track.contextTrack.uri
                                 })
                             );
                             break;
@@ -103,6 +109,8 @@ var requestplus = (() => {
                                     volume: Spicetify.Player.getVolume(),
                                     shuffle: Spicetify.Player.getShuffle(),
                                     repeat: Spicetify.Player.getRepeat(),
+                                    isLiked: Spicetify.Player.getHeart(),
+                                    id: Spicetify.Queue.track.contextTrack.uri
                                 })
                             );
                             break;
@@ -118,6 +126,8 @@ var requestplus = (() => {
                                     volume: Spicetify.Player.getVolume(),
                                     shuffle: Spicetify.Player.getShuffle(),
                                     repeat: Spicetify.Player.getRepeat(),
+                                    isLiked: Spicetify.Player.getHeart(),
+                                    id: Spicetify.Queue.track.contextTrack.uri
                                 })
                             );
                             break;
@@ -132,6 +142,8 @@ var requestplus = (() => {
                                     volume: Spicetify.Player.getVolume(),
                                     shuffle: Spicetify.Player.getShuffle(),
                                     repeat: Spicetify.Player.getRepeat(),
+                                    isLiked: Spicetify.Player.getHeart(),
+                                    id: Spicetify.Queue.track.contextTrack.uri
                                 })
                             );
                             break;
@@ -149,6 +161,8 @@ var requestplus = (() => {
                                             volume: Spicetify.Player.getVolume(),
                                             shuffle: Spicetify.Player.getShuffle(),
                                             repeat: Spicetify.Player.getRepeat(),
+                                            isLiked: Spicetify.Player.getHeart(),
+                                            id: Spicetify.Queue.track.contextTrack.uri
                                         })
                                     );
                                     let newURI = messageData.data.uri.replace("spotify:track:", "");
@@ -178,11 +192,12 @@ var requestplus = (() => {
                             break;
                         case "seek":
                             if (messageData.data) {
-                                const newTime = messageData.data.time;
+                                const newTime = messageData.data.position;
+                                console.log("Seeking to time:", newTime);
                                 if (typeof newTime === "number") {
                                     Spicetify.Player.seek(newTime);
                                 } else {
-                                    console.warn("Invalid time provided in seek command.");
+                                    console.warn("Invalid TIME provided in seek command.");
                                     ws.send(
                                         JSON.stringify({
                                             command: "error",
@@ -226,6 +241,7 @@ var requestplus = (() => {
                         case "volume": 
                             if (messageData.data) {
                                 const newVolume = messageData.data.volume;
+                                console.log(newVolume);
                                 if (typeof newVolume === "number") {
                                     Spicetify.Player.setVolume(newVolume);
                                 } else {
@@ -247,6 +263,13 @@ var requestplus = (() => {
                                 );
                             }
                             break;
+                        case "getInfo":
+                            let newURI = messageData.data.uri.replace("spotify:track:", "");
+                            let deta = await Spicetify.CosmosAsync.get('https://api.spotify.com/v1/tracks/' + newURI)
+                            await ws.send(JSON.stringify({
+                                command: "requestHandled",
+                                data: deta
+                            }))
                         default:
                             console.warn("Unknown command received:", command);
                     }

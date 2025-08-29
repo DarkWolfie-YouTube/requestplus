@@ -5,6 +5,9 @@ import { Settings } from './components/Settings';
 import { Navigation } from './components/Navigation';
 import { Toaster } from './components/ui/sonner';
 import { Topbar } from './components/Topbar';
+import { QueuePage } from './components/Queue';
+import { Queue } from './queueHandler';
+import { toast } from 'sonner';
 
 interface Track {
   title: string;
@@ -14,6 +17,10 @@ interface Track {
   progress: number;
   cover: string;
   isPlaying: boolean;
+  volume: number;
+  shuffle: boolean;
+  repeat: number;
+  isLiked: boolean;
 }
 
 interface TrackInfo {
@@ -32,6 +39,7 @@ interface TrackInfo {
   volume?: number;
   shuffle?: boolean;
   repeat?: number;
+  isLiked?: boolean;
 }
 
 interface TwitchUser {
@@ -44,17 +52,21 @@ interface UpdateSettings {
 }
 
 const App = () => {
-  const [currentView, setCurrentView] = useState<'player' | 'settings'>('player');
+  const [currentView, setCurrentView] = useState<'player' | 'settings' | 'queue'>('player');
   
   // Global state for track info
   const [currentTrack, setCurrentTrack] = useState<Track>({
     title: 'No track playing',
-    artist: 'Unknown Artist',
+    artist: 'Unknown Artist', 
     album: 'Unknown Album',
     duration: 210,
     progress: 0,
     cover: 'styles/unknown.png',
-    isPlaying: false
+    isPlaying: false,
+    volume: 75,
+    shuffle: false,
+    repeat: 0,
+    isLiked: false
   });
 
   // Global state for settings
@@ -68,6 +80,10 @@ const App = () => {
     modsOnly: false,
     requestLimit: 10
   });
+  const [queue, setQueue] = useState<Queue | null>(null);
+
+  
+
 
   // Initialize all API connections once at app level
   useEffect(() => {
@@ -75,12 +91,18 @@ const App = () => {
     console.log('API available:', !!api);
     if (!api) {
       console.log('No API found - running in web mode');
+      // Initialize empty queue for web mode
+      setQueue({
+        items: [],
+        currentCount: 0,
+        currentlyPlayingIndex: -1
+      });
       return;
     }
 
     // Track info handler
     const handleTrackInfo = (info: TrackInfo) => {
-      console.log('Received track info:', info);
+      
       
       const dataArtists: string[] = [];
       if (info.artist_name) dataArtists.push(info.artist_name);
@@ -113,7 +135,8 @@ const App = () => {
         isPlaying: info.isPlaying,
         volume: info.volume || 100,
         shuffle: info.shuffle || false,
-        repeat: info.repeat || 0
+        repeat: info.repeat || 0,
+        isLiked: info.isLiked || false
       });
     };
 
@@ -161,16 +184,121 @@ const App = () => {
       setTwitchUser(user);
     });
 
+    // Fetch initial queue data
+
+
     // Call preload if available
     if (api.preload && typeof api.preload === 'function') {
       console.log('Calling api.preload');
       api.preload();
     }
 
-    return () => {
-      console.log('Cleaning up main useEffect');
+    // toast notification listener
+    // Toast notification listener
+    const handleToast = (event: any, toastData: any) => {
+      console.log('Received toast:', toastData);
+      
+      // Handle different toast data formats for backward compatibility
+      let message, type, duration;
+      
+      if (typeof toastData === 'object' && toastData.message) {
+        // New format: object with message, type, duration
+        message = toastData.message;
+        type = toastData.type || 'info';
+        duration = toastData.duration || 5000;
+      } else if (typeof toastData === 'string') {
+        // Fallback: just a string message
+        message = toastData;
+        type = 'info';
+        duration = 5000;
+      } else {
+        console.warn('Invalid toast data format:', toastData);
+        return;
+      }
+      
+      // Use sonner toast with appropriate styling based on type
+      switch (type) {
+        case 'success':
+          toast.success(message, { duration });
+          break;
+        case 'error':
+          toast.error(message, { duration });
+          break;
+        case 'warning':
+          toast.warning(message, { duration });
+          break;
+        case 'info':
+        default:
+          toast.info(message, { duration });
+          break;
+      }
     };
+
+    // Set up the toast listener
+    if (api.onToast) {
+      api.onToast(handleToast);
+    } else if ((window as any).electronAPI) {
+      // Alternative approach if using different IPC setup
+      (window as any).electronAPI.onToast?.(handleToast);
+    }
+// Queue handling - fetch initial data
+  const handleQueueUpdate = (updatedQueue: Queue) => {
+    console.log('Queue update received in renderer:', updatedQueue);
+    setQueue(updatedQueue);
+  };
+  const fetchInitialQueue = async () => {
+    try {
+      const queueData = await api.getQueue();
+      console.log('Initial queue fetch:', queueData);
+      if (queueData) {
+        setQueue(queueData);
+      }
+    } catch (err) {
+      console.error('Failed to fetch initial queue:', err);
+      setQueue({
+        items: [],
+        currentCount: 0,
+        currentlyPlayingIndex: -1
+      });
+    }
+  };
+
+  // Set up queue update listener BEFORE fetching initial data
+  
+
+// Then set up listener with the defined callback
+  api.updateQueuePage(handleQueueUpdate);
+
+  // Fetch initial queue data
+  fetchInitialQueue();
+
+  // ... rest of your existing setup (toast handler, etc.) ...
+
+  // Cleanup function
+  return () => {
+    console.log('Cleaning up main useEffect');
+    api.removeToastListener?.();
+    api.removeQueueListener?.();
+  };
   }, []);
+
+  // Function to handle track selection from queue
+  const handleTrackSelect = (track: any) => {
+    // Convert queue item to track format if needed
+    setCurrentTrack({
+      title: track.title,
+      artist: track.artist,
+      album: track.album || 'Unknown Album',
+      duration: track.duration,
+      progress: 0, // Reset progress when selecting new track
+      cover: track.cover,
+      isPlaying: true, // Start playing when selected
+      volume: currentTrack.volume,
+      shuffle: currentTrack.shuffle,
+      repeat: currentTrack.repeat,
+      isLiked: track.isLiked || false
+    });
+  };
 
   return (
     <div className="size-full bg-background">
@@ -183,6 +311,15 @@ const App = () => {
                 currentTrack={currentTrack} 
                 setCurrentTrack={setCurrentTrack}
               />
+            ) : currentView === 'queue' ? (
+              queue && (
+                <QueuePage 
+                  items={queue.items} 
+                  currentCount={queue.currentCount} 
+                  currentlyPlayingIndex={queue.currentlyPlayingIndex}
+                  onTrackSelect={handleTrackSelect}
+                />
+              )
             ) : (
               <Settings 
                 twitchUser={twitchUser}
@@ -202,7 +339,7 @@ const App = () => {
       </div>
     </div>
   );
-}
+};
 
 const container = document.getElementById('root');
 if (container) {

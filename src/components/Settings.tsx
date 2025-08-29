@@ -26,9 +26,7 @@ interface SettingsState {
   enableRequests: boolean;
   modsOnly: boolean;
   requestLimit: number;
-  autoPlay?: boolean;
-  highQuality?: boolean;
-  crossfade?: boolean;
+  autoPlay: boolean;
 }
 
 interface SettingsProps {
@@ -141,7 +139,6 @@ export function Settings({
   const checkForUpdates = async () => {
     if (typeof window !== 'undefined' && (window as any).api?.checkForUpdates) {
       await (window as any).api.checkForUpdates();
-      toast.info('Checking for updates...');
     } else {
       toast.error('Update check not available in web mode');
     }
@@ -266,20 +263,24 @@ export function Settings({
 
             <Separator />
 
-            <div className="space-y-2">
-              <Label htmlFor="requestLimit">Request Limit</Label>
-              <p className="text-sm text-muted-foreground">
-                Maximum number of requests per user
-              </p>
-              <Input
-                id="requestLimit"
-                type="number"
-                min="1"
-                max="100"
-                value={settings.requestLimit}
-                onChange={(e) => setSettings({...settings, requestLimit: parseInt(e.target.value) || 10})}
+            <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="space-y-1">
+                <Label>Moderation Queue</Label>
+                <p className="text-sm text-muted-foreground">
+                  Doesn't auto play the next song as requested songs go to seperate queue, songs stored in this queue are auto played when the current song ends. 
+                </p>
+              </div>
+              <Switch
+                checked={settings.autoPlay || false}
+                onCheckedChange={(checked) => 
+                  setSettings({...settings, autoPlay: checked})
+                }
               />
             </div>
+            </div>
+
+            
           </div>
         </Card>
 
@@ -314,66 +315,7 @@ export function Settings({
           </div>
         </Card>
 
-        {/* Playback Settings */}
-        <Card className="p-6 space-y-6">
-          <div>
-            <h3 className="font-medium mb-1">Playback</h3>
-            <p className="text-sm text-muted-foreground">
-              Configure how music plays
-            </p>
-          </div>
-
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="space-y-1">
-                <Label>Auto-play next song</Label>
-                <p className="text-sm text-muted-foreground">
-                  Automatically play the next requested song
-                </p>
-              </div>
-              <Switch
-                checked={settings.autoPlay || false}
-                onCheckedChange={(checked) => 
-                  setSettings({...settings, autoPlay: checked})
-                }
-              />
-            </div>
-
-            <Separator />
-
-            <div className="flex items-center justify-between">
-              <div className="space-y-1">
-                <Label>High quality audio</Label>
-                <p className="text-sm text-muted-foreground">
-                  Use higher bitrate for better sound quality
-                </p>
-              </div>
-              <Switch
-                checked={settings.highQuality || false}
-                onCheckedChange={(checked) => 
-                  setSettings({...settings, highQuality: checked})
-                }
-              />
-            </div>
-
-            <Separator />
-
-            <div className="flex items-center justify-between">
-              <div className="space-y-1">
-                <Label>Crossfade</Label>
-                <p className="text-sm text-muted-foreground">
-                  Smooth transition between songs
-                </p>
-              </div>
-              <Switch
-                checked={settings.crossfade || false}
-                onCheckedChange={(checked) => 
-                  setSettings({...settings, crossfade: checked})
-                }
-              />
-            </div>
-          </div>
-        </Card>
+       
 
         {/* Notification Settings */}
         <Card className="p-6 space-y-6">
@@ -388,7 +330,7 @@ export function Settings({
             <div className="space-y-1">
               <Label>New request notifications</Label>
               <p className="text-sm text-muted-foreground">
-                Get notified when someone requests a song
+                Get notified when someone requests a song via a toast.
               </p>
             </div>
             <Switch
@@ -450,7 +392,7 @@ export function Settings({
           <div>
             <h3 className="font-medium mb-1">About Request+</h3>
             <p className="text-sm text-muted-foreground">
-              Version 1.0.0 • Built for DJs and music enthusiasts
+              Version 1.0.0 • Built for Streamers by streamers.
             </p>
           </div>
 
