@@ -282,7 +282,7 @@ async function createWindow(): Promise<void> {
 
     mainWindow = new BrowserWindow({
         width: 500,
-        height: 1080,
+        height: 900,
         webPreferences: {
             nodeIntegration: false,
             contextIsolation: true,
