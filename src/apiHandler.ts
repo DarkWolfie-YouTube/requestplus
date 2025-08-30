@@ -57,7 +57,7 @@ class APIHandler {
     private WSServer: WSServerInterface;
     private logger: Logger;
     private theme: string;
-    private refresh: any;
+    private refresh: boolean;
     private callback: any;
 
     constructor(
@@ -339,7 +339,6 @@ class APIHandler {
                     if (this.callback) {
                         try {
                             const result = await this.callback(tokenData);
-                            console.log(result);
                             if (result) {
                                 res.json({ success: true, message: 'Token received successfully' });
                             } else {
@@ -365,7 +364,7 @@ class APIHandler {
         this.app.get("/info", (req: Request, res: Response): void => {
             if (this.refresh) {
                 res.json({ ...this.WSServer.lastInfo, refresh: this.refresh });
-                this.refresh = null;
+                this.refresh = false;
                 return;
             }
             res.json(this.WSServer.lastInfo);
@@ -380,6 +379,11 @@ class APIHandler {
         this.app.listen(444, () => {
             this.logger.info('API server listening on port 444');
         });
+    }
+
+    public updateSettings(settings: Settings): void {
+        this.theme = settings.theme;
+        this.refresh = true;
     }
 }
 

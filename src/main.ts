@@ -366,6 +366,7 @@ ipcMain.handle('save-settings', (event: Electron.IpcMainInvokeEvent, settinga: S
         if (saved) {
             settings = settinga;
             chatHandler.updateSettings(settings);
+            apiHandler.updateSettings(settings);
             resolve();
         } else {
             reject(new Error('Failed to save settings'));
@@ -376,6 +377,9 @@ ipcMain.handle('save-settings', (event: Electron.IpcMainInvokeEvent, settinga: S
 ipcMain.on('settings-updated', (event: Electron.IpcMainEvent, settings: Settings): void => {
     // Handle real-time settings updates
     console.log('Settings updated:', settings);
+    settingsHandler.save(settings);
+    chatHandler.updateSettings(settings);
+    apiHandler.updateSettings(settings);
 });
 
 ipcMain.handle('window-minimize', (): void => {
