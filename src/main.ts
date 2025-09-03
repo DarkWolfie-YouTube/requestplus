@@ -14,6 +14,8 @@ import { setTimeout as wait } from 'node:timers/promises';
 import { checkForUpdates } from './updateChecker';
 import QueueHandler, { Queue } from './queueHandler';
 import { exec } from 'child_process';
+import * as electronstartup from 'electron-squirrel-startup';
+
 
 // Type definitions
 interface TwitchUser {
@@ -23,6 +25,7 @@ interface TwitchUser {
     profile_image_url: string;
     email: string;
 }
+
 
 interface TwitchTokenData {
     access_token: string;

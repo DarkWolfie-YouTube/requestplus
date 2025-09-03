@@ -280,6 +280,25 @@ export function Settings({
             </div>
             </div>
 
+            <Separator />
+
+            <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="space-y-1">
+                <Label>Allow Explicit Songs</Label>
+                <p className="text-sm text-muted-foreground">
+                  Allow explicit songs to be played, if this is off explicit songs will be moderated and not added to the queue. (REQUIRES MODERATION QUEUE)
+                </p>
+              </div>
+              <Switch
+                checked={settings.filterExplicit || false}
+                onCheckedChange={(checked) => 
+                  setSettings({...settings, filterExplicit: checked})
+                }
+              />
+            </div>
+            </div>
+
             
           </div>
         </Card>
@@ -392,7 +411,7 @@ export function Settings({
           <div>
             <h3 className="font-medium mb-1">About Request+</h3>
             <p className="text-sm text-muted-foreground">
-              Version 1.0.0 • Built for Streamers by streamers.
+              Version 1.0.1 • Built for Streamers by streamers.
             </p>
           </div>
 

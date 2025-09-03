@@ -27,6 +27,7 @@ module.exports = {
         name: 'RequestPlus',
         title: 'RequestPlus',
         setupIcon: path.resolve('build/icon.ico'),
+        loadingGif: path.resolve('build/loading.gif'),
         // Code signing for Squirrel installer
         ...(process.env.CERT_PASSWORD && {
           signWithParams: `/f "C:/Users/DarkWolfie/Desktop/backup/Twitch Marathon Timer/build/cert.pfx" /p "${process.env.CERT_PASSWORD}" /tr http://timestamp.digicert.com /td sha256 /fd sha256`,
@@ -103,14 +104,14 @@ module.exports = {
   ],
   // Publishers configuration if you want to enable auto-updates later
   publishers: [
-    // {
-    //   name: '@electron-forge/publisher-github',
-    //   config: {
-    //     repository: {
-    //       owner: 'DarkWolfie-YouTube',
-    //       name: 'requestplus'
-    //     }
-    //   }
-    // }
+    {
+      name: '@electron-forge/publisher-github',
+      config: {
+        repository: {
+          owner: 'DarkWolfie-YouTube',
+          name: 'requestplus'
+        }
+      }
+    }
   ]
 };

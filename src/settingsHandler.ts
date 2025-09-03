@@ -9,6 +9,7 @@ interface Settings {
     modsOnly?: boolean;
     requestLimit?: number;
     autoPlay?: boolean;
+    filterExplicit?: boolean;
     [key: string]: any; // Allow additional properties
 }
 

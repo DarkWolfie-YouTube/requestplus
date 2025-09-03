@@ -133,7 +133,11 @@ class ChatHandler {
                                     // Use the largest image (first in array)
                                     coverUrl = response.album.images[0].url;
                                 }
-                                
+
+                                if (this.WSServer.lastReq.explicit && !this.settings.filterExplicit) {
+                                    this.Client.say(channel, `Request+: This song has unsafe lyrics and has been moderated, this song wasn't added to the queue.`);
+                                    return;
+                                }
                                 this.Client.say(channel, `Request+: Added ${title} by ${artists} to the moderation queue.`);
                                 await this.queueHandler.addToQueue({
                                     id: id,
@@ -151,7 +155,7 @@ class ChatHandler {
                     }
                 
                     this.WSServer.WSSend({ command: 'addTrack', data: { uri: `spotify:track:${id}` } });
-                    await wait(500);
+                    await wait(1000);
                     
                     if (this.WSServer.lastReq) {
                         const dataArtists: string[] = [];
