@@ -45,7 +45,7 @@ var requestplus = (() => {
 
                     const { command, welcome } = messageData;
                     if (welcome) {
-                        ws.send({ command: "identify", type: "spotify", version: "1.0.3" });
+                        ws.send(JSON.stringify({ command: "identify", type: "spotify", version: "1.0.3" }));
                     }
                     switch (command) {
                     
