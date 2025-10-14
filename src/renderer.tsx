@@ -80,7 +80,7 @@ const App = () => {
     modsOnly: false,
     requestLimit: 10
   });
-  const [queue, setQueue] = useState<Queue | null>(null);
+  const [queue, setQueue] = useState<Queue>([]);
 
   
 

@@ -1,7 +1,7 @@
 {
   "name": "requestplus",
   "productName": "Request+",
-  "version": "1.0.1",
+  "version": "1.0.3",
   "description": "Supercharged Spotify Overlay for Streamers!",
   "main": ".vite/build/main.js",
   "scripts": {
@@ -11,6 +11,10 @@
     "publish": "electron-forge publish",
     "lint": "echo \"No linting configured\""
   },
+  "repository": {
+        "type": "git",
+        "url": "https://github.com/DarkWolfie-YouTube/requestplus.git"
+      },
   "keywords": [],
   "author": {
     "name": "Quil DayTrack",
@@ -79,6 +83,7 @@
     "sonner": "^2.0.7",
     "tailwind-merge": "^3.3.1",
     "tmi.js": "^1.8.5",
+    "update-electron-app": "^3.1.1",
     "vaul": "^1.1.2",
     "ws": "^8.18.0"
   }

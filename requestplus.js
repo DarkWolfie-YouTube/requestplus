@@ -43,9 +43,12 @@ var requestplus = (() => {
                         messageData = JSON.parse(messageData);
                     }
 
-                    const { command } = messageData;
-
+                    const { command, welcome } = messageData;
+                    if (welcome) {
+                        ws.send({ command: "identify", type: "spotify", version: "1.0.3" });
+                    }
                     switch (command) {
+                    
                         case "PlayPause":
                             Spicetify.Player.togglePlay();
                             await delay(10);

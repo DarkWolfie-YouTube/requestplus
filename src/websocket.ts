@@ -1,6 +1,6 @@
 import WebSocket, { WebSocketServer as WSS } from 'ws';
-import * as fs from 'fs';
-import * as path from 'path';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import * as net from 'net';
 import * as musicmetadata from 'music-metadata';
 import { BrowserWindow } from 'electron';
@@ -22,12 +22,14 @@ interface TrackData {
     repeat?: number;
     isLiked?: boolean;
     id?: string;
+    duration?: number;
     [key: string]: any;
 }
 
 interface ParsedMessage {
     command: string;
     data?: TrackData;
+    type?: string;
     isPlaying?: boolean;
     progress?: number;
     volume?: number;
@@ -67,11 +69,16 @@ interface SpotifyAlbum {
     uri: string;
 }
 
+interface ClientInfo {
+    ws: WebSocket;
+    type: string;
+    connectedAt: Date;
+}
 
 class WebSocketServer {
     private port: number;
     private wss: WSS | null;
-    private clients: Set<WebSocket>;
+    private clients: Map<WebSocket, ClientInfo>;
     private mainWindow: BrowserWindow;
     private logger: Logger;
     public lastInfo: TrackData | null;
@@ -80,7 +87,7 @@ class WebSocketServer {
     constructor(port: number, mainWindow: BrowserWindow, logger: Logger) {
         this.port = port;
         this.wss = null;
-        this.clients = new Set();
+        this.clients = new Map();
         this.mainWindow = mainWindow;
         this.logger = logger;
         this.lastInfo = null;
@@ -113,24 +120,60 @@ class WebSocketServer {
         this.wss = new WSS({ port: this.port });
 
         this.wss.on('connection', (ws: WebSocket) => {
-            this.clients.add(ws);
+            // Initialize client with unknown type
+            const clientInfo: ClientInfo = {
+                ws: ws,
+                type: 'unknown',
+                connectedAt: new Date()
+            };
+            
+            this.clients.set(ws, clientInfo);
             this.logger.info('New client connected');
             this.logger.info(`Total clients connected: ${this.clients.size}`);
+
+            // Send welcome message requesting client type
+            ws.send(JSON.stringify({
+                welcome: {
+                    message: "Please identify your client type",
+                    requestType: true
+                }
+            }));
 
             ws.on('message', async (message: WebSocket.Data): Promise<void> => {
                 try {
                     const messageString = message.toString();
                     const parsed: ParsedMessage = JSON.parse(messageString);
 
+                    // If client hasn't identified yet, ignore other messages
+                    const client = this.clients.get(ws);
+                    if (client && client.type === 'unknown' && parsed.command !== 'identify') {
+                        this.logger.warn('Received message from unidentified client, ignoring.');
+                        return;
+                    }
+
+                    // Handle client type identification
+                    if (parsed.command === "identify" && parsed.type) {
+                        const client = this.clients.get(ws);
+                        if (client) {
+                            client.type = parsed.type;
+                            this.logger.info(`Client identified as type: ${parsed.type}`);
+                            ws.send(JSON.stringify({
+                                acknowledged: true,
+                                type: parsed.type
+                            }));
+                        }
+                        return;
+                    }
+
                     // Send message to all clients but not the client that sent the message
-                    this.clients.forEach((client) => {
-                        if (client !== ws && client.readyState === WebSocket.OPEN) {
-                            client.send(JSON.stringify(parsed));
+                    this.clients.forEach((clientInfo, clientWs) => {
+                        if (clientWs !== ws && clientWs.readyState === WebSocket.OPEN) {
+                            clientWs.send(JSON.stringify(parsed));
                         }
                     });
 
                     if (parsed.command === "currentTrack") {
-                         const data: TrackData = {
+                        const data: TrackData = {
                             ...parsed.data,
                             isPlaying: parsed.isPlaying,
                             progress: parsed.progress,
@@ -215,11 +258,32 @@ class WebSocketServer {
 
     async WSSend(message: WSCommand): Promise<void> {
         const messageString = JSON.stringify(message);
-        this.clients.forEach((client) => {
-            if (client.readyState === WebSocket.OPEN) {
-                client.send(messageString);
+        this.clients.forEach((clientInfo, ws) => {
+            if (ws.readyState === WebSocket.OPEN) {
+                ws.send(messageString);
             }
         });
+    }
+
+    // Helper method to send to specific client types
+    async WSSendToType(message: WSCommand, type: string): Promise<void> {
+        const messageString = JSON.stringify(message);
+        this.clients.forEach((clientInfo, ws) => {
+            if (clientInfo.type === type && ws.readyState === WebSocket.OPEN) {
+                ws.send(messageString);
+            }
+        });
+    }
+
+    // Helper method to get all clients of a specific type
+    getClientsByType(type: string): ClientInfo[] {
+        const clientsOfType: ClientInfo[] = [];
+        this.clients.forEach((clientInfo) => {
+            if (clientInfo.type === type) {
+                clientsOfType.push(clientInfo);
+            }
+        });
+        return clientsOfType;
     }
 
     // Method to close the server
@@ -241,4 +305,4 @@ class WebSocketServer {
 }
 
 export default WebSocketServer;
-export {TrackData, RequestData, ParsedMessage}
+export { TrackData, RequestData, ParsedMessage, ClientInfo };

@@ -411,7 +411,7 @@ export function Settings({
           <div>
             <h3 className="font-medium mb-1">About Request+</h3>
             <p className="text-sm text-muted-foreground">
-              Version 1.0.1 • Built for Streamers by streamers.
+              Version 1.0.3 • Built for Streamers by streamers.
             </p>
           </div>
 

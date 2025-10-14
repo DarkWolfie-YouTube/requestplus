@@ -16,6 +16,51 @@ import QueueHandler, { Queue } from './queueHandler';
 import { exec } from 'child_process';
 import * as electronstartup from 'electron-squirrel-startup';
 
+import { updateElectronApp } from 'update-electron-app';
+
+
+
+var handleStartupEvent = function() {
+  if (process.platform !== 'win32') {
+    return false;
+  }
+
+  var squirrelCommand = process.argv[1];
+  switch (squirrelCommand) {
+    case '--squirrel-install':
+    case '--squirrel-updated':
+
+      // create a shortcut on the desktop and in the start menu
+        var target = path.basename(process.execPath);
+        var updateDotExe = path.resolve(path.dirname(process.execPath), '..', 'Update.exe');
+        var child = require('child_process').spawn(updateDotExe, ['--createShortcut', target], { detached: true });
+        child.unref();
+
+      app.quit();
+
+      return true;
+    case '--squirrel-uninstall':
+        // remove the shortcut from the desktop and start menu
+        var target = path.basename(process.execPath);
+        var updateDotExe = path.resolve(path.dirname(process.execPath), '..', 'Update.exe');
+        var child = require('child_process').spawn(updateDotExe, ['--removeShortcut', target], { detached: true });
+        child.unref();
+
+      app.quit();
+
+      return true;
+    case '--squirrel-obsolete':
+      // This is called on the outgoing version of your app before
+      // we update to the new version - it's the opposite of
+      // --squirrel-updated
+      app.quit();
+      return true;
+  }
+};
+
+handleStartupEvent();
+// updateElectronApp()
+
 
 // Type definitions
 interface TwitchUser {
