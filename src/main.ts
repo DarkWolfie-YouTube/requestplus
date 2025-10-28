@@ -1,18 +1,25 @@
-import websocket from './websocket';
-import { TrackData } from './websocket';
 import { app, BrowserWindow, ipcMain, dialog, shell, MessageBoxOptions, MessageBoxReturnValue } from 'electron';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { setTimeout as wait } from 'node:timers/promises';
+import { checkForUpdates } from './updateChecker';
+import QueueHandler, { Queue } from './queueHandler';
+import { updateElectronApp } from 'update-electron-app';
+
+//Handlers
+import websocket from './websocket';
+import { TrackData } from './websocket';
 import Auth from './authManager';
 import logger from './logger';
 import ChatHandler from './chatHandler';
 import APIHandler from './apiHandler';
 import SettingsHandler from './settingsHandler';
 import { Settings } from './settingsHandler';
-import { setTimeout as wait } from 'node:timers/promises';
-import { checkForUpdates } from './updateChecker';
-import QueueHandler, { Queue } from './queueHandler';
-import { updateElectronApp } from 'update-electron-app';
+import { songData, YTManager } from './ytManager';
+import PlaybackHandler, { songInfo } from './playbackHandler';
+
+
+
 
 
 
@@ -55,7 +62,7 @@ var handleStartupEvent = function() {
 };
 
 handleStartupEvent();
-updateElectronApp();
+// updateElectronApp();
 
 
 // Type definitions
@@ -106,7 +113,7 @@ const TWITCH_SCOPES: string[] = ['user:read:email', 'chat:read', 'chat:edit'];
 
 // Global variables with proper typing
 let WSServer: websocket; // Type this according to your websocket class
-let currentSongInformation: TrackData; // Define currentTrackInfo interface as needed
+let currentSongInformation: songInfo; // Define currentTrackInfo interface as needed
 let mainWindow: BrowserWindow | null = null;
 let AuthManager: Auth; // Type this according to your Auth class
 let Logger: logger; // Type this according to your logger class
@@ -122,6 +129,8 @@ let currentTrackId: string | null = null;
 let currentTrackId2: string | null = null;
 let autoQueueTriggered: boolean = false;
 let lastTrackProgress: number = 0;
+let ytManager: YTManager;
+let playbackHandler: PlaybackHandler;
 
 
 // Auto-queue monitor function
@@ -367,12 +376,22 @@ async function createWindow(): Promise<void> {
     }
     settings = await settingsHandler.load();
     
-    await checkStoredToken();
+    if (!ytManager) {
+        ytManager = new YTManager();
+    }
 
+    await checkStoredToken();
+    
     await checkForUpdates(mainWindow, Logger);
+    
+    if (!playbackHandler) {
+        playbackHandler = new PlaybackHandler(settings.platform, WSServer, Logger, ytManager);
+    }
+
+
 
     if (!apiHandler) {
-        apiHandler = new APIHandler(mainWindow, WSServer, Logger, settings, (tokenData: TwitchTokenData) => AuthManager.saveToken(tokenData));
+        apiHandler = new APIHandler(mainWindow, playbackHandler, Logger, settings, (tokenData: TwitchTokenData) => AuthManager.saveToken(tokenData));
     }
     
     mainWindow.on('closed', () => {
@@ -388,7 +407,7 @@ async function checkStoredToken(): Promise<void> {
             twitchUser = storedToken as TwitchUser;
             mainWindow?.webContents.send('twitch-auth-success', twitchUser);
             if (!chatHandler) {
-                chatHandler = new ChatHandler(Logger, mainWindow, ({ login: twitchUser.login, access_token: twitchAccessToken }), WSServer, settings, queueHandler);
+                chatHandler = new ChatHandler(Logger, mainWindow, ({ login: twitchUser.login, access_token: twitchAccessToken }), WSServer, settings, queueHandler, ytManager);
                 chatHandler.connect();
             }
         }
@@ -403,6 +422,10 @@ ipcMain.handle('load-settings', async (): Promise<Settings> => {
     return settingsHandler.load();
 });
 
+ipcMain.handle('ytTest', async (): Promise<songData> => {
+    return ytManager.getCurrentSong();
+});
+
 ipcMain.handle('save-settings', (event: Electron.IpcMainInvokeEvent, settinga: Settings): Promise<void> => {
     return new Promise((resolve, reject) => {
         var saved = settingsHandler.save(settinga);
@@ -411,6 +434,7 @@ ipcMain.handle('save-settings', (event: Electron.IpcMainInvokeEvent, settinga: S
             settings = settinga;
             chatHandler.updateSettings(settings);
             apiHandler.updateSettings(settings);
+            playbackHandler.updateSettings(settings.platform);
             resolve();
         } else {
             reject(new Error('Failed to save settings'));
@@ -424,6 +448,7 @@ ipcMain.on('settings-updated', (event: Electron.IpcMainEvent, settings: Settings
     settingsHandler.save(settings);
     chatHandler.updateSettings(settings);
     apiHandler.updateSettings(settings);
+    playbackHandler.updateSettings(settings.platform);
 });
 
 ipcMain.handle('window-minimize', (): void => {
@@ -436,61 +461,97 @@ ipcMain.handle('window-close', async (): Promise<void> => {
     }
 });
 
-ipcMain.handle('song-play', (): void => {
-    if (WSServer) {
+ipcMain.handle('song-play', async (): Promise<void> => {
+    const platform = settings.platform
+    
+    if (platform === 'spotify' && WSServer) {
         WSServer.WSSendToType({ command: 'PlayPause' } as WSCommand, 'spotify');
+    } else if (platform === 'youtube' && ytManager) {
+        await ytManager.playPause();
     }
 });
 
-ipcMain.handle('song-pause', (): void => {
-    if (WSServer) {
+ipcMain.handle('song-pause', async (): Promise<void> => {
+    const platform = settings.platform
+    
+    if (platform === 'spotify' && WSServer) {
         WSServer.WSSendToType({ command: 'PlayPause' } as WSCommand, 'spotify');
+    } else if (platform === 'youtube' && ytManager) {
+        await ytManager.playPause();
     }
 });
 
-ipcMain.handle('song-skip', (): void => {
-    if (WSServer) {
+ipcMain.handle('song-skip', async (): Promise<void> => {
+    const platform = settings.platform
+    
+    if (platform === 'spotify' && WSServer) {
         WSServer.WSSendToType({ command: 'Next' } as WSCommand, 'spotify');
+    } else if (platform === 'youtube' && ytManager) {
+        await ytManager.next();
     }
 });
 
-ipcMain.handle('song-previous', (): void => {
-    if (WSServer) {
+ipcMain.handle('song-previous', async (): Promise<void> => {
+    const platform = settings.platform
+    
+    if (platform === 'spotify' && WSServer) {
         WSServer.WSSendToType({ command: 'Prev' } as WSCommand, 'spotify');
+    } else if (platform === 'youtube' && ytManager) {
+        await ytManager.previous();
     }
 });
 
-ipcMain.handle('song-like', (): void => {
-    if (WSServer) {
+ipcMain.handle('song-like', async (): Promise<void> => {
+    const platform = settings.platform
+    
+    if (platform === 'spotify' && WSServer) {
         WSServer.WSSendToType({ command: 'like' } as WSCommand, 'spotify');
+    } else if (platform === 'youtube' && ytManager) {
+        await ytManager.toggleLike();
     }
 });
 
-ipcMain.handle('song-volume', (event: Electron.IpcMainInvokeEvent, level: number): void => {
-    if (WSServer) {
+ipcMain.handle('song-volume', async (event: Electron.IpcMainInvokeEvent, level: number): Promise<void> => {
+    const platform = settings.platform
+    
+    if (platform === 'spotify' && WSServer) {
         WSServer.WSSendToType({ command: 'volume', data: { volume: level } } as WSCommand, 'spotify');
+    } else if (platform === 'youtube' && ytManager) {
+        await ytManager.setVolume(level * 100);
     }
 });
 
-ipcMain.handle('song-seek', (event: Electron.IpcMainInvokeEvent, position: number): void => {
-    if (WSServer) {
+ipcMain.handle('song-seek', async (event: Electron.IpcMainInvokeEvent, position: number): Promise<void> => {
+    const platform = settings.platform
+    
+    if (platform === 'spotify' && WSServer) {
         WSServer.WSSendToType({ command: 'seek', data: { position } } as WSCommand, 'spotify');
+    } else if (platform === 'youtube' && ytManager) {
+        console.log('Seeking to position:', position);
+        console.log(Math.floor(position / 1000));
+        await ytManager.seek(Math.floor(position / 1000));
     }
 });
 
-ipcMain.handle('song-shuffle', (): void => {
-    if (WSServer) {
+ipcMain.handle('song-shuffle', async (): Promise<void> => {
+    const platform = settings.platform
+    
+    if (platform === 'spotify' && WSServer) {
         WSServer.WSSendToType({ command: 'shuffle' } as WSCommand, 'spotify');
+    } else if (platform === 'youtube' && ytManager) {
+        await ytManager.toggleShuffle();
     }
 });
 
-ipcMain.handle('song-repeat', (): void => {
-    if (WSServer) {
+ipcMain.handle('song-repeat', async (): Promise<void> => {
+    const platform = settings.platform
+    
+    if (platform === 'spotify' && WSServer) {
         WSServer.WSSendToType({ command: 'repeat' } as WSCommand, 'spotify');
+    } else if (platform === 'youtube' && ytManager) {
+        await ytManager.cycleRepeat();
     }
-
 });
-
 
 
 ipcMain.handle('twitch-login', (): void => {
@@ -606,16 +667,12 @@ ipcMain.handle('clear-queue', async (): Promise<boolean> => {
 });
 
 async function requestTrackInfo(): Promise<void> {
-    if (WSServer) {
-        WSServer.WSSendToType({ command: 'getdata' } as WSCommand, 'spotify');
-        
-        currentSongInformation = WSServer.lastInfo;
-        if (currentSongInformation) {
-            monitorTrackProgress(currentSongInformation);
-            await wait(2000);
-            checkCurrentlyPlayingTrack(currentSongInformation);
-        }
-    }
+    if (!playbackHandler) return;
+    const info = await playbackHandler.getCurrentSong();
+
+    if (!info) return;
+    const currentSongInformation: songInfo = { ...info };
+    mainWindow?.webContents.send('song-info', currentSongInformation);
 }
 
 

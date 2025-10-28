@@ -4,6 +4,7 @@ import { BrowserWindow } from 'electron';
 import { Settings } from './settingsHandler';
 import { RequestData } from './websocket';
 import QueueHandler from './queueHandler';
+import { YTManager } from './ytManager';
 
 // Type definitions
 interface TwitchAuth {
@@ -53,13 +54,15 @@ class ChatHandler {
     private Client: tmi.Client;
     private settings: Settings;
     private queueHandler: QueueHandler;
+    private ytManager: YTManager;
 
-    constructor(logger: Logger, mainWindow: BrowserWindow, twitchAuth: TwitchAuth, WSServer: WSServerInterface, settings: Settings, queueHandler: QueueHandler) {
+    constructor(logger: Logger, mainWindow: BrowserWindow, twitchAuth: TwitchAuth, WSServer: WSServerInterface, settings: Settings, queueHandler: QueueHandler, ytManager: YTManager) {
         this.mainWindow = mainWindow;
         this.logger = logger;
         this.WSServer = WSServer;
         this.settings = settings;
         this.queueHandler = queueHandler;
+        this.ytManager = ytManager;
 
         const clientOptions: TMIClientOptions = {
             options: { debug: false },
@@ -91,67 +94,69 @@ class ChatHandler {
                     this.Client.say(channel, `Request+: Only moderators can use song requests.`);
                     return;
                 }
-                
-                if (request.includes("https://open.spotify.com/")) {
-                    // Check for invalid link types
-                    if (request.includes("https://open.spotify.com/album")) {
-                        this.Client.say(channel, `Request+: Please provide a spotify track link!`);
-                        return;
-                    }
-                    if (request.includes("https://open.spotify.com/playlist")) {
-                        this.Client.say(channel, `Request+: Please provide a spotify track link!`);
-                        return;
-                    }
-                    if (request.includes("https://open.spotify.com/episode")) {
-                        this.Client.say(channel, `Request+: Please provide a spotify track link!`);
-                        return;
-                    }
-
-                    const ida = request.split("https://open.spotify.com/track/")[1];
-                    let id: string;
-                    if (ida.includes("?si=")) {
-                        id = ida.split("?si=")[0];
-                    } else {
-                        id = ida;
-                    }
-                    if (this.settings.autoPlay) {
-                        this.WSServer.WSSend({ command: 'getInfo', data: { uri: `spotify:track:${id}` } });
-                        await wait(500);
-                        if (this.WSServer.lastReq) {
-                            const response = this.WSServer.lastReq as RequestData;
-                            if (response.artists != null) {
-                                const dataArtists: string[] = [];
-                                for (const artist of response.artists) {
-                                    dataArtists.push(artist.name);
-                                } 
-                                const artists = dataArtists.join(", ");
-                                const title = response.name;
-                                
-                                // Get album art URL
-                                let coverUrl = 'styles/unknown.png';
-                                if (response.album?.images && response.album.images.length > 0) {
-                                    // Use the largest image (first in array)
-                                    coverUrl = response.album.images[0].url;
-                                }
-
-                                if (this.WSServer.lastReq.explicit && !this.settings.filterExplicit) {
-                                    this.Client.say(channel, `Request+: This song has unsafe lyrics and has been moderated, this song wasn't added to the queue.`);
-                                    return;
-                                }
-                                this.Client.say(channel, `Request+: Added ${title} by ${artists} to the moderation queue.`);
-                                await this.queueHandler.addToQueue({
-                                    id: id,
-                                    title: title,
-                                    artist: artists,
-                                    album: response.album.name,
-                                    duration: response.duration_ms,
-                                    requestedBy: tags.username || "Unknown",
-                                    iscurrentlyPlaying: false,
-                                    cover: coverUrl // Add the cover image
-                                });
-                                return;
-                            } 
+                if (this.settings.platform === 'spotify') {
+                    if (request.includes("https://open.spotify.com/")) {
+                        // Check for invalid link types
+                        if (request.includes("https://open.spotify.com/album")) {
+                            this.Client.say(channel, `Request+: Please provide a spotify track link!`);
+                            return;
                         }
+                        if (request.includes("https://open.spotify.com/playlist")) {
+                            this.Client.say(channel, `Request+: Please provide a spotify track link!`);
+                            return;
+                        }
+                        if (request.includes("https://open.spotify.com/episode")) {
+                            this.Client.say(channel, `Request+: Please provide a spotify track link!`);
+                            return;
+                        }
+
+                        const ida = request.split("https://open.spotify.com/track/")[1];
+                        let id: string;
+                        if (ida.includes("?si=")) {
+                            id = ida.split("?si=")[0];
+                        } else {
+                            id = ida;
+                        }
+                        if (this.settings.autoPlay) {
+                        
+                            this.WSServer.WSSend({ command: 'getInfo', data: { uri: `spotify:track:${id}` } });
+                            await wait(500);
+                            if (this.WSServer.lastReq) {
+                                const response = this.WSServer.lastReq as RequestData;
+                                if (response.artists != null) {
+                                    const dataArtists: string[] = [];
+                                    for (const artist of response.artists) {
+                                        dataArtists.push(artist.name);
+                                    } 
+                                    const artists = dataArtists.join(", ");
+                                    const title = response.name;
+                                    
+                                    // Get album art URL
+                                    let coverUrl = 'styles/unknown.png';
+                                    if (response.album?.images && response.album.images.length > 0) {
+                                        // Use the largest image (first in array)
+                                        coverUrl = response.album.images[0].url;
+                                    }
+
+                                    if (this.WSServer.lastReq.explicit && !this.settings.filterExplicit) {
+                                        this.Client.say(channel, `Request+: This song has unsafe lyrics and has been moderated, this song wasn't added to the queue.`);
+                                        return;
+                                    }
+                                    this.Client.say(channel, `Request+: Added ${title} by ${artists} to the moderation queue.`);
+                                    await this.queueHandler.addToQueue({
+                                        id: id,
+                                        title: title,
+                                        artist: artists,
+                                        album: response.album.name,
+                                        duration: response.duration_ms,
+                                        requestedBy: tags.username || "Unknown",
+                                        iscurrentlyPlaying: false,
+                                        cover: coverUrl // Add the cover image
+                                    });
+                                    return;
+                                } 
+                            }
+                        
                     }
                 
                     this.WSServer.WSSend({ command: 'addTrack', data: { uri: `spotify:track:${id}` } });
@@ -176,7 +181,36 @@ class ChatHandler {
                 } else {
                     this.Client.say(channel, `Request+: Please provide a spotify track link! Usage: !sr <link>`);
                 }
-        }
+            } else if (this.settings.platform === 'youtube') {
+                if (request.includes("https://www.youtube.com/") || request.includes("https://youtu.be/") || request.includes("https://music.youtube.com/")) {
+                    let videoId: string | null = null;
+                    let ida: string;
+                    if (request.includes("https://www.youtube.com/watch?v=")) {
+                       ida = request.split("https://www.youtube.com/watch?v=")[1];
+                    } else if (request.includes("https://music.youtube.com/watch?v=")) {
+                       ida = request.split("https://music.youtube.com/watch?v=")[1];
+                    } else if (request.includes("https://youtu.be/")) {
+                       ida = request.split("https://youtu.be/")[1];
+                    }
+
+                    if (ida.includes("?si=")) {
+                            videoId = ida.split("?si=")[0];
+                        } else {
+                            videoId = ida;
+                        }
+
+                    if (videoId) {
+                        await this.ytManager.addItemToQueueById(videoId);
+                        this.Client.say(channel, `Request+: Added the YouTube video to the queue.`);
+                        return;
+                    } else {
+                        this.Client.say(channel, `Request+: Please provide a youtube video link!`);
+                        return;
+                    }
+                }
+            }
+        }      
+    
             if (message.toLowerCase().startsWith('!srhelp')) {
                 this.Client.say(channel, `Request+ Commands: !sr <spotify track link> - Request a song. !srhelp - Show this help message.`);
             }

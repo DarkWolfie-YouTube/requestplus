@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import { Queue } from './queueHandler';
+import { songData } from './ytManager';
 
 // Define the API interface
 interface ElectronAPI {
@@ -55,6 +56,8 @@ interface ElectronAPI {
 
   // Debug function
   debugAddQueueItem?: () => Promise<void>;
+
+  ytTest: () => Promise<songData>;
 
   // Preload function
   preload: () => void;
@@ -159,6 +162,10 @@ const electronAPI: ElectronAPI = {
 
   // Debug function (optional - for testing)
   debugAddQueueItem: () => ipcRenderer.invoke('debug-add-queue-item'),
+
+  ytTest: async () => {
+    return await ipcRenderer.invoke('ytTest');
+  },
 
   // Preload function
   preload: () => {

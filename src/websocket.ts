@@ -216,7 +216,6 @@ class WebSocketServer {
                         }
 
                         this.lastInfo = data;
-                        this.mainWindow.webContents.send('song-info', data);
                         
                         // Notify main process for auto-queue monitoring
                         try {

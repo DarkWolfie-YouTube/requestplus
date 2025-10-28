@@ -23,23 +23,18 @@ interface Track {
   isLiked: boolean;
 }
 
-interface TrackInfo {
+interface songInfo {
   title: string;
-  artist_name?: string;
-  'artist_name:1'?: string;
-  'artist_name:2'?: string;
-  'artist_name:3'?: string;
-  'artist_name:4'?: string;
-  'artist_name:5'?: string;
-  image?: string;
-  image_large_url?: string;
+  artist: string;
+  album: string;
   duration: number;
   progress: number;
+  cover: string;
   isPlaying: boolean;
-  volume?: number;
-  shuffle?: boolean;
-  repeat?: number;
-  isLiked?: boolean;
+  volume: number;
+  shuffle: boolean;
+  repeat: number;
+  isLiked: boolean;
 }
 
 interface TwitchUser {
@@ -101,18 +96,13 @@ const App = () => {
     }
 
     // Track info handler
-    const handleTrackInfo = (info: TrackInfo) => {
+    const handleTrackInfo = (info: songInfo) => {
       
       
-      const dataArtists: string[] = [];
-      if (info.artist_name) dataArtists.push(info.artist_name);
-      if (info['artist_name:1']) dataArtists.push(info['artist_name:1']);
-      if (info['artist_name:2']) dataArtists.push(info['artist_name:2']);
-      if (info['artist_name:3']) dataArtists.push(info['artist_name:3']);
-      if (info['artist_name:4']) dataArtists.push(info['artist_name:4']);
-      if (info['artist_name:5']) dataArtists.push(info['artist_name:5']);
 
-      const dataImage = info?.image || info?.image_large_url || null;
+      
+
+      const dataImage = info?.cover || null;
       let newImage = 'styles/unknown.png';
       
       if (dataImage != null) {
@@ -127,7 +117,7 @@ const App = () => {
 
       setCurrentTrack({
         title: info.title || 'Unknown Track',
-        artist: dataArtists.join(', ') || 'Unknown Artist',
+        artist: info.artist || 'Unknown Artist',
         album: 'Current Track',
         duration: info.duration,
         progress: info.progress,
@@ -333,7 +323,7 @@ const App = () => {
             )}
           </div>
 
-          <Navigation currentView={currentView} onViewChange={setCurrentView} />
+          <Navigation currentView={currentView} onViewChange={setCurrentView} settings={settings} />
           <Toaster />
         </div>
       </div>

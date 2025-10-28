@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Checkbox } from './ui/checkbox';
 import { Copy, Check, ExternalLink, User, LogOut, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
+import { Command as CommandPrimitive } from 'cmdk';
 
 interface TwitchUser {
   display_name: string;
@@ -27,6 +28,8 @@ interface SettingsState {
   modsOnly: boolean;
   requestLimit: number;
   autoPlay: boolean;
+  platform: string;
+  filterExplicit: boolean;
 }
 
 interface SettingsProps {
@@ -60,6 +63,11 @@ export function Settings({
     { value: 'mdev', label: 'MDev' },
     { value: 'moonkingbean', label: 'MoonKingBean' },
     { value: 'twinGhost', label: 'TwinGhost' }
+  ];
+  const platformOptions = [
+    { value: 'spotify', label: 'Spotify' },
+    { value: 'youtube', label: 'YouTube' },
+    // { value: 'soundcloud', label: 'SoundCloud' }
   ];
 
   const copyToClipboard = async (text: string) => {
@@ -262,7 +270,7 @@ export function Settings({
             </div>
 
             <Separator />
-
+            { settings.platform === 'spotify' && (
             <div className="space-y-4">
             <div className="flex items-center justify-between">
               <div className="space-y-1">
@@ -279,9 +287,9 @@ export function Settings({
               />
             </div>
             </div>
-
+            )}
             <Separator />
-
+            { settings.platform === 'spotify' && (
             <div className="space-y-4">
             <div className="flex items-center justify-between">
               <div className="space-y-1">
@@ -297,7 +305,10 @@ export function Settings({
                 }
               />
             </div>
+            
             </div>
+            )}
+            
 
             
           </div>
@@ -334,7 +345,36 @@ export function Settings({
           </div>
         </Card>
 
-       
+       {/* Overlay Settings */}
+        <Card className="p-6 space-y-6">
+          <div>
+            <h3 className="font-medium mb-1">Platform Settings</h3>
+            <p className="text-sm text-muted-foreground">
+              Customize the platform-specific behavior
+            </p>
+          </div>
+
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="platform">Platform</Label>
+              <Select
+                value={settings.platform}
+                onValueChange={(value) => setSettings({...settings, platform: value})}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a platform" />
+                </SelectTrigger>
+                <SelectContent>
+                  {platformOptions.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        </Card>
 
         {/* Notification Settings */}
         <Card className="p-6 space-y-6">
@@ -411,7 +451,7 @@ export function Settings({
           <div>
             <h3 className="font-medium mb-1">About Request+</h3>
             <p className="text-sm text-muted-foreground">
-              Version 1.0.3 • Built for Streamers by streamers.
+              Version 1.1.0 • Built for Streamers by streamers.
             </p>
           </div>
 

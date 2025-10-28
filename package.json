@@ -1,8 +1,8 @@
 {
   "name": "requestplus",
   "productName": "Request+",
-  "version": "1.0.3",
-  "description": "Supercharged Spotify Overlay for Streamers!",
+  "version": "1.1.0",
+  "description": "Supercharged Music Overlay for Streamers!",
   "main": ".vite/build/main.js",
   "scripts": {
     "start": "electron-forge start",
@@ -12,9 +12,9 @@
     "lint": "echo \"No linting configured\""
   },
   "repository": {
-        "type": "git",
-        "url": "https://github.com/DarkWolfie-YouTube/requestplus.git"
-      },
+    "type": "git",
+    "url": "https://github.com/DarkWolfie-YouTube/requestplus.git"
+  },
   "keywords": [],
   "author": {
     "name": "Quil DayTrack",
@@ -56,6 +56,7 @@
     "@tailwindcss/vite": "^4.1.12",
     "@vitejs/plugin-react": "^4.7.0",
     "autoprefixer": "^10.4.21",
+    "axios": "^1.13.0",
     "body-parser": "^1.20.3",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

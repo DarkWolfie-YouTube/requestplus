@@ -10,6 +10,7 @@ interface Settings {
     requestLimit?: number;
     autoPlay?: boolean;
     filterExplicit?: boolean;
+    platform?: string;
     [key: string]: any; // Allow additional properties
 }
 

@@ -115,31 +115,15 @@
                         }
                         songText.textContent = response.title;
                         const dataArtists = []
-                        const dataImage = response.image || response.image_large_url || null;
+                        const dataImage = response.image || response.image_large_url || response.cover || null;
                         let newImage;
-                        if (response.artist_name) {
-                            dataArtists.push(response.artist_name);
-                        }
-                        if (response['artist_name:1']) {
-                            dataArtists.push(response['artist_name:1']); 
-                        }
-                        if (response['artist_name:2']) {
-                            dataArtists.push(response['artist_name:2']); 
-                        }
-                        if (response['artist_name:3']) {
-                            dataArtists.push(response['artist_name:3']); 
-                        }
-                        if (response['artist_name:4']) {
-                            dataArtists.push(response['artist_name:4']); 
-                        }
-                        if (response['artist_name:5']) {
-                            dataArtists.push(response['artist_name:5']);
-                        }
-                        artistText.textContent = dataArtists.join(", ");
+                        
                         if (dataImage != null){
                             if (dataImage.includes('spotify:image:')) {
                                 newImage = dataImage.replace('spotify:image:', 'https://i.scdn.co/image/');
                             } else if (dataImage.includes('data:image/')) {
+                                newImage = dataImage;
+                            } else if (dataImage.includes('https://')) {
                                 newImage = dataImage;
                             } else { 
                                 newImage = "styles/unknown.png";
@@ -148,6 +132,7 @@
                             newImage = "styles/unknown.png";
                         }
                         songImg.src = newImage;
+                        artistText.textContent = response.artist;
                         durationText.textContent = convertTime(response.duration);
                         timeText.textContent = convertTime(response.progress);
                         const trackDuration = response.duration;

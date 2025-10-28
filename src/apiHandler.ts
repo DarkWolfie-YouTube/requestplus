@@ -4,6 +4,7 @@ import bodyParser from 'body-parser';
 import { Settings } from './settingsHandler';
 import * as path from 'path';
 import { BrowserWindow } from 'electron';
+import PlaybackHandler from './playbackHandler';
 
 // Type definitions
 interface TwitchUser {
@@ -54,7 +55,7 @@ const TWITCH_SCOPES: string[] = ['user:read:email', 'chat:read', 'chat:edit'];
 class APIHandler {
     private app: Express;
     private mainWindow: BrowserWindow;
-    private WSServer: WSServerInterface;
+    private playbackHandler: PlaybackHandler;
     private logger: Logger;
     private theme: string;
     private refresh: boolean;
@@ -62,14 +63,14 @@ class APIHandler {
 
     constructor(
         mainWindow: BrowserWindow, 
-        WSServer: WSServerInterface, 
+        playbackHandler: PlaybackHandler, 
         logger: Logger, 
         settings: Settings, 
         callback: any
     ) {
         this.app = express();
         this.mainWindow = mainWindow;
-        this.WSServer = WSServer;
+        this.playbackHandler = playbackHandler;
         this.logger = logger;
         this.theme = settings.theme;
         this.refresh = null;
@@ -363,11 +364,11 @@ class APIHandler {
 
         this.app.get("/info", (req: Request, res: Response): void => {
             if (this.refresh) {
-                res.json({ ...this.WSServer.lastInfo, refresh: this.refresh });
+                res.json({ ...this.playbackHandler.currentSong, refresh: this.refresh });
                 this.refresh = false;
                 return;
             }
-            res.json(this.WSServer.lastInfo);
+            res.json(this.playbackHandler.currentSong);
         });
 
         this.app.get("/settings", (req: Request, res: Response): void => {

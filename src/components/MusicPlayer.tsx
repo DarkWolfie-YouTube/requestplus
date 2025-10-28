@@ -77,6 +77,7 @@ export function MusicPlayer({ currentTrack, setCurrentTrack }: MusicPlayerProps)
 
     // You might want to add a seek API call here
     seek(newTime);
+    console.log('Seek to:', newTime);
   };
 
   const seek = (newTime: number) => {
