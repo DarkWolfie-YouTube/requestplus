@@ -9,13 +9,9 @@ import ChatHandler from './chatHandler';
 import APIHandler from './apiHandler';
 import SettingsHandler from './settingsHandler';
 import { Settings } from './settingsHandler';
-import * as os from 'node:os';
 import { setTimeout as wait } from 'node:timers/promises';
 import { checkForUpdates } from './updateChecker';
 import QueueHandler, { Queue } from './queueHandler';
-import { exec } from 'child_process';
-import * as electronstartup from 'electron-squirrel-startup';
-
 import { updateElectronApp } from 'update-electron-app';
 
 
@@ -59,7 +55,7 @@ var handleStartupEvent = function() {
 };
 
 handleStartupEvent();
-// updateElectronApp()
+updateElectronApp();
 
 
 // Type definitions
@@ -355,7 +351,7 @@ async function createWindow(): Promise<void> {
         mainWindow.loadFile(path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`));
     }
     
-    // Initialize AuthManager with user data path
+    
     const userDataPath: string = app.getPath('userData');
     if (Logger) {
         Logger.info('Logger initialized');
@@ -370,7 +366,7 @@ async function createWindow(): Promise<void> {
         WSServer = new websocket(443, mainWindow, Logger);
     }
     settings = await settingsHandler.load();
-    // Check for existing valid token
+    
     await checkStoredToken();
 
     await checkForUpdates(mainWindow, Logger);
@@ -503,7 +499,7 @@ ipcMain.handle('twitch-login', (): void => {
 
 function handleTwitchLogout(): void {
     try {
-        // Clear stored authentication token
+       
         if (AuthManager) {
             const success: boolean = AuthManager.clearToken();
             if (success) {
@@ -513,22 +509,19 @@ function handleTwitchLogout(): void {
             }
         }
 
-        // Reset global variables
+       
         twitchAccessToken = undefined;
         twitchUser = undefined;
 
-        // Disconnect and cleanup chat handler
+        
         if (chatHandler) {
             chatHandler.disconnect?.(); // If your ChatHandler has a disconnect method
             chatHandler = null;
         }
-
-        // Notify renderer process that logout was successful
         if (mainWindow && !mainWindow.isDestroyed()) {
             mainWindow.webContents.send('twitch-logout-success');
         }
 
-        // Send toast notification
         if (mainWindow && !mainWindow.isDestroyed()) {
             const toastMessage: ToastMessage = { 
                 message: 'Successfully logged out of Twitch', 
@@ -542,8 +535,6 @@ function handleTwitchLogout(): void {
 
     } catch (error) {
         Logger.error('Error during Twitch logout:', error);
-        
-        // Send error notification
         if (mainWindow && !mainWindow.isDestroyed()) {
             const toastMessage: ToastMessage = { 
                 message: 'Error logging out of Twitch', 
@@ -557,18 +548,20 @@ function handleTwitchLogout(): void {
 
 ipcMain.handle('twitch-logout', (): boolean => {
     handleTwitchLogout();
-    return true; // Return success
+    return true;
 });
 
 ipcMain.handle('get-overlay-path', (): string | null => {
     return overlayPath;
 });
 
-ipcMain.handle('runFirstTime', async (): Promise<void> => {
-    await makeFirstRunPopup();
-});
 
-// Add update checker IPC handlers
+//DEPRECATED FIRST RUN POPUP CODE
+// We added our code for spicetify in the github repo so that we dont have to modify the system files for spicetify anymore.
+// ipcMain.handle('runFirstTime', async (): Promise<void> => {
+//     await makeFirstRunPopup();
+// });
+
 ipcMain.handle('check-for-updates', (): void => {
     checkForUpdates(mainWindow, Logger);
 });
@@ -650,106 +643,107 @@ function sendToast(message: string, type: 'info' | 'success' | 'error' | 'warnin
 
 setInterval(requestTrackInfo, 1000);
 
-// make a function to make popup text boxes when the user opens the program for the first time.
-async function makeFirstRunPopup(): Promise<void> {
-    if (fs.existsSync(path.join(app.getPath('userData'), 'firstRun.txt'))) {
-        return;
-    }
-    fs.writeFileSync(path.join(app.getPath('userData'), 'firstRun.txt'), 'true');
+// DEPRECATED FIRST RUN POPUP CODE
+// We added our code for spicetify in the github repo so that we dont have to modify the system files for spicetify anymore.
+// async function makeFirstRunPopup(): Promise<void> {
+//     if (fs.existsSync(path.join(app.getPath('userData'), 'firstRun.txt'))) {
+//         return;
+//     }
+//     fs.writeFileSync(path.join(app.getPath('userData'), 'firstRun.txt'), 'true');
     
-    const welcomeOptions: MessageBoxOptions = {
-        type: 'info',
-        buttons: ['Cancel', 'OK'],
-        title: 'First Run',
-        message: 'Welcome to Request+! these boxes will show how how to get the program up and running for the first time!'
-    };
-    dialog.showMessageBoxSync(mainWindow!, welcomeOptions);
+//     const welcomeOptions: MessageBoxOptions = {
+//         type: 'info',
+//         buttons: ['Cancel', 'OK'],
+//         title: 'First Run',
+//         message: 'Welcome to Request+! these boxes will show how how to get the program up and running for the first time!'
+//     };
+//     dialog.showMessageBoxSync(mainWindow!, welcomeOptions);
     
-    const haveAlreadyOptions: MessageBoxOptions = {
-        type: 'info',
-        buttons: ['No', 'Yes'],
-        title: 'Install Spicetify',
-        message: 'First, I need you to install Spicetify, which is a Spotify client mod. Have you already installed Spicetify?'
-    };
-    const haveAlready: MessageBoxReturnValue = await dialog.showMessageBox(mainWindow!, haveAlreadyOptions);
+//     const haveAlreadyOptions: MessageBoxOptions = {
+//         type: 'info',
+//         buttons: ['No', 'Yes'],
+//         title: 'Install Spicetify',
+//         message: 'First, I need you to install Spicetify, which is a Spotify client mod. Have you already installed Spicetify?'
+//     };
+//     const haveAlready: MessageBoxReturnValue = await dialog.showMessageBox(mainWindow!, haveAlreadyOptions);
 
-    if (haveAlready.response === 0) {
-        const { open } = require('openurl');
-        open('https://spicetify.app/docs/getting-started');
+//     if (haveAlready.response === 0) {
+//         const { open } = require('openurl');
+//         open('https://spicetify.app/docs/getting-started');
     
-        const installedSpicetifyOptions: MessageBoxOptions = {
-            type: 'info',
-            buttons: ['Cancel', 'No', 'Yes'],
-            defaultId: 2,
-            title: 'Have you installed Spicetify?',
-            message: 'If you have, please answer yes!'
-        };
-        const installedSpicetify: MessageBoxReturnValue = await dialog.showMessageBox(mainWindow!, installedSpicetifyOptions);
+//         const installedSpicetifyOptions: MessageBoxOptions = {
+//             type: 'info',
+//             buttons: ['Cancel', 'No', 'Yes'],
+//             defaultId: 2,
+//             title: 'Have you installed Spicetify?',
+//             message: 'If you have, please answer yes!'
+//         };
+//         const installedSpicetify: MessageBoxReturnValue = await dialog.showMessageBox(mainWindow!, installedSpicetifyOptions);
 
-        if (installedSpicetify.response === 2) {
-            const authorizeOptions: MessageBoxOptions = {
-                type: 'info',
-                buttons: ['Cancel', 'OK'],
-                title: 'Since you installed Spicetify, let me spice it up?',
-                message: 'Do you authorize me to modify your Spotify Spicetify configuration?'
-            };
-            const authorize: MessageBoxReturnValue = await dialog.showMessageBox(mainWindow!, authorizeOptions);
+//         if (installedSpicetify.response === 2) {
+//             const authorizeOptions: MessageBoxOptions = {
+//                 type: 'info',
+//                 buttons: ['Cancel', 'OK'],
+//                 title: 'Since you installed Spicetify, let me spice it up?',
+//                 message: 'Do you authorize me to modify your Spotify Spicetify configuration?'
+//             };
+//             const authorize: MessageBoxReturnValue = await dialog.showMessageBox(mainWindow!, authorizeOptions);
             
-            if (authorize.response === 1) {
-                await handleSpicetifySetup();
-            }
-        }
-    } else {
-        const authorizeOptions: MessageBoxOptions = {
-            type: 'info',
-            buttons: ['Cancel', 'OK'],
-            title: 'Since you installed Spicetify, let me spice it up?',
-            message: 'Do you authorize me to modify your Spotify Spicetify configuration?'
-        };
-        const authorize: MessageBoxReturnValue = await dialog.showMessageBox(mainWindow!, authorizeOptions);
+//             if (authorize.response === 1) {
+//                 await handleSpicetifySetup();
+//             }
+//         }
+//     } else {
+//         const authorizeOptions: MessageBoxOptions = {
+//             type: 'info',
+//             buttons: ['Cancel', 'OK'],
+//             title: 'Since you installed Spicetify, let me spice it up?',
+//             message: 'Do you authorize me to modify your Spotify Spicetify configuration?'
+//         };
+//         const authorize: MessageBoxReturnValue = await dialog.showMessageBox(mainWindow!, authorizeOptions);
         
-        if (authorize.response === 1) {
-            await handleSpicetifySetup();
-        }  
-    }
-}
+//         if (authorize.response === 1) {
+//             await handleSpicetifySetup();
+//         }  
+//     }
+// }
 
-async function handleSpicetifySetup(): Promise<void> {
-    //TODO: MAC DONT WORK HERE FIXING LATER
+// async function handleSpicetifySetup(): Promise<void> {
+//     //TODO: MAC DONT WORK HERE FIXING LATER
 
-    //check to see if they are using windows or mac
-    if (process.platform === 'win32') {
-        // copy requestplus.js to the spicetify local roaming data folder.
-        const sourceFile: string = path.join(__dirname, 'requestplus.js');
-        const targetFile: string = path.join(app.getPath('appData'), 'spicetify', 'Extensions', 'requestplus.js');
-        fs.copyFileSync(sourceFile, targetFile);
-        //run the commands to apply spicetify changes
-        exec('start cmd /c "spicetify config extensions requestplus.js"');
-        exec('start cmd /c "spicetify apply"');
-        await wait(7000);
+//     //check to see if they are using windows or mac
+//     if (process.platform === 'win32') {
+//         // copy requestplus.js to the spicetify local roaming data folder.
+//         const sourceFile: string = path.join(__dirname, 'requestplus.js');
+//         const targetFile: string = path.join(app.getPath('appData'), 'spicetify', 'Extensions', 'requestplus.js');
+//         fs.copyFileSync(sourceFile, targetFile);
+//         //run the commands to apply spicetify changes
+//         exec('start cmd /c "spicetify config extensions requestplus.js"');
+//         exec('start cmd /c "spicetify apply"');
+//         await wait(7000);
         
-        const successOptions: MessageBoxOptions = {
-            type: 'info',
-            buttons: ['Cancel', 'OK'],
-            title: 'Success!',
-            message: 'Welcome to Request+! Make sure to login with your twitch account to enable the requesting feature!'
-        };
-        dialog.showMessageBoxSync(mainWindow!, successOptions);   
-    } else if (process.platform === 'darwin') {
-        // MacOS specific code
-        const sourceFile: string = path.join(__dirname, 'requestplus.js');
-        const targetFile: string = path.join(os.homedir(), 'Library', 'Application Support', 'spicetify', 'Extensions', 'requestplus.js');
-        fs.copyFileSync(sourceFile, targetFile);
-        exec('open -a Terminal "spicetify config extensions requestplus.js"');
-        exec('open -a Terminal "spicetify apply"');
-        await wait(7000);
+//         const successOptions: MessageBoxOptions = {
+//             type: 'info',
+//             buttons: ['Cancel', 'OK'],
+//             title: 'Success!',
+//             message: 'Welcome to Request+! Make sure to login with your twitch account to enable the requesting feature!'
+//         };
+//         dialog.showMessageBoxSync(mainWindow!, successOptions);   
+//     } else if (process.platform === 'darwin') {
+//         // MacOS specific code
+//         const sourceFile: string = path.join(__dirname, 'requestplus.js');
+//         const targetFile: string = path.join(os.homedir(), 'Library', 'Application Support', 'spicetify', 'Extensions', 'requestplus.js');
+//         fs.copyFileSync(sourceFile, targetFile);
+//         exec('open -a Terminal "spicetify config extensions requestplus.js"');
+//         exec('open -a Terminal "spicetify apply"');
+//         await wait(7000);
         
-        const successOptions: MessageBoxOptions = {
-            type: 'info',
-            buttons: ['Cancel', 'OK'],
-            title: 'Success!',
-            message: 'Welcome to Request+! Make sure to login with your twitch account to enable the requesting feature!'
-        };
-        dialog.showMessageBoxSync(mainWindow!, successOptions);   
-    }        
-}
+//         const successOptions: MessageBoxOptions = {
+//             type: 'info',
+//             buttons: ['Cancel', 'OK'],
+//             title: 'Success!',
+//             message: 'Welcome to Request+! Make sure to login with your twitch account to enable the requesting feature!'
+//         };
+//         dialog.showMessageBoxSync(mainWindow!, successOptions);   
+//     }        
+// }
