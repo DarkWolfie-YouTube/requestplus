@@ -62,7 +62,7 @@ var handleStartupEvent = function() {
 };
 
 handleStartupEvent();
-// updateElectronApp();
+updateElectronApp();
 
 
 // Type definitions
@@ -673,6 +673,13 @@ async function requestTrackInfo(): Promise<void> {
     if (!info) return;
     const currentSongInformation: songInfo = { ...info };
     mainWindow?.webContents.send('song-info', currentSongInformation);
+    if (settings.platform === 'spotify') {
+        if (currentSongInformation) {
+            monitorTrackProgress(currentSongInformation);
+            await wait(2000);
+            checkCurrentlyPlayingTrack(currentSongInformation);
+        }
+    }
 }
 
 

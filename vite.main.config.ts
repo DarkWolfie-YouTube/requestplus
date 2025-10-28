@@ -5,7 +5,7 @@ import copy from 'rollup-plugin-copy';
 export default defineConfig({
   build: {
     rollupOptions: {
-      external: ['electron'],
+      external: ['electron', 'axios'],
       input: {
         main: 'src/main.ts',
         websocket: 'src/websocket.ts', // Add this
@@ -15,6 +15,8 @@ export default defineConfig({
         apiHandler: 'src/apiHandler.ts',
         settingsHandler: 'src/settingsHandler.ts',
         updateChecker: 'src/updateChecker.ts',
+        ytManager: 'src/ytManager.ts',
+        playbackHandler: 'src/playbackHandler.ts',
         packageInfo: 'package.json',
         preload: 'src/preload.ts',
         index: 'index.html'

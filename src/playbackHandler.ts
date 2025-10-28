@@ -118,7 +118,7 @@ class PlaybackHandler {
                 album: spotifyData.album || '',
                 duration: spotifyData.duration || 0,
                 progress: spotifyData.progress || 0,
-                cover: spotifyData.image_large_url || spotifyData.image || '',
+                cover: spotifyData.image || spotifyData.image_large_url || '',
                 isPlaying: spotifyData.isPlaying ?? false,
                 volume: spotifyData.volume ?? 100,
                 shuffle: spotifyData.shuffle ?? false,
