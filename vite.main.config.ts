@@ -5,7 +5,7 @@ import copy from 'rollup-plugin-copy';
 export default defineConfig({
   build: {
     rollupOptions: {
-      external: ['electron', 'axios'],
+      external: ['electron'],
       input: {
         main: 'src/main.ts',
         websocket: 'src/websocket.ts', // Add this
