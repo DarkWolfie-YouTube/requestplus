@@ -73,6 +73,7 @@ interface ClientInfo {
     ws: WebSocket;
     type: string;
     connectedAt: Date;
+    version?: string;
 }
 
 class WebSocketServer {
@@ -156,7 +157,10 @@ class WebSocketServer {
                         const client = this.clients.get(ws);
                         if (client) {
                             client.type = parsed.type;
-                            this.logger.info(`Client identified as type: ${parsed.type}`);
+                            if (parsed.version) {
+                                client.version = parsed.version;
+                            }
+                            this.logger.info(`Client identified as type: ${parsed.type}, version: ${parsed.version || 'unknown'}`);
                             ws.send(JSON.stringify({
                                 acknowledged: true,
                                 type: parsed.type

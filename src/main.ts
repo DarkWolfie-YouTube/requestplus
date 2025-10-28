@@ -195,10 +195,10 @@ async function autoQueueNextTrack(): Promise<void> {
     
     try {
         // Add track to Spotify queue
-        WSServer.WSSend({
+        WSServer.WSSendToType({
             command: 'addTrack',
             data: { uri: `spotify:track:${nextTrack.id}` }
-        });
+        }, 'spotify');
 
         Logger.info(`Auto-queued track: ${nextTrack.title} by ${nextTrack.artist}`);
         
@@ -442,55 +442,55 @@ ipcMain.handle('window-close', async (): Promise<void> => {
 
 ipcMain.handle('song-play', (): void => {
     if (WSServer) {
-        WSServer.WSSend({ command: 'PlayPause' } as WSCommand);
+        WSServer.WSSendToType({ command: 'PlayPause' } as WSCommand, 'spotify');
     }
 });
 
 ipcMain.handle('song-pause', (): void => {
     if (WSServer) {
-        WSServer.WSSend({ command: 'PlayPause' } as WSCommand);
+        WSServer.WSSendToType({ command: 'PlayPause' } as WSCommand, 'spotify');
     }
 });
 
 ipcMain.handle('song-skip', (): void => {
     if (WSServer) {
-        WSServer.WSSend({ command: 'Next' } as WSCommand);
+        WSServer.WSSendToType({ command: 'Next' } as WSCommand, 'spotify');
     }
 });
 
 ipcMain.handle('song-previous', (): void => {
     if (WSServer) {
-        WSServer.WSSend({ command: 'Prev' } as WSCommand);
+        WSServer.WSSendToType({ command: 'Prev' } as WSCommand, 'spotify');
     }
 });
 
 ipcMain.handle('song-like', (): void => {
     if (WSServer) {
-        WSServer.WSSend({ command: 'like' } as WSCommand);
+        WSServer.WSSendToType({ command: 'like' } as WSCommand, 'spotify');
     }
 });
 
 ipcMain.handle('song-volume', (event: Electron.IpcMainInvokeEvent, level: number): void => {
     if (WSServer) {
-        WSServer.WSSend({ command: 'volume', data: { volume: level } } as WSCommand);
+        WSServer.WSSendToType({ command: 'volume', data: { volume: level } } as WSCommand, 'spotify');
     }
 });
 
 ipcMain.handle('song-seek', (event: Electron.IpcMainInvokeEvent, position: number): void => {
     if (WSServer) {
-        WSServer.WSSend({ command: 'seek', data: { position } } as WSCommand);
+        WSServer.WSSendToType({ command: 'seek', data: { position } } as WSCommand, 'spotify');
     }
 });
 
 ipcMain.handle('song-shuffle', (): void => {
     if (WSServer) {
-        WSServer.WSSend({ command: 'shuffle' } as WSCommand);
+        WSServer.WSSendToType({ command: 'shuffle' } as WSCommand, 'spotify');
     }
 });
 
 ipcMain.handle('song-repeat', (): void => {
     if (WSServer) {
-        WSServer.WSSend({ command: 'repeat' } as WSCommand);
+        WSServer.WSSendToType({ command: 'repeat' } as WSCommand, 'spotify');
     }
 
 });
@@ -614,7 +614,7 @@ ipcMain.handle('clear-queue', async (): Promise<boolean> => {
 
 async function requestTrackInfo(): Promise<void> {
     if (WSServer) {
-        WSServer.WSSend({ command: 'getdata' } as WSCommand);
+        WSServer.WSSendToType({ command: 'getdata' } as WSCommand, 'spotify');
         
         currentSongInformation = WSServer.lastInfo;
         if (currentSongInformation) {
