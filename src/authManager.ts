@@ -19,9 +19,19 @@ interface TwitchValidationResponse {
     expires_in: number;
 }
 
+interface KickValidationResponse {
+    data: [{
+        id: string;
+        name: string;
+        email: string;
+        profile_picture: string;
+    }];
+    message: string;
+}
+
 interface ValidationResult {
     valid: boolean;
-    data?: TwitchValidationResponse;
+    data?: TwitchValidationResponse | KickValidationResponse;
     error?: string;
 }
 
@@ -37,17 +47,29 @@ interface TwitchUser {
     created_at?: string;
 }
 
+interface KickUser {
+    id: string;
+    username: string;
+    profile_picture: string;
+    email?: string;
+    bio?: string;
+    verified?: boolean;
+}
+
 interface UserDataResult {
     success: boolean;
-    user?: TwitchUser;
+    user?: TwitchUser | KickUser;
     error?: string;
 }
 
+
 interface TokenData {
     access_token: string;
-    user_data?: TwitchUser;
+    refresh_token?: string;
+    user_data?: TwitchUser | KickUser;
     client_id?: string;
     scopes?: string[];
+    platform: string;
 }
 
 interface StoredTokenData {
@@ -58,6 +80,9 @@ interface StoredTokenData {
     display_name: string;
     expiresAt: number;
     encryptedToken: EncryptedData;
+    encryptedRefreshToken?: EncryptedData;
+    platform: string;
+    scopes?: string[];
 }
 
 interface RetrievedTokenData {
@@ -67,8 +92,10 @@ interface RetrievedTokenData {
     profile_image_url: string;
     display_name: string;
     access_token: string;
+    refresh_token?: string;
     expiresAt: number;
     scopes: string[];
+    platform: string;
 }
 
 interface Logger {
@@ -78,14 +105,20 @@ interface Logger {
 }
 
 class AuthManager {
-    private tokenFilePath: string;
+    private twitchTokenFilePath: string;
+    private kickTokenFilePath: string;
     private logger: Logger;
     private window: BrowserWindow;
 
     constructor(userDataPath: string, logger: Logger, window: BrowserWindow) {
-        this.tokenFilePath = path.join(userDataPath, 'twitch_auth.json');
+        this.twitchTokenFilePath = path.join(userDataPath, 'twitch_auth.json');
+        this.kickTokenFilePath = path.join(userDataPath, 'kick_auth.json');
         this.logger = logger;
         this.window = window;
+    }
+
+    private getTokenFilePath(platform: string): string {
+        return platform === 'twitch' ? this.twitchTokenFilePath : this.kickTokenFilePath;
     }
 
     private encrypt(text: string): EncryptedData {
@@ -119,7 +152,7 @@ class AuthManager {
         return decrypted;
     }
 
-    async validateToken(token: string): Promise<ValidationResult> {
+    async validateTwitchToken(token: string): Promise<ValidationResult> {
         try {
             const response = await fetch('https://id.twitch.tv/oauth2/validate', {
                 headers: {
@@ -134,13 +167,42 @@ class AuthManager {
                 return { valid: false, error: `Token validation failed with status ${response.status}` };
             }
         } catch (error) {
-            this.logger.error('Token validation error:', error);
+            this.logger.error('Twitch token validation error:', error);
             return { valid: false, error: (error as Error).message };
         }
     }
 
-    // Get user data from Twitch API
-    async getUserData(token: string, clientId: string): Promise<UserDataResult> {
+    async validateKickToken(token: string): Promise<ValidationResult> {
+        try {
+            // Kick uses the token to authenticate API requests
+            const response = await fetch('https://api.kick.com/public/v1/users', {
+                headers: {
+                    'Authorization': `Bearer ${token}`, 
+                    'User-Agent': 'Request+/1.1.0 (https://github.com/DarkWolfie-YouTube/requestplus) darkwolfiefiver@gmail.com'
+                }
+            });
+
+            if (response.status === 200) {
+                const data = await response.json() as KickValidationResponse;
+                return { valid: true, data: data };
+            } else {
+                return { valid: false, error: `Token validation failed with status ${response.status}` };
+            }
+        } catch (error) {
+            this.logger.error('Kick token validation error:', error);
+            return { valid: false, error: (error as Error).message };
+        }
+    }
+
+    async validateToken(token: string, platform: string): Promise<ValidationResult> {
+        if (platform === 'twitch') {
+            return this.validateTwitchToken(token);
+        } else {
+            return this.validateKickToken(token);
+        }
+    }
+
+    async getTwitchUserData(token: string, clientId: string): Promise<UserDataResult> {
         try {
             const response = await fetch('https://api.twitch.tv/helix/users', {
                 headers: {
@@ -156,17 +218,77 @@ class AuthManager {
                 return { success: false, error: `User data fetch failed with status ${response.status}` };
             }
         } catch (error) {
-            this.logger.error('User data fetch error:', error);
+            this.logger.error('Twitch user data fetch error:', error);
             return { success: false, error: (error as Error).message };
+        }
+    }
+
+    async getKickUserData(token: string): Promise<UserDataResult> {
+        try {
+            const response = await fetch('https://api.kick.com/public/v1/users', {
+                headers: {
+                    'Authorization': `Bearer ${token}`, 
+                    'User-Agent': 'Request+/1.1.0 (https://github.com/DarkWolfie-YouTube/requestplus) darkwolfiefiver@gmail.com'
+                }
+            });
+
+            if (response.status === 200) {
+                const data = await response.json() as KickUser;
+                return { success: true, user: data };
+            } else {
+                return { success: false, error: `User data fetch failed with status ${response.status}` };
+            }
+        } catch (error) {
+            this.logger.error('Kick user data fetch error:', error);
+            return { success: false, error: (error as Error).message };
+        }
+    }
+
+    async getUserData(token: string, platform: string, clientId?: string): Promise<UserDataResult> {
+        if (platform === 'twitch') {
+            if (!clientId) {
+                return { success: false, error: 'Client ID required for Twitch' };
+            }
+            return this.getTwitchUserData(token, clientId);
+        } else {
+            return this.getKickUserData(token);
+        }
+    }
+
+    private normalizeUserData(userData: TwitchUser | KickUser, platform: string): {
+        id: string;
+        login: string;
+        email: string | null;
+        profile_image_url: string;
+        display_name: string;
+    } {
+        if (platform === 'twitch') {
+            const twitchUser = userData as TwitchUser;
+            return {
+                id: twitchUser.id,
+                login: twitchUser.login,
+                email: twitchUser.email || null,
+                profile_image_url: twitchUser.profile_image_url,
+                display_name: twitchUser.display_name
+            };
+        } else {
+            const kickUser = userData as KickUser;
+            return {
+                id: kickUser.id,
+                login: kickUser.username,
+                email: kickUser.email || null,
+                profile_image_url: kickUser.profile_pic || '',
+                display_name: kickUser.username
+            };
         }
     }
 
     async saveToken(tokenData: TokenData): Promise<boolean> {
         try {
-            this.logger.info('Saving token data:', Object.keys(tokenData));
+            this.logger.info(`Saving ${tokenData.platform} token data:`, Object.keys(tokenData));
 
             // Validate the token first
-            const validationResult = await this.validateToken(tokenData.access_token);
+            const validationResult = await this.validateToken(tokenData.access_token, tokenData.platform);
             if (!validationResult.valid) {
                 this.logger.error('Token validation failed:', validationResult.error);
                 dialog.showErrorBox('Error', 'Token is invalid! This can be due to no internet or the token is not valid.');
@@ -175,8 +297,12 @@ class AuthManager {
 
             // Get user data if not provided
             let userData = tokenData.user_data;
-            if (!userData && tokenData.client_id) {
-                const userResult = await this.getUserData(tokenData.access_token, tokenData.client_id);
+            if (!userData) {
+                const userResult = await this.getUserData(
+                    tokenData.access_token, 
+                    tokenData.platform,
+                    tokenData.client_id
+                );
                 if (userResult.success) {
                     userData = userResult.user;
                 } else {
@@ -190,33 +316,51 @@ class AuthManager {
                 return false;
             }
 
-            // Calculate expiration (Twitch tokens typically last 60 days, but validation response has expires_in)
-            const expiresIn = validationResult.data?.expires_in || 3600; // Default to 1 hour if not specified
+            // Calculate expiration
+            let expiresIn: number;
+            if (tokenData.platform === 'twitch') {
+                const twitchValidation = validationResult.data as TwitchValidationResponse;
+                expiresIn = twitchValidation?.expires_in || 3600;
+            } else {
+                // Kick tokens typically last 30 days
+                expiresIn = 30 * 24 * 60 * 60;
+            }
             const expiresAt = Date.now() + (expiresIn * 1000);
 
             // Encrypt the access token
             const encryptedToken = this.encrypt(tokenData.access_token);
             
+            // Encrypt refresh token if provided
+            let encryptedRefreshToken: EncryptedData | undefined;
+            if (tokenData.refresh_token) {
+                encryptedRefreshToken = this.encrypt(tokenData.refresh_token);
+            }
+
+            // Normalize user data
+            const normalizedUser = this.normalizeUserData(userData, tokenData.platform);
+            
             // Store the encrypted token and metadata
             const dataToStore: StoredTokenData = {
-                id: userData.id,
-                login: userData.login,
-                email: userData.email || null,
-                profile_image_url: userData.profile_image_url,
-                display_name: userData.display_name,
+                ...normalizedUser,
                 expiresAt: expiresAt,
-                encryptedToken: encryptedToken
+                encryptedToken: encryptedToken,
+                encryptedRefreshToken: encryptedRefreshToken,
+                platform: tokenData.platform,
+                scopes: tokenData.scopes
             };
 
+            // Get the appropriate file path
+            const tokenFilePath = this.getTokenFilePath(tokenData.platform);
+
             // Ensure directory exists
-            const dir = path.dirname(this.tokenFilePath);
+            const dir = path.dirname(tokenFilePath);
             if (!fs.existsSync(dir)) {
                 fs.mkdirSync(dir, { recursive: true });
             }
 
             // Write to file
-            fs.writeFileSync(this.tokenFilePath, JSON.stringify(dataToStore, null, 2));
-            this.logger.info('Token saved successfully');
+            fs.writeFileSync(tokenFilePath, JSON.stringify(dataToStore, null, 2));
+            this.logger.info(`${tokenData.platform} token saved successfully`);
             
             return true;
         } catch (error) {
@@ -225,21 +369,21 @@ class AuthManager {
         }
     }
 
-    async getStoredToken(): Promise<RetrievedTokenData | null> {
+    async getStoredToken(platform: string): Promise<RetrievedTokenData | null> {
         try {
+            const tokenFilePath = this.getTokenFilePath(platform);
             
-            if (!fs.existsSync(this.tokenFilePath)) {
+            if (!fs.existsSync(tokenFilePath)) {
                 return null;
             }
             
-            const tokenData: StoredTokenData = JSON.parse(fs.readFileSync(this.tokenFilePath, 'utf8'));
+            const tokenData: StoredTokenData = JSON.parse(fs.readFileSync(tokenFilePath, 'utf8'));
 
             // Check if token has expired
             if (tokenData.expiresAt < Date.now()) {
-                console.log('Token has expired! Please re-authenticate.');
-                this.logger.warn('Token has expired! Please re-authenticate.');
-                dialog.showErrorBox('Error', 'Token has expired! Please re-authenticate.');
-                this.clearToken();
+                this.logger.warn(`${platform} token has expired! Please re-authenticate.`);
+                dialog.showErrorBox('Error', `${platform} token has expired! Please re-authenticate.`);
+                this.clearToken(platform);
                 return null;
             }
             
@@ -249,18 +393,69 @@ class AuthManager {
                 tokenData.encryptedToken.key,
                 tokenData.encryptedToken.iv
             );
-            
+
+            // Decrypt refresh token if present
+            let refreshToken: string | undefined;
+            if (tokenData.encryptedRefreshToken) {
+                refreshToken = this.decrypt(
+                    tokenData.encryptedRefreshToken.content,
+                    tokenData.encryptedRefreshToken.key,
+                    tokenData.encryptedRefreshToken.iv
+                );
+            }
             
             // Validate the token
-            const validationResult = await this.validateToken(accessToken);
+            const validationResult = await this.validateToken(accessToken, platform);
             
             if (!validationResult.valid) {
-                this.logger.warn('Stored token is invalid:', validationResult.error);
-                this.clearToken();
+                this.logger.warn(`Stored ${platform} token is invalid:`, validationResult.error);
+                this.clearToken(platform);
                 return null;
             }
-           
-            
+
+            // Register user with Request+ API
+            await fetch('https://api.requestplus.xyz/registerUser', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'User-Agent': 'Request+ v1.0.7/release'
+                },
+                body: JSON.stringify({
+                    userID: tokenData.id,
+                    userName: tokenData.login,
+                    display_name: tokenData.display_name,
+                    platform: platform
+                })
+            }).then(res => res.json()).catch(err => {
+                if (err) {
+                    this.logger.error('Error registering user:', err);
+                }
+            });
+
+            await fetch('https://api.requestplus.xyz/updateLastSeen', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'User-Agent': 'Request+ v1.0.7/release'
+                },
+                body: JSON.stringify({
+                    userID: tokenData.id,
+                    platform: platform
+                })
+            }).then(res => res.json()).catch(err => {
+                if (err) {
+                    this.logger.error('Error updating last seen:', err);
+                }
+            });
+
+            // Extract scopes
+            let scopes: string[] = [];
+            if (platform === 'twitch' && validationResult.data) {
+                scopes = (validationResult.data as TwitchValidationResponse).scopes || [];
+            } else if (tokenData.scopes) {
+                scopes = tokenData.scopes;
+            }
+
             return {
                 id: tokenData.id,
                 login: tokenData.login,
@@ -268,30 +463,72 @@ class AuthManager {
                 profile_image_url: tokenData.profile_image_url,
                 display_name: tokenData.display_name,
                 access_token: accessToken,
+                refresh_token: refreshToken,
                 expiresAt: tokenData.expiresAt,
-                scopes: validationResult.data?.scopes || []
+                scopes: scopes,
+                platform: platform
             };
         } catch (error) {
-            this.logger.error('Error retrieving token:', error);
+            this.logger.error(`Error retrieving ${platform} token:`, error);
             return null;
         }
     }
 
-    clearToken(): boolean {
+    clearToken(platform: string): boolean {
         try {
-            if (fs.existsSync(this.tokenFilePath)) {
-                fs.unlinkSync(this.tokenFilePath);
+            const tokenFilePath = this.getTokenFilePath(platform);
+            if (fs.existsSync(tokenFilePath)) {
+                fs.unlinkSync(tokenFilePath);
+                this.logger.info(`${platform} token cleared successfully`);
             }
             return true;
         } catch (error) {
-            this.logger.error('Error clearing token:', error);
+            this.logger.error(`Error clearing ${platform} token:`, error);
             return false;
         }
     }
 
-    async hasValidToken(): Promise<boolean> {
-        const token = await this.getStoredToken();
+    clearAllTokens(): boolean {
+        try {
+            let success = true;
+            success = this.clearToken('twitch') && success;
+            success = this.clearToken('kick') && success;
+            return success;
+        } catch (error) {
+            this.logger.error('Error clearing all tokens:', error);
+            return false;
+        }
+    }
+
+    async hasValidToken(platform: string): Promise<boolean> {
+        const token = await this.getStoredToken(platform);
         return token !== null;
+    }
+
+    async getActivePlatforms(): Promise<string[]> {
+        const platforms: string[] = [];
+
+        if (await this.hasValidToken('twitch')) {
+            platforms.push('twitch');
+        }
+        
+        if (await this.hasValidToken('kick')) {
+            platforms.push('kick');
+        }
+        
+        return platforms;
+    }
+
+    async getAllStoredTokens(): Promise<{ twitch: RetrievedTokenData | null; kick: RetrievedTokenData | null }> {
+        const [twitchToken, kickToken] = await Promise.all([
+            this.getStoredToken('twitch'),
+            this.getStoredToken('kick')
+        ]);
+
+        return {
+            twitch: twitchToken,
+            kick: kickToken
+        };
     }
 }
 

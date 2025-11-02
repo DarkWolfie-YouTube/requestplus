@@ -1,0 +1,1 @@
+// TODO: this will have to wait because of the way kick's chat works for now, requiring a websocket to the requestplus API which I dont want to do.

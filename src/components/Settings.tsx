@@ -12,7 +12,7 @@ import { Copy, Check, ExternalLink, User, LogOut, RefreshCw } from 'lucide-react
 import { toast } from 'sonner';
 import { Command as CommandPrimitive } from 'cmdk';
 
-interface TwitchUser {
+interface User {
   display_name: string;
   profile_image_url: string;
 }
@@ -33,8 +33,10 @@ interface SettingsState {
 }
 
 interface SettingsProps {
-  twitchUser: TwitchUser | null;
-  setTwitchUser: (user: TwitchUser | null) => void;
+  twitchUser: User | null;
+  setTwitchUser: (user: User | null) => void;
+  kickUser: User | null;
+  setKickUser: (user: User | null) => void;
   overlayPath: string;
   updateSettings: UpdateSettings;
   setUpdateSettings: (settings: UpdateSettings) => void;
@@ -44,7 +46,9 @@ interface SettingsProps {
 
 export function Settings({ 
   twitchUser, 
-  setTwitchUser, 
+  setTwitchUser,
+  kickUser,
+  setKickUser, 
   overlayPath, 
   updateSettings, 
   setUpdateSettings, 
@@ -91,6 +95,18 @@ export function Settings({
     if (typeof window !== 'undefined' && (window as any).api?.twitchLogout) {
       (window as any).api.twitchLogout();
       setTwitchUser(null);
+    }
+  };
+  const handleKickLogin = () => {
+    if (typeof window !== 'undefined' && (window as any).api?.kickLogin) {
+      (window as any).api.kickLogin();
+    }
+  };
+
+  const handleKickLogout = () => {
+    if (typeof window !== 'undefined' && (window as any).api?.kickLogout) {
+      (window as any).api.kickLogout();
+      setKickUser(null);
     }
   };
 
@@ -162,16 +178,19 @@ export function Settings({
         </div>
 
         {/* Twitch Account Section */}
-        <Card className="p-6 space-y-4">
+        <Card className="p-6 space-y-1">
           <div className="space-y-2">
-            <Label>Twitch Account</Label>
+            <Label>Streaming Accounts</Label>
             <p className="text-sm text-muted-foreground">
-              Connect your Twitch account to manage requests
+              Connect your streaming accounts to manage requests
             </p>
           </div>
 
           {twitchUser ? (
             <div className="space-y-4">
+              <div className="flex items-center gap-3">
+                <h4 className="font-medium">Twitch</h4>
+              </div>
               <div className="flex items-center gap-3">
                 <img 
                   src={twitchUser.profile_image_url} 
@@ -194,6 +213,34 @@ export function Settings({
               Login with Twitch
             </Button>
           )}
+          {/* <Separator />
+          {kickUser ? (
+            <div className="space-y-4">
+              <div className="flex items-center gap-3">
+                <h4 className="font-medium">Kick</h4>
+              </div>
+              <div className="flex items-center gap-3">
+                <img 
+                  src={kickUser.profile_image_url} 
+                  alt="Profile" 
+                  className="w-12 h-12 rounded-full"
+                />
+                <div>
+                  <p className="font-medium">{kickUser.display_name}</p>
+                  <p className="text-sm text-muted-foreground">Connected</p>
+                </div>
+              </div>
+              <Button variant="outline" onClick={handleKickLogout}>
+                <LogOut className="h-4 w-4 mr-2" />
+                Logout
+              </Button>
+            </div>
+          ) : (
+            <Button onClick={handleKickLogin}>
+              <User className="h-4 w-4 mr-2" />
+              Login with Kick
+            </Button>
+          )} */}
         </Card>
 
         {/* OBS Overlay Section */}
@@ -451,7 +498,7 @@ export function Settings({
           <div>
             <h3 className="font-medium mb-1">About Request+</h3>
             <p className="text-sm text-muted-foreground">
-              Version 1.0.6 • Built for Streamers by streamers.
+              Version 1.1.0 • Built for Streamers by streamers.
             </p>
           </div>
 

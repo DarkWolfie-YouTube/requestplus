@@ -113,7 +113,7 @@ class YTManager {
             const response = await requestFn();
             
             if (response.status === 204) {
-                return null;
+                return true as unknown as T;
             }
             
             return response.data;
@@ -234,7 +234,7 @@ class YTManager {
         console.log('[YTManager] Seeking to position:', position);
         await this.makeAuthenticatedRequest(() =>
             this.instance.post('/seek-to', { seconds: position }, {
-                headers: { 'Authorization': `Bearer ${this.token}` }
+                headers: { 'Authorization': `Bearer ${this.token}`, 'Content-Type': 'application/json' }
             }), '/seek-to'
         );
     }
@@ -253,14 +253,14 @@ class YTManager {
             this.instance.post('/switch-repeat', {
                 "iteration": 1
             }, {
-                headers: { 'Authorization': `Bearer ${this.token}` }
+                headers: { 'Authorization': `Bearer ${this.token}`, 'Content-Type': 'application/json' }
             }), '/switch-repeat'
         );
     }
     async addItemToQueueById(videoId: string): Promise<songData | null> {
         return this.makeAuthenticatedRequest<songData>(() =>
-            this.instance.post(`/queue`, { videoId: videoId }, {
-                headers: { 'Authorization': `Bearer ${this.token}` }
+            this.instance.post(`/queue`, JSON.stringify({ videoId: videoId, insertPosition: "INSERT_AFTER_CURRENT_VIDEO" }), {
+                headers: { 'Authorization': `Bearer ${this.token}`, 'Content-Type': 'application/json' }
             }), `/queue/${videoId}`
         );
     }

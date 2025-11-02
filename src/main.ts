@@ -9,7 +9,7 @@ import { updateElectronApp } from 'update-electron-app';
 //Handlers
 import websocket from './websocket';
 import { TrackData } from './websocket';
-import Auth from './authManager';
+import Auth, { TokenData, Platform, RetrievedTokenData } from './authManager';
 import logger from './logger';
 import ChatHandler from './chatHandler';
 import APIHandler from './apiHandler';
@@ -17,11 +17,6 @@ import SettingsHandler from './settingsHandler';
 import { Settings } from './settingsHandler';
 import { songData, YTManager } from './ytManager';
 import PlaybackHandler, { songInfo } from './playbackHandler';
-
-
-
-
-
 
 var handleStartupEvent = function() {
   if (process.platform !== 'win32') {
@@ -32,30 +27,20 @@ var handleStartupEvent = function() {
   switch (squirrelCommand) {
     case '--squirrel-install':
     case '--squirrel-updated':
-
-      // create a shortcut on the desktop and in the start menu
         var target = path.basename(process.execPath);
         var updateDotExe = path.resolve(path.dirname(process.execPath), '..', 'Update.exe');
         var child = require('child_process').spawn(updateDotExe, ['--createShortcut', target], { detached: true });
         child.unref();
-
       app.quit();
-
       return true;
     case '--squirrel-uninstall':
-        // remove the shortcut from the desktop and start menu
         var target = path.basename(process.execPath);
         var updateDotExe = path.resolve(path.dirname(process.execPath), '..', 'Update.exe');
         var child = require('child_process').spawn(updateDotExe, ['--removeShortcut', target], { detached: true });
         child.unref();
-
       app.quit();
-
       return true;
     case '--squirrel-obsolete':
-      // This is called on the outgoing version of your app before
-      // we update to the new version - it's the opposite of
-      // --squirrel-updated
       app.quit();
       return true;
   }
@@ -63,7 +48,6 @@ var handleStartupEvent = function() {
 
 handleStartupEvent();
 updateElectronApp();
-
 
 // Type definitions
 interface TwitchUser {
@@ -74,19 +58,11 @@ interface TwitchUser {
     email: string;
 }
 
-
-interface TwitchTokenData {
-    access_token: string;
+interface KickUser {
     id: string;
-    login: string;
-    display_name: string;
-    profile_image_url: string;
-    email: string;
-    scopes: string[];
-}
-
-interface TwitchApiResponse {
-    data: TwitchUser[];
+    username: string;
+    profile_pic?: string;
+    email?: string;
 }
 
 interface ToastMessage {
@@ -94,7 +70,6 @@ interface ToastMessage {
     type: 'success' | 'error' | 'info' | 'warning';
     duration: number;
 }
-
 
 interface WSCommand {
     command: string;
@@ -111,19 +86,25 @@ const TWITCH_CLIENT_ID: string = 'if6usvbqj58fwdbycnu6v77jjsluq5';
 const TWITCH_REDIRECT_URI: string = 'http://localhost:444';
 const TWITCH_SCOPES: string[] = ['user:read:email', 'chat:read', 'chat:edit'];
 
+const KICK_CLIENT_ID: string = '01K90W9460Q5JKJD89KHVC1S6K';
+const KICK_REDIRECT_URI: string = 'https://api.requestplus.xyz/kcallback';
+const KICK_SCOPES: string[] = ['profile', 'chat'];
+
 // Global variables with proper typing
-let WSServer: websocket; // Type this according to your websocket class
-let currentSongInformation: songInfo; // Define currentTrackInfo interface as needed
+let WSServer: websocket;
+let currentSongInformation: songInfo;
 let mainWindow: BrowserWindow | null = null;
-let AuthManager: Auth; // Type this according to your Auth class
-let Logger: logger; // Type this according to your logger class
-let chatHandler: ChatHandler; // Type this according to your ChatHandler class
+let AuthManager: Auth;
+let Logger: logger;
+let chatHandler: ChatHandler;
 let settings: Settings;
 let overlayPath: string;
-let apiHandler: APIHandler; // Type this according to your apiHandler class
-let settingsHandler: SettingsHandler; // Type this according to your settingsHandler class
+let apiHandler: APIHandler;
+let settingsHandler: SettingsHandler;
 let twitchAccessToken: string | undefined;
 let twitchUser: TwitchUser | undefined;
+let kickAccessToken: string | undefined;
+let kickUser: KickUser | undefined;
 let queueHandler: QueueHandler;
 let currentTrackId: string | null = null;
 let currentTrackId2: string | null = null;
@@ -132,50 +113,34 @@ let lastTrackProgress: number = 0;
 let ytManager: YTManager;
 let playbackHandler: PlaybackHandler;
 
-
 // Auto-queue monitor function
-function monitorTrackProgress(trackData: TrackData): void {
+function monitorTrackProgress(trackData: songInfo): void {
     if (!queueHandler || !trackData) return;
-
-    // Skip if track is not currently playing
     if (!trackData.isPlaying) return;
-
-    // Skip if track progress is not available
     if (!trackData.progress) return;
-
-    // Skip if track duration is not available
     if (!trackData.duration) return;
-
-
 
     const queue = queueHandler.getQueue();
     if (queue.items.length === 0) return;
 
-    // Get current track info
     const progress = trackData.progress || 0;
     const duration = trackData.duration || 0;
-    const trackId = trackData.id || trackData.uri;
+    const trackId = trackData.id || '';
 
-    // Reset auto-queue trigger when a new track starts
     if (currentTrackId !== trackId) {
         currentTrackId = trackId;
         autoQueueTriggered = false;
         lastTrackProgress = progress;
         Logger.info(`New track detected: ${trackId}`);
-        
-        // Check if this track matches any queue item and mark as currently playing
         checkCurrentlyPlayingTrack(trackData);
         return;
     }
 
-    // Skip if duration is not available
     if (duration <= 0) return;
 
-    // Calculate time remaining in milliseconds
     const timeRemaining = duration - progress;
-    const TEN_SECONDS = 10000; // 10 seconds in milliseconds
+    const TEN_SECONDS = 10000;
 
-    // Trigger auto-queue when 10 seconds remaining and not already triggered
     if (timeRemaining <= TEN_SECONDS && timeRemaining > 0 && !autoQueueTriggered) {
         Logger.info(`Track ending soon (${Math.floor(timeRemaining / 1000)}s remaining), adding next queue item`);
         autoQueueNextTrack();
@@ -185,7 +150,6 @@ function monitorTrackProgress(trackData: TrackData): void {
     lastTrackProgress = progress;
 }
 
-// Function to add the next track from queue to Spotify queue
 async function autoQueueNextTrack(): Promise<void> {
     if (!queueHandler || !WSServer) return;
 
@@ -195,11 +159,9 @@ async function autoQueueNextTrack(): Promise<void> {
         return;
     }
 
-    // Get the first item in queue (index 0)
     const nextTrack = queue.items[0];
     
     try {
-        // Add track to Spotify queue
         WSServer.WSSendToType({
             command: 'addTrack',
             data: { uri: `spotify:track:${nextTrack.id}` }
@@ -207,14 +169,12 @@ async function autoQueueNextTrack(): Promise<void> {
 
         Logger.info(`Auto-queued track: ${nextTrack.title} by ${nextTrack.artist}`);
         
-        // Show toast notification
         sendToast(
             `Auto-queued: ${nextTrack.title} by ${nextTrack.artist}`,
             'info',
             4000
         );
 
-        // Mark this track as queued for auto-play (we'll handle the currently playing update when it actually starts)
         await queueHandler.setTrackAsQueued(0);
 
     } catch (error) {
@@ -223,14 +183,12 @@ async function autoQueueNextTrack(): Promise<void> {
     }
 }
 
-// Function to check if currently playing track matches any queue item
 async function checkCurrentlyPlayingTrack(trackData: TrackData): Promise<void> {
     if (!queueHandler || !trackData) return;
 
     const queue = queueHandler.getQueue();
     if (queue.items.length === 0) return;
 
-    // Extract track ID from various possible sources
     let trackId = trackData.id;
     if (!trackId && trackData.uri) {
         trackId = trackData.uri.replace('spotify:track:', '');
@@ -241,21 +199,16 @@ async function checkCurrentlyPlayingTrack(trackData: TrackData): Promise<void> {
         trackId = trackId.replace('spotify:track:', '');
     }
 
-    // Find matching track in queue by ID
     const matchingTrackIndex = queue.items.findIndex(item => item.id === trackId);
-
 
     if (matchingTrackIndex !== -1) {
         if (currentTrackId2 === trackId) {
-            // Already marked as currently playing
             return;
         }
         Logger.info(`Currently playing track matches queue item at index ${matchingTrackIndex}`);
         
-        // Set this track as currently playing
         await queueHandler.setCurrentlyPlaying(matchingTrackIndex);
         
-        // Show notification
         const track = queue.items[matchingTrackIndex];
         sendToast(
             `Now Playing from Queue: ${track.title}`,
@@ -264,10 +217,8 @@ async function checkCurrentlyPlayingTrack(trackData: TrackData): Promise<void> {
         );
         Logger.info(`Now playing from queue: ${track.title} by ${track.artist}`);
         
-        // Mark this track as currently playing
         currentTrackId2 = trackId;
 
-        // Remove the track from queue after a short delay (it's now playing)
         setTimeout(async () => {
             await queueHandler.removeFromQueue(matchingTrackIndex);
             Logger.info(`Removed played track from queue: ${track.title}`);
@@ -276,35 +227,35 @@ async function checkCurrentlyPlayingTrack(trackData: TrackData): Promise<void> {
     }
 }
 
-// Declare global variables that might be set by build process
 declare const MAIN_WINDOW_VITE_DEV_SERVER_URL: string | undefined;
 declare const MAIN_WINDOW_VITE_NAME: string;
 
 settingsHandler = new SettingsHandler(app.getPath('userData'));
 
-async function createAuthWindow(): Promise<void> {
+async function createTwitchAuthWindow(): Promise<void> {
     const authUrl: string = `https://id.twitch.tv/oauth2/authorize?client_id=${TWITCH_CLIENT_ID}&redirect_uri=${TWITCH_REDIRECT_URI}&response_type=token&scope=${TWITCH_SCOPES.join('+')}`;
-    // open this url in a browser
     shell.openExternal(authUrl);
 }
 
+async function createKickAuthWindow(): Promise<void> {
+    const randomState: string = Math.random().toString(36).substring(2, 15);
+    const authUrl: string = `https://api.requestplus.xyz/kcallback?state=${randomState}`;
+    shell.openExternal(authUrl);
+}
 
 async function ensureOverlayFile(): Promise<string> {
     const userDataPath: string = app.getPath('userData');
     const overlayDir: string = path.join(userDataPath, 'overlay');
     const targetPath: string = path.join(overlayDir, 'overlay.html');
 
-    // Create overlay directory if it doesn't exist
     if (!fs.existsSync(overlayDir)) {
         fs.mkdirSync(overlayDir, { recursive: true });
     }
 
-    // Delete overlay file if it already exists
     if (fs.existsSync(targetPath)) {
         fs.unlinkSync(targetPath);
     }
 
-    // Copy overlay file if it doesn't exist or if we're in development
     const sourceFile: string = path.join(__dirname, 'views', 'overlay.html');
     if (!fs.existsSync(targetPath) || !app.isPackaged) {
         fs.copyFileSync(sourceFile, targetPath);
@@ -312,7 +263,6 @@ async function ensureOverlayFile(): Promise<string> {
 
     overlayPath = targetPath;
 
-    // make it copy the styles folder with it.
     const stylesDir: string = path.join(__dirname, 'views', 'styles');
     const targetStylesDir: string = path.join(overlayDir, 'styles');
     if (!fs.existsSync(targetStylesDir)) {
@@ -331,8 +281,6 @@ async function ensureOverlayFile(): Promise<string> {
 async function createWindow(): Promise<void> {
     ensureOverlayFile();
 
-    
-
     mainWindow = new BrowserWindow({
         width: 500,
         height: 900,
@@ -340,7 +288,7 @@ async function createWindow(): Promise<void> {
             nodeIntegration: false,
             contextIsolation: true,
             preload: path.join(__dirname, 'preload.js'),
-            // devTools: !app.isPackaged
+            devTools: !app.isPackaged
         }, 
         frame: false,
         title: "Request+",
@@ -354,12 +302,12 @@ async function createWindow(): Promise<void> {
     if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
         mainWindow.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL);
         mainWindow.webContents.on('did-finish-load', () => {
-            mainWindow?.webContents.send('twitch-auth-success', twitchUser);
+            if (twitchUser) mainWindow?.webContents.send('twitch-auth-success', twitchUser);
+            if (kickUser) mainWindow?.webContents.send('kick-auth-success', kickUser);
         });
     } else {
         mainWindow.loadFile(path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`));
     }
-    
     
     const userDataPath: string = app.getPath('userData');
     if (Logger) {
@@ -368,7 +316,7 @@ async function createWindow(): Promise<void> {
         Logger = new logger();
         Logger.info('Logger initialized');
     }
-    queueHandler = new QueueHandler(Logger, WSServer, mainWindow, settings);
+    queueHandler = new QueueHandler(Logger, mainWindow);
 
     AuthManager = new Auth(userDataPath, Logger, mainWindow);
     if (!WSServer) {
@@ -380,7 +328,7 @@ async function createWindow(): Promise<void> {
         ytManager = new YTManager();
     }
 
-    await checkStoredToken();
+    await checkStoredTokens();
     
     await checkForUpdates(mainWindow, Logger);
     
@@ -388,10 +336,8 @@ async function createWindow(): Promise<void> {
         playbackHandler = new PlaybackHandler(settings.platform, WSServer, Logger, ytManager);
     }
 
-
-
     if (!apiHandler) {
-        apiHandler = new APIHandler(mainWindow, playbackHandler, Logger, settings, (tokenData: TwitchTokenData) => AuthManager.saveToken(tokenData));
+        apiHandler = new APIHandler(mainWindow, playbackHandler, Logger, settings, (tokenData: TokenData) => AuthManager.saveToken(tokenData));
     }
     
     mainWindow.on('closed', () => {
@@ -399,21 +345,47 @@ async function createWindow(): Promise<void> {
     });
 }
 
-async function checkStoredToken(): Promise<void> {
+async function checkStoredTokens(): Promise<void> {
     try {
-        const storedToken: TwitchTokenData | null = await AuthManager.getStoredToken();
-        if (storedToken) {
-            twitchAccessToken = storedToken.access_token;
-            twitchUser = storedToken as TwitchUser;
+        // Check Twitch token
+        const storedTwitchToken: RetrievedTokenData | null = await AuthManager.getStoredToken('twitch');
+        if (storedTwitchToken) {
+            twitchAccessToken = storedTwitchToken.access_token;
+            twitchUser = {
+                id: storedTwitchToken.id,
+                login: storedTwitchToken.login,
+                display_name: storedTwitchToken.display_name,
+                profile_image_url: storedTwitchToken.profile_image_url,
+                email: storedTwitchToken.email || ''
+            };
             mainWindow?.webContents.send('twitch-auth-success', twitchUser);
+            
             if (!chatHandler) {
                 chatHandler = new ChatHandler(Logger, mainWindow, ({ login: twitchUser.login, access_token: twitchAccessToken }), WSServer, settings, queueHandler, ytManager);
                 chatHandler.connect();
             }
         }
+
+        // Check Kick token
+        const storedKickToken: RetrievedTokenData | null = await AuthManager.getStoredToken('kick');
+        if (storedKickToken) {
+            kickAccessToken = storedKickToken.access_token;
+            kickUser = {
+                id: storedKickToken.id,
+                username: storedKickToken.login,
+                profile_pic: storedKickToken.profile_image_url,
+                email: storedKickToken.email || undefined
+            };
+            mainWindow?.webContents.send('kick-auth-success', kickUser);
+            
+            // TODO: Initialize Kick chat handler when implemented
+            // if (!kickChatHandler) {
+            //     kickChatHandler = new KickChatHandler(Logger, mainWindow, kickAccessToken, WSServer, settings, queueHandler, ytManager);
+            //     kickChatHandler.connect();
+            // }
+        }
     } catch (error) {
-        Logger.error('Error checking stored token:', error);
-        mainWindow?.webContents.send('twitch-auth-error', { message: 'Failed to validate token' });
+        Logger.error('Error checking stored tokens:', error);
     }
 }
 
@@ -432,9 +404,9 @@ ipcMain.handle('save-settings', (event: Electron.IpcMainInvokeEvent, settinga: S
 
         if (saved) {
             settings = settinga;
-            chatHandler.updateSettings(settings);
-            apiHandler.updateSettings(settings);
             playbackHandler.updateSettings(settings.platform);
+            if (chatHandler) chatHandler.updateSettings(settings);
+            apiHandler.updateSettings(settings);
             resolve();
         } else {
             reject(new Error('Failed to save settings'));
@@ -443,12 +415,11 @@ ipcMain.handle('save-settings', (event: Electron.IpcMainInvokeEvent, settinga: S
 });
 
 ipcMain.on('settings-updated', (event: Electron.IpcMainEvent, settings: Settings): void => {
-    // Handle real-time settings updates
     console.log('Settings updated:', settings);
     settingsHandler.save(settings);
-    chatHandler.updateSettings(settings);
-    apiHandler.updateSettings(settings);
     playbackHandler.updateSettings(settings.platform);
+    if (chatHandler) chatHandler.updateSettings(settings);
+    apiHandler.updateSettings(settings);
 });
 
 ipcMain.handle('window-minimize', (): void => {
@@ -527,8 +498,6 @@ ipcMain.handle('song-seek', async (event: Electron.IpcMainInvokeEvent, position:
     if (platform === 'spotify' && WSServer) {
         WSServer.WSSendToType({ command: 'seek', data: { position } } as WSCommand, 'spotify');
     } else if (platform === 'youtube' && ytManager) {
-        console.log('Seeking to position:', position);
-        console.log(Math.floor(position / 1000));
         await ytManager.seek(Math.floor(position / 1000));
     }
 });
@@ -553,32 +522,30 @@ ipcMain.handle('song-repeat', async (): Promise<void> => {
     }
 });
 
-
+// Twitch Auth Handlers
 ipcMain.handle('twitch-login', (): void => {
-    createAuthWindow();
+    createTwitchAuthWindow();
 });
 
 function handleTwitchLogout(): void {
     try {
-       
         if (AuthManager) {
-            const success: boolean = AuthManager.clearToken();
+            const success: boolean = AuthManager.clearToken('twitch');
             if (success) {
                 Logger.info('Twitch token cleared successfully');
             } else {
-                Logger.warn('Failed to clear stored token');
+                Logger.warn('Failed to clear stored Twitch token');
             }
         }
 
-       
         twitchAccessToken = undefined;
         twitchUser = undefined;
 
-        
         if (chatHandler) {
-            chatHandler.disconnect?.(); // If your ChatHandler has a disconnect method
+            chatHandler.disconnect?.();
             chatHandler = null;
         }
+        
         if (mainWindow && !mainWindow.isDestroyed()) {
             mainWindow.webContents.send('twitch-logout-success');
         }
@@ -612,16 +579,72 @@ ipcMain.handle('twitch-logout', (): boolean => {
     return true;
 });
 
+// Kick Auth Handlers
+ipcMain.handle('kick-login', (): void => {
+    createKickAuthWindow();
+});
+
+function handleKickLogout(): void {
+    try {
+        if (AuthManager) {
+            const success: boolean = AuthManager.clearToken('kick');
+            if (success) {
+                Logger.info('Kick token cleared successfully');
+            } else {
+                Logger.warn('Failed to clear stored Kick token');
+            }
+        }
+
+        kickAccessToken = undefined;
+        kickUser = undefined;
+
+        // TODO: Disconnect Kick chat handler when implemented
+        // if (kickChatHandler) {
+        //     kickChatHandler.disconnect?.();
+        //     kickChatHandler = null;
+        // }
+        
+        if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('kick-logout-success');
+        }
+
+        if (mainWindow && !mainWindow.isDestroyed()) {
+            const toastMessage: ToastMessage = { 
+                message: 'Successfully logged out of Kick', 
+                type: 'success', 
+                duration: 3000 
+            };
+            mainWindow.webContents.send('show-toast', toastMessage);
+        }
+
+        Logger.info('Kick logout completed successfully');
+
+    } catch (error) {
+        Logger.error('Error during Kick logout:', error);
+        if (mainWindow && !mainWindow.isDestroyed()) {
+            const toastMessage: ToastMessage = { 
+                message: 'Error logging out of Kick', 
+                type: 'error', 
+                duration: 5000 
+            };
+            mainWindow.webContents.send('show-toast', toastMessage);
+        }
+    }
+}
+
+ipcMain.handle('kick-logout', (): boolean => {
+    handleKickLogout();
+    return true;
+});
+
+// Check active platforms
+ipcMain.handle('get-active-platforms', async (): Promise<Platform[]> => {
+    return AuthManager ? AuthManager.getActivePlatforms() : [];
+});
+
 ipcMain.handle('get-overlay-path', (): string | null => {
     return overlayPath;
 });
-
-
-//DEPRECATED FIRST RUN POPUP CODE
-// We added our code for spicetify in the github repo so that we dont have to modify the system files for spicetify anymore.
-// ipcMain.handle('runFirstTime', async (): Promise<void> => {
-//     await makeFirstRunPopup();
-// });
 
 ipcMain.handle('check-for-updates', (): void => {
     checkForUpdates(mainWindow, Logger);
@@ -682,7 +705,6 @@ async function requestTrackInfo(): Promise<void> {
     }
 }
 
-
 function sendToast(message: string, type: 'info' | 'success' | 'error' | 'warning' = 'info', duration: number = 5000): void {
     if (!mainWindow || mainWindow.isDestroyed()) {
         console.warn('Cannot send toast - window is null or destroyed');
@@ -690,15 +712,11 @@ function sendToast(message: string, type: 'info' | 'success' | 'error' | 'warnin
     }
     
     try {
-        // Create a simple, serializable object
         const toastData = {
             message: String(message),
             type: String(type),
             duration: Number(duration)
         };
-    
-        
-        // Send the toast data to the renderer
         mainWindow.webContents.send('show-toast', toastData);
     } catch (error) {
         console.error('Error sending toast:', error);
@@ -706,108 +724,3 @@ function sendToast(message: string, type: 'info' | 'success' | 'error' | 'warnin
 }
 
 setInterval(requestTrackInfo, 1000);
-
-// DEPRECATED FIRST RUN POPUP CODE
-// We added our code for spicetify in the github repo so that we dont have to modify the system files for spicetify anymore.
-// async function makeFirstRunPopup(): Promise<void> {
-//     if (fs.existsSync(path.join(app.getPath('userData'), 'firstRun.txt'))) {
-//         return;
-//     }
-//     fs.writeFileSync(path.join(app.getPath('userData'), 'firstRun.txt'), 'true');
-    
-//     const welcomeOptions: MessageBoxOptions = {
-//         type: 'info',
-//         buttons: ['Cancel', 'OK'],
-//         title: 'First Run',
-//         message: 'Welcome to Request+! these boxes will show how how to get the program up and running for the first time!'
-//     };
-//     dialog.showMessageBoxSync(mainWindow!, welcomeOptions);
-    
-//     const haveAlreadyOptions: MessageBoxOptions = {
-//         type: 'info',
-//         buttons: ['No', 'Yes'],
-//         title: 'Install Spicetify',
-//         message: 'First, I need you to install Spicetify, which is a Spotify client mod. Have you already installed Spicetify?'
-//     };
-//     const haveAlready: MessageBoxReturnValue = await dialog.showMessageBox(mainWindow!, haveAlreadyOptions);
-
-//     if (haveAlready.response === 0) {
-//         const { open } = require('openurl');
-//         open('https://spicetify.app/docs/getting-started');
-    
-//         const installedSpicetifyOptions: MessageBoxOptions = {
-//             type: 'info',
-//             buttons: ['Cancel', 'No', 'Yes'],
-//             defaultId: 2,
-//             title: 'Have you installed Spicetify?',
-//             message: 'If you have, please answer yes!'
-//         };
-//         const installedSpicetify: MessageBoxReturnValue = await dialog.showMessageBox(mainWindow!, installedSpicetifyOptions);
-
-//         if (installedSpicetify.response === 2) {
-//             const authorizeOptions: MessageBoxOptions = {
-//                 type: 'info',
-//                 buttons: ['Cancel', 'OK'],
-//                 title: 'Since you installed Spicetify, let me spice it up?',
-//                 message: 'Do you authorize me to modify your Spotify Spicetify configuration?'
-//             };
-//             const authorize: MessageBoxReturnValue = await dialog.showMessageBox(mainWindow!, authorizeOptions);
-            
-//             if (authorize.response === 1) {
-//                 await handleSpicetifySetup();
-//             }
-//         }
-//     } else {
-//         const authorizeOptions: MessageBoxOptions = {
-//             type: 'info',
-//             buttons: ['Cancel', 'OK'],
-//             title: 'Since you installed Spicetify, let me spice it up?',
-//             message: 'Do you authorize me to modify your Spotify Spicetify configuration?'
-//         };
-//         const authorize: MessageBoxReturnValue = await dialog.showMessageBox(mainWindow!, authorizeOptions);
-        
-//         if (authorize.response === 1) {
-//             await handleSpicetifySetup();
-//         }  
-//     }
-// }
-
-// async function handleSpicetifySetup(): Promise<void> {
-//     //TODO: MAC DONT WORK HERE FIXING LATER
-
-//     //check to see if they are using windows or mac
-//     if (process.platform === 'win32') {
-//         // copy requestplus.js to the spicetify local roaming data folder.
-//         const sourceFile: string = path.join(__dirname, 'requestplus.js');
-//         const targetFile: string = path.join(app.getPath('appData'), 'spicetify', 'Extensions', 'requestplus.js');
-//         fs.copyFileSync(sourceFile, targetFile);
-//         //run the commands to apply spicetify changes
-//         exec('start cmd /c "spicetify config extensions requestplus.js"');
-//         exec('start cmd /c "spicetify apply"');
-//         await wait(7000);
-        
-//         const successOptions: MessageBoxOptions = {
-//             type: 'info',
-//             buttons: ['Cancel', 'OK'],
-//             title: 'Success!',
-//             message: 'Welcome to Request+! Make sure to login with your twitch account to enable the requesting feature!'
-//         };
-//         dialog.showMessageBoxSync(mainWindow!, successOptions);   
-//     } else if (process.platform === 'darwin') {
-//         // MacOS specific code
-//         const sourceFile: string = path.join(__dirname, 'requestplus.js');
-//         const targetFile: string = path.join(os.homedir(), 'Library', 'Application Support', 'spicetify', 'Extensions', 'requestplus.js');
-//         fs.copyFileSync(sourceFile, targetFile);
-//         exec('open -a Terminal "spicetify config extensions requestplus.js"');
-//         exec('open -a Terminal "spicetify apply"');
-//         await wait(7000);
-        
-//         const successOptions: MessageBoxOptions = {
-//             type: 'info',
-//             buttons: ['Cancel', 'OK'],
-//             title: 'Success!',
-//             message: 'Welcome to Request+! Make sure to login with your twitch account to enable the requesting feature!'
-//         };
-//         dialog.showMessageBoxSync(mainWindow!, successOptions);   
-//     }        
-// }

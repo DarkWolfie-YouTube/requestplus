@@ -182,25 +182,31 @@ class ChatHandler {
                     this.Client.say(channel, `Request+: Please provide a spotify track link! Usage: !sr <link>`);
                 }
             } else if (this.settings.platform === 'youtube') {
-                if (request.includes("https://www.youtube.com/") || request.includes("https://youtu.be/") || request.includes("https://music.youtube.com/")) {
+                console.log("YouTube request detected");
+                console.log("Request link: " + request);
+                if (request.includes("https://www.youtube.com/") || request.includes("https://youtube.com/") || request.includes("https://music.youtube.com/") || request.includes("https://youtu.be/")) {
                     let videoId: string | null = null;
                     let ida: string;
                     if (request.includes("https://www.youtube.com/watch?v=")) {
                        ida = request.split("https://www.youtube.com/watch?v=")[1];
+                    } else if (request.includes("https://youtube.com/watch?v=")) {
+                       ida = request.split("https://youtube.com/watch?v=")[1];
                     } else if (request.includes("https://music.youtube.com/watch?v=")) {
                        ida = request.split("https://music.youtube.com/watch?v=")[1];
                     } else if (request.includes("https://youtu.be/")) {
                        ida = request.split("https://youtu.be/")[1];
                     }
 
-                    if (ida.includes("?si=")) {
-                            videoId = ida.split("?si=")[0];
+                    if (ida.includes("&si=")) {
+                            videoId = ida.split("&si=")[0];
                         } else {
                             videoId = ida;
                         }
-
+                    console.log("Extracted video ID: " + videoId);
                     if (videoId) {
+                        console.log("Adding video ID to queue: " + videoId);
                         await this.ytManager.addItemToQueueById(videoId);
+                        console.log("Video added to queue");
                         this.Client.say(channel, `Request+: Added the YouTube video to the queue.`);
                         return;
                     } else {

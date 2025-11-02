@@ -37,7 +37,7 @@ interface songInfo {
   isLiked: boolean;
 }
 
-interface TwitchUser {
+interface User {
   display_name: string;
   profile_image_url: string;
 }
@@ -65,7 +65,8 @@ const App = () => {
   });
 
   // Global state for settings
-  const [twitchUser, setTwitchUser] = useState<TwitchUser | null>(null);
+  const [twitchUser, setTwitchUser] = useState<User | null>(null);
+  const [kickUser, setKickUser] = useState<User | null>(null);
   const [overlayPath, setOverlayPath] = useState('');
   const [updateSettings, setUpdateSettings] = useState<UpdateSettings>({ checkPreReleases: false });
   const [settings, setSettings] = useState({
@@ -170,12 +171,13 @@ const App = () => {
     });
 
     // Listen for auth success
-    api.authSuccess?.((user: TwitchUser) => {
+    api.authSuccess?.((user: User) => {
       setTwitchUser(user);
     });
 
-    // Fetch initial queue data
-
+    api.kickAuthSuccess?.((user: User) => {
+      setKickUser(user);
+    });
 
     // Call preload if available
     if (api.preload && typeof api.preload === 'function') {
@@ -314,6 +316,8 @@ const App = () => {
               <Settings 
                 twitchUser={twitchUser}
                 setTwitchUser={setTwitchUser}
+                kickUser={kickUser}
+                setKickUser={setKickUser}
                 overlayPath={overlayPath}
                 updateSettings={updateSettings}
                 setUpdateSettings={setUpdateSettings}

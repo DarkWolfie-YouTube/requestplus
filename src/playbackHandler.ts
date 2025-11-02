@@ -3,6 +3,7 @@ import Logger from "./logger";
 import { YTManager } from "./ytManager";
 
 interface songInfo {
+  id: string;
   title: string;
   artist: string;
   album: string;
@@ -67,6 +68,7 @@ class PlaybackHandler {
             }
 
             this.currentSong = {
+                id: ytSongData.videoId || '',
                 title: ytSongData.title,
                 artist: ytSongData.artist || 'Unknown Artist',
                 album: '',
@@ -113,6 +115,7 @@ class PlaybackHandler {
             const artists = dataArtists.length > 0 ? dataArtists.join(", ") : 'Unknown Artist';
 
             this.currentSong = {
+                id: spotifyData.id || '',
                 title: spotifyData.title || 'Unknown Title',
                 artist: artists,
                 album: spotifyData.album || '',

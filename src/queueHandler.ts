@@ -30,15 +30,11 @@ class QueueHandler {
         currentlyPlayingIndex: -1
     };
     private logger: Logger;
-    private wss: WebSocketServer;
-    private settings: Settings;
     private mainWindow: BrowserWindow;
     
-    constructor(logger: Logger, wss: WebSocketServer, mainWindow: BrowserWindow, settings: Settings) {
+    constructor(logger: Logger, mainWindow: BrowserWindow) {
         this.logger = logger;
-        this.wss = wss;
         this.mainWindow = mainWindow;
-        this.settings = settings;
     }
 
     async addToQueue(item: QueueItem): Promise<void> {
