@@ -31,6 +31,7 @@ interface ElectronAPI {
   twitchLogout: () => Promise<void>;
   kickLogin: () => Promise<void>;
   kickLogout: () => Promise<void>;
+  kickRefresh: () => Promise<void>;
   authSuccess: (callback: (user: any) => void) => void;
   kickAuthSuccess: (callback: (user: any) => void) => void;
 
@@ -127,6 +128,7 @@ const electronAPI: ElectronAPI = {
   twitchLogout: () => ipcRenderer.invoke('twitch-logout'),
   kickLogin: () => ipcRenderer.invoke('kick-login'),
   kickLogout: () => ipcRenderer.invoke('kick-logout'),
+  kickRefresh: () => ipcRenderer.invoke('kick-refresh'),
   authSuccess: (callback) => {
     ipcRenderer.on('twitch-auth-success', (_, user) => callback(user));
   },

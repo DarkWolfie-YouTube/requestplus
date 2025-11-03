@@ -11,6 +11,8 @@ export default defineConfig({
         websocket: 'src/websocket.ts', // Add this
         authManager: 'src/authManager.ts',
         logger: 'src/logger.ts',
+        kickchat: 'src/kickchat.ts',
+        queueHandler: 'src/queueHandler.ts',
         chatHandler: 'src/chatHandler.ts',
         apiHandler: 'src/apiHandler.ts',
         settingsHandler: 'src/settingsHandler.ts',

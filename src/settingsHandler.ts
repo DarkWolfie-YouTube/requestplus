@@ -11,6 +11,7 @@ interface Settings {
     autoPlay?: boolean;
     filterExplicit?: boolean;
     platform?: string;
+    telemetryEnabled?: boolean;
     [key: string]: any; // Allow additional properties
 }
 

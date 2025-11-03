@@ -30,6 +30,7 @@ interface SettingsState {
   autoPlay: boolean;
   platform: string;
   filterExplicit: boolean;
+  telemetryEnabled: boolean;
 }
 
 interface SettingsProps {
@@ -169,86 +170,82 @@ export function Settings({
   };
 
   return (
-    <div className="min-h-screen bg-background p-4">
-      <div className="max-w-md mx-auto space-y-6">
+    <div className="min-h-screen bg-background p-6">
+      <div className="max-w-md mx-auto space-y-6 animate-fade-in">
         {/* Header */}
-        <div className="text-center space-y-2">
-          <h1 className="text-2xl font-medium">Settings</h1>
-          <p className="text-muted-foreground">Configure your Request+ experience</p>
+        <div className="text-center space-y-2 py-4">
+          <h1 className="text-3xl">Settings</h1>
+          <p className="text-muted-foreground text-lg">Configure your Request+ experience</p>
         </div>
 
         {/* Twitch Account Section */}
-        <Card className="p-6 space-y-1">
+        <Card className="p-6 space-y-6 shadow-card border-border/50">
           <div className="space-y-2">
-            <Label>Streaming Accounts</Label>
-            <p className="text-sm text-muted-foreground">
+            <Label className="text-lg">Streaming Accounts</Label>
+            <p className="text-sm text-muted-foreground/80">
               Connect your streaming accounts to manage requests
             </p>
           </div>
 
           {twitchUser ? (
             <div className="space-y-4">
-              <div className="flex items-center gap-3">
-                <h4 className="font-medium">Twitch</h4>
-              </div>
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3 p-4 bg-accent/30 rounded-lg">
                 <img 
                   src={twitchUser.profile_image_url} 
                   alt="Profile" 
-                  className="w-12 h-12 rounded-full"
+                  className="w-14 h-14 rounded-full ring-2 ring-primary/50"
                 />
-                <div>
-                  <p className="font-medium">{twitchUser.display_name}</p>
+                <div className="flex-1">
+                  <h4 className="mb-1">Twitch</h4>
+                  <p>{twitchUser.display_name}</p>
                   <p className="text-sm text-muted-foreground">Connected</p>
                 </div>
               </div>
-              <Button variant="outline" onClick={handleTwitchLogout}>
+              <Button variant="outline" onClick={handleTwitchLogout} className="w-full hover-lift">
                 <LogOut className="h-4 w-4 mr-2" />
-                Logout
+                Logout from Twitch
               </Button>
             </div>
           ) : (
-            <Button onClick={handleTwitchLogin}>
+            <Button onClick={handleTwitchLogin} className="w-full hover-lift">
               <User className="h-4 w-4 mr-2" />
               Login with Twitch
             </Button>
           )}
-          {/* <Separator />
+          <Separator className="my-4" />
           {kickUser ? (
             <div className="space-y-4">
-              <div className="flex items-center gap-3">
-                <h4 className="font-medium">Kick</h4>
-              </div>
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3 p-4 bg-accent/30 rounded-lg">
                 <img 
                   src={kickUser.profile_image_url} 
                   alt="Profile" 
-                  className="w-12 h-12 rounded-full"
+                  className="w-14 h-14 rounded-full ring-2 ring-primary/50"
                 />
-                <div>
-                  <p className="font-medium">{kickUser.display_name}</p>
+                <div className="flex-1">
+                  <h4 className="mb-1">Kick</h4>
+                  <p>{kickUser.display_name}</p>
                   <p className="text-sm text-muted-foreground">Connected</p>
                 </div>
               </div>
-              <Button variant="outline" onClick={handleKickLogout}>
+              <Button variant="outline" onClick={handleKickLogout} className="w-full hover-lift">
                 <LogOut className="h-4 w-4 mr-2" />
-                Logout
+                Logout from Kick
               </Button>
             </div>
           ) : (
-            <Button onClick={handleKickLogin}>
+            <Button onClick={handleKickLogin} className="w-full hover-lift">
               <User className="h-4 w-4 mr-2" />
               Login with Kick
             </Button>
-          )} */}
+          )}
         </Card>
 
         {/* OBS Overlay Section */}
         {overlayPath && (
-          <Card className="p-6 space-y-4">
+          <Card className="p-6 space-y-4 shadow-card border-border/50">
             <div className="space-y-2">
-              <Label>OBS Overlay URL</Label>
-              <p className="text-sm text-muted-foreground">
+              <Label className="text-lg">OBS Overlay URL</Label>
+              <p className="text-sm text-muted-foreground/80">
                 Add this as a Browser Source in OBS
               </p>
             </div>
@@ -257,12 +254,13 @@ export function Settings({
               <Input
                 value={overlayPath}
                 readOnly
-                className="flex-1"
+                className="flex-1 bg-input-background border-border/50 font-mono text-sm"
               />
               <Button
                 variant="outline"
                 size="icon"
                 onClick={() => copyToClipboard(overlayPath)}
+                className="hover-lift flex-shrink-0"
               >
                 {copied ? (
                   <Check className="h-4 w-4 text-green-500" />
@@ -275,10 +273,10 @@ export function Settings({
         )}
 
         {/* Request Management */}
-        <Card className="p-6 space-y-6">
+        <Card className="p-6 space-y-6 shadow-card border-border/50">
           <div>
-            <h3 className="font-medium mb-1">Request Management</h3>
-            <p className="text-sm text-muted-foreground">
+            <h3 className="text-lg">Request Management</h3>
+            <p className="text-sm text-muted-foreground/80">
               Control how song requests work
             </p>
           </div>
@@ -362,10 +360,10 @@ export function Settings({
         </Card>
 
         {/* Overlay Settings */}
-        <Card className="p-6 space-y-6">
+        <Card className="p-6 space-y-6 shadow-card border-border/50">
           <div>
-            <h3 className="font-medium mb-1">Overlay Settings</h3>
-            <p className="text-sm text-muted-foreground">
+            <h3 className="text-lg">Overlay Settings</h3>
+            <p className="text-sm text-muted-foreground/80">
               Customize the visual appearance
             </p>
           </div>
@@ -392,11 +390,11 @@ export function Settings({
           </div>
         </Card>
 
-       {/* Overlay Settings */}
-        <Card className="p-6 space-y-6">
+       {/* Platform Settings */}
+        <Card className="p-6 space-y-6 shadow-card border-border/50">
           <div>
-            <h3 className="font-medium mb-1">Platform Settings</h3>
-            <p className="text-sm text-muted-foreground">
+            <h3 className="text-lg">Platform Settings</h3>
+            <p className="text-sm text-muted-foreground/80">
               Customize the platform-specific behavior
             </p>
           </div>
@@ -424,10 +422,10 @@ export function Settings({
         </Card>
 
         {/* Notification Settings */}
-        <Card className="p-6 space-y-6">
+        <Card className="p-6 space-y-6 shadow-card border-border/50">
           <div>
-            <h3 className="font-medium mb-1">Notifications</h3>
-            <p className="text-sm text-muted-foreground">
+            <h3 className="text-lg">Notifications</h3>
+            <p className="text-sm text-muted-foreground/80">
               Manage how you receive updates
             </p>
           </div>
@@ -448,11 +446,36 @@ export function Settings({
           </div>
         </Card>
 
-        {/* Updates Section */}
-        <Card className="p-6 space-y-6">
+        {/* Privacy Settings */}
+        <Card className="p-6 space-y-6 shadow-card border-border/50">
           <div>
-            <h3 className="font-medium mb-1">Updates</h3>
-            <p className="text-sm text-muted-foreground">
+            <h3 className="text-lg">Privacy</h3>
+            <p className="text-sm text-muted-foreground/80">
+              Control what data is shared
+            </p>
+          </div>
+
+          <div className="flex items-center justify-between">
+            <div className="space-y-1">
+              <Label>Telemetry Data</Label>
+              <p className="text-sm text-muted-foreground">
+                Help improve Request+ by sharing anonymous usage data | Requires a restart to take effect.
+              </p>
+            </div>
+            <Switch
+              checked={settings.telemetryEnabled || false}
+              onCheckedChange={(checked) => 
+                setSettings({...settings, telemetryEnabled: checked})
+              }
+            />
+          </div>
+        </Card>
+
+        {/* Updates Section */}
+        <Card className="p-6 space-y-6 shadow-card border-border/50">
+          <div>
+            <h3 className="text-lg">Updates</h3>
+            <p className="text-sm text-muted-foreground/80">
               Manage application updates
             </p>
           </div>
@@ -474,7 +497,7 @@ export function Settings({
               </div>
             </div>
 
-            <Button onClick={checkForUpdates} variant="outline">
+            <Button onClick={checkForUpdates} variant="outline" className="w-full hover-lift">
               <RefreshCw className="h-4 w-4 mr-2" />
               Check for Updates
             </Button>
@@ -482,27 +505,28 @@ export function Settings({
         </Card>
 
         {/* Save Settings Button */}
-        <Card className="p-6">
-          <Button onClick={saveSettings} className="w-full">
+        <Card className="p-6 shadow-card border-border/50">
+          <Button onClick={saveSettings} className="w-full hover-lift shadow-lg hover-glow">
             Save Settings
           </Button>
           {settingsSaved && (
-            <p className="text-sm text-green-500 text-center mt-2">
-              Settings saved successfully!
+            <p className="text-sm text-green-500 text-center mt-3 animate-fade-in">
+              ✓ Settings saved successfully!
             </p>
           )}
         </Card>
 
         {/* About Section */}
-        <Card className="p-6 space-y-4">
+        <Card className="p-6 space-y-4 shadow-card border-border/50">
           <div>
-            <h3 className="font-medium mb-1">About Request+</h3>
-            <p className="text-sm text-muted-foreground">
-              Version 1.1.0 • Built for Streamers by streamers.
+            <h3 className="text-lg">About Request+</h3>
+            <p className="text-sm text-muted-foreground/80">
+              Version 1.1.1 • Built for streamers by streamers
             </p>
           </div>
 
-          <Button variant="outline" className="w-full" onClick={() => window.open('https://requestplus.xyz', '_blank')}>
+          <Button variant="outline" className="w-full hover-lift" onClick={() => window.open('https://requestplus.xyz', '_blank')}>
+            <ExternalLink className="h-4 w-4 mr-2" />
             Visit requestplus.xyz
           </Button>
         </Card>

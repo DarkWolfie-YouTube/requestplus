@@ -3,43 +3,43 @@
 
 :root {
   --font-size: 14px;
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.145 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.145 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.7 0.25 270);
+  --background: oklch(0.11 0.01 270);
+  --foreground: oklch(0.98 0.005 270);
+  --card: oklch(0.15 0.015 270);
+  --card-foreground: oklch(0.98 0.005 270);
+  --popover: oklch(0.15 0.015 270);
+  --popover-foreground: oklch(0.98 0.005 270);
+  --primary: oklch(0.65 0.25 265);
   --primary-foreground: oklch(0.98 0 0);
-  --secondary: oklch(0.35 0.15 240);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.3 0.1 260);
-  --muted-foreground: oklch(0.75 0.05 270);
-  --accent: oklch(0.6 0.2 180);
+  --secondary: oklch(0.2 0.02 270);
+  --secondary-foreground: oklch(0.98 0.005 270);
+  --muted: oklch(0.25 0.02 270);
+  --muted-foreground: oklch(0.6 0.015 270);
+  --accent: oklch(0.3 0.025 270);
   --accent-foreground: oklch(0.98 0 0);
-  --destructive: oklch(0.55 0.25 25);
+  --destructive: oklch(0.55 0.22 25);
   --destructive-foreground: oklch(0.98 0 0);
-  --border: oklch(0.269 0 0);
-  --input: oklch(0.269 0 0);
-  --input-background: oklch(0.205 0 0);
-  --switch-background: oklch(0.439 0 0);
+  --border: oklch(0.25 0.02 270);
+  --input: oklch(0.25 0.02 270);
+  --input-background: oklch(0.18 0.015 270);
+  --switch-background: oklch(0.35 0.02 270);
   --font-weight-medium: 500;
   --font-weight-normal: 400;
-  --ring: oklch(0.439 0 0);
+  --ring: oklch(0.65 0.25 265);
   --chart-1: oklch(0.488 0.243 264.376);
   --chart-2: oklch(0.696 0.17 162.48);
   --chart-3: oklch(0.769 0.188 70.08);
   --chart-4: oklch(0.627 0.265 303.9);
   --chart-5: oklch(0.645 0.246 16.439);
-  --radius: 0.625rem;
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.6 0.3 280);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.35 0.15 260);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(0.269 0 0);
-  --sidebar-ring: oklch(0.439 0 0);
+  --radius: 0.75rem;
+  --sidebar: oklch(0.15 0.015 270);
+  --sidebar-foreground: oklch(0.98 0.005 270);
+  --sidebar-primary: oklch(0.65 0.25 265);
+  --sidebar-primary-foreground: oklch(0.98 0 0);
+  --sidebar-accent: oklch(0.25 0.02 270);
+  --sidebar-accent-foreground: oklch(0.98 0.005 270);
+  --sidebar-border: oklch(0.25 0.02 270);
+  --sidebar-ring: oklch(0.65 0.25 265);
 }
 
 .light {
@@ -128,7 +128,23 @@
   }
 
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground antialiased;
+  }
+
+  /* Improved card shadow and styling */
+  .shadow-card {
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -1px rgba(0, 0, 0, 0.2);
+  }
+
+  .shadow-card-hover {
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.4), 0 4px 6px -2px rgba(0, 0, 0, 0.3);
+  }
+
+  /* Smooth transitions */
+  * {
+    transition-property: color, background-color, border-color, text-decoration-color, fill, stroke, opacity, box-shadow, transform;
+    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+    transition-duration: 150ms;
   }
 }
 
@@ -191,11 +207,11 @@ html {
   font-size: var(--font-size);
 }
 
-/* Add vibrant animations and effects inspired by global.css */
+/* Smooth animations */
 @keyframes slideInUp {
   from {
     opacity: 0;
-    transform: translateY(30px);
+    transform: translateY(20px);
   }
   to {
     opacity: 1;
@@ -212,35 +228,74 @@ html {
   }
 }
 
+@keyframes scaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
 /* Component animations */
 .animate-fade-in {
-  animation: fadeIn 0.8s ease-out;
+  animation: fadeIn 0.4s ease-out;
 }
 
-/* Button hover effects */
-.btn-hover-lift {
-  transition: all 0.2s ease;
+.animate-slide-in {
+  animation: slideInUp 0.4s ease-out;
 }
 
-.btn-hover-lift:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 10px 25px rgba(139, 92, 246, 0.3);
+.animate-scale-in {
+  animation: scaleIn 0.3s ease-out;
 }
 
-/* Custom vibrant scrollbar for dark theme */
+/* Enhanced scrollbar */
 ::-webkit-scrollbar {
-  width: 8px;
+  width: 10px;
+  height: 10px;
 }
 
 ::-webkit-scrollbar-track {
-  background: oklch(0.2 0 0);
+  background: oklch(0.15 0.015 270);
+  border-radius: 5px;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: linear-gradient(to bottom, oklch(0.6 0.3 280), oklch(0.6 0.2 180));
-  border-radius: 4px;
+  background: oklch(0.35 0.1 265);
+  border-radius: 5px;
+  border: 2px solid oklch(0.15 0.015 270);
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: linear-gradient(to bottom, oklch(0.7 0.35 280), oklch(0.7 0.25 180));
+  background: oklch(0.45 0.12 265);
+}
+
+::-webkit-scrollbar-corner {
+  background: oklch(0.15 0.015 270);
+}
+
+/* Custom utility classes */
+.glass-effect {
+  background: oklch(0.15 0.015 270 / 0.8);
+  backdrop-filter: blur(10px);
+  border: 1px solid oklch(0.25 0.02 270 / 0.5);
+}
+
+.glow-effect {
+  box-shadow: 0 0 20px oklch(0.65 0.25 265 / 0.3);
+}
+
+.hover-lift {
+  transition: all 0.2s ease;
+}
+
+.hover-lift:hover {
+  transform: translateY(-2px);
+}
+
+.hover-glow:hover {
+  box-shadow: 0 0 20px oklch(0.65 0.25 265 / 0.4);
 }

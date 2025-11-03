@@ -17,6 +17,7 @@ import SettingsHandler from './settingsHandler';
 import { Settings } from './settingsHandler';
 import { songData, YTManager } from './ytManager';
 import PlaybackHandler, { songInfo } from './playbackHandler';
+import KickChat from './kickchat';
 
 var handleStartupEvent = function() {
   if (process.platform !== 'win32') {
@@ -60,8 +61,8 @@ interface TwitchUser {
 
 interface KickUser {
     id: string;
-    username: string;
-    profile_pic?: string;
+    display_name: string;
+    profile_image_url: string;
     email?: string;
 }
 
@@ -112,6 +113,7 @@ let autoQueueTriggered: boolean = false;
 let lastTrackProgress: number = 0;
 let ytManager: YTManager;
 let playbackHandler: PlaybackHandler;
+let kickChat: KickChat;
 
 // Auto-queue monitor function
 function monitorTrackProgress(trackData: songInfo): void {
@@ -282,8 +284,8 @@ async function createWindow(): Promise<void> {
     ensureOverlayFile();
 
     mainWindow = new BrowserWindow({
-        width: 500,
-        height: 900,
+        width: 600,
+        height: 1000,
         webPreferences: {
             nodeIntegration: false,
             contextIsolation: true,
@@ -318,7 +320,7 @@ async function createWindow(): Promise<void> {
     }
     queueHandler = new QueueHandler(Logger, mainWindow);
 
-    AuthManager = new Auth(userDataPath, Logger, mainWindow);
+    AuthManager = new Auth(userDataPath, Logger, mainWindow, settings);
     if (!WSServer) {
         WSServer = new websocket(443, mainWindow, Logger);
     }
@@ -340,6 +342,7 @@ async function createWindow(): Promise<void> {
         apiHandler = new APIHandler(mainWindow, playbackHandler, Logger, settings, (tokenData: TokenData) => AuthManager.saveToken(tokenData));
     }
     
+
     mainWindow.on('closed', () => {
         mainWindow = null;
     });
@@ -372,17 +375,15 @@ async function checkStoredTokens(): Promise<void> {
             kickAccessToken = storedKickToken.access_token;
             kickUser = {
                 id: storedKickToken.id,
-                username: storedKickToken.login,
-                profile_pic: storedKickToken.profile_image_url,
+                display_name: storedKickToken.login,
+                profile_image_url: storedKickToken.profile_image_url,
                 email: storedKickToken.email || undefined
             };
             mainWindow?.webContents.send('kick-auth-success', kickUser);
             
-            // TODO: Initialize Kick chat handler when implemented
-            // if (!kickChatHandler) {
-            //     kickChatHandler = new KickChatHandler(Logger, mainWindow, kickAccessToken, WSServer, settings, queueHandler, ytManager);
-            //     kickChatHandler.connect();
-            // }
+            if (kickUser && !kickChat) {
+                kickChat = new KickChat(kickAccessToken, kickUser.id, queueHandler, WSServer, settings, ytManager); 
+            }
         }
     } catch (error) {
         Logger.error('Error checking stored tokens:', error);
@@ -406,6 +407,7 @@ ipcMain.handle('save-settings', (event: Electron.IpcMainInvokeEvent, settinga: S
             settings = settinga;
             playbackHandler.updateSettings(settings.platform);
             if (chatHandler) chatHandler.updateSettings(settings);
+            if (kickChat) kickChat.saveSettings(settings);
             apiHandler.updateSettings(settings);
             resolve();
         } else {
@@ -419,12 +421,17 @@ ipcMain.on('settings-updated', (event: Electron.IpcMainEvent, settings: Settings
     settingsHandler.save(settings);
     playbackHandler.updateSettings(settings.platform);
     if (chatHandler) chatHandler.updateSettings(settings);
+    if (kickChat) kickChat.saveSettings(settings);
     apiHandler.updateSettings(settings);
 });
 
 ipcMain.handle('window-minimize', (): void => {
     if (mainWindow) mainWindow.minimize();
 });
+
+ipcMain.handle('kick-refresh', (): void => {
+    if (kickChat) kickChat.refreshToken();
+})
 
 ipcMain.handle('window-close', async (): Promise<void> => {
     if (mainWindow) {

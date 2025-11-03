@@ -74,7 +74,8 @@ const App = () => {
     theme: 'default',
     enableRequests: true,
     modsOnly: false,
-    requestLimit: 10
+    requestLimit: 10,
+    telemetryEnabled: true
   });
   const [queue, setQueue] = useState<Queue>([]);
 

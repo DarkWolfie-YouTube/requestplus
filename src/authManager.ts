@@ -3,6 +3,7 @@ import * as path from 'node:path';
 import * as crypto from 'crypto';
 import fetch from 'node-fetch';
 import { app, dialog, BrowserWindow } from 'electron';
+import { Settings } from './settingsHandler';
 
 // Type definitions
 interface EncryptedData {
@@ -49,8 +50,8 @@ interface TwitchUser {
 
 interface KickUser {
     id: string;
-    username: string;
-    profile_picture: string;
+    login: string;
+    profile_image_url: string;
     email?: string;
     bio?: string;
     verified?: boolean;
@@ -61,7 +62,6 @@ interface UserDataResult {
     user?: TwitchUser | KickUser;
     error?: string;
 }
-
 
 interface TokenData {
     access_token: string;
@@ -98,6 +98,12 @@ interface RetrievedTokenData {
     platform: string;
 }
 
+interface KickTokenRefreshResponse {
+    success: boolean;
+    token: string;
+    error?: string;
+}
+
 interface Logger {
     info(message: string, ...args: any[]): void;
     error(message: string, ...args: any[]): void;
@@ -109,12 +115,28 @@ class AuthManager {
     private kickTokenFilePath: string;
     private logger: Logger;
     private window: BrowserWindow;
+    private settings: any;
 
     constructor(userDataPath: string, logger: Logger, window: BrowserWindow) {
         this.twitchTokenFilePath = path.join(userDataPath, 'twitch_auth.json');
         this.kickTokenFilePath = path.join(userDataPath, 'kick_auth.json');
         this.logger = logger;
         this.window = window;
+        this.settings = {};
+
+        this.loadSettings();
+        
+    }
+
+    private async loadSettings() {
+        try {
+        const data = await fs.promises.readFile(path.join(app.getPath('userData'), 'settings.json'), "utf-8");
+        this.settings = JSON.parse(data);
+        console.log("[INFO] Settings loaded successfully");
+        } catch (err) {
+        console.error("[ERROR] Failed to load settings.json:", err);
+        this.settings = {}; // fallback to empty object
+        }
     }
 
     private getTokenFilePath(platform: string): string {
@@ -174,11 +196,10 @@ class AuthManager {
 
     async validateKickToken(token: string): Promise<ValidationResult> {
         try {
-            // Kick uses the token to authenticate API requests
             const response = await fetch('https://api.kick.com/public/v1/users', {
                 headers: {
                     'Authorization': `Bearer ${token}`, 
-                    'User-Agent': 'Request+/1.1.0 (https://github.com/DarkWolfie-YouTube/requestplus) darkwolfiefiver@gmail.com'
+                    'User-Agent': 'Request+/1.1.1 (https://github.com/DarkWolfie-YouTube/requestplus) darkwolfiefiver@gmail.com'
                 }
             });
 
@@ -228,7 +249,7 @@ class AuthManager {
             const response = await fetch('https://api.kick.com/public/v1/users', {
                 headers: {
                     'Authorization': `Bearer ${token}`, 
-                    'User-Agent': 'Request+/1.1.0 (https://github.com/DarkWolfie-YouTube/requestplus) darkwolfiefiver@gmail.com'
+                    'User-Agent': 'Request+/1.1.1 (https://github.com/DarkWolfie-YouTube/requestplus) darkwolfiefiver@gmail.com'
                 }
             });
 
@@ -275,11 +296,55 @@ class AuthManager {
             const kickUser = userData as KickUser;
             return {
                 id: kickUser.id,
-                login: kickUser.username,
+                login: kickUser.login,
                 email: kickUser.email || null,
-                profile_image_url: kickUser.profile_pic || '',
-                display_name: kickUser.username
+                profile_image_url: kickUser.profile_image_url,
+                display_name: kickUser.login
             };
+        }
+    }
+
+    /**
+     * Refresh Kick token via API
+     */
+    async refreshKickToken(userId: string): Promise<TokenData | null> {
+        try {
+            this.logger.info('Refreshing Kick token via API for user:', userId);
+            
+            const response = await fetch('https://api.requestplus.xyz/kickTokenRefresh', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'User-Agent': 'Request+ v1.1.1/release'
+                },
+                body: JSON.stringify({
+                    userId: userId
+                })
+            });
+
+            if (!response.ok) {
+                this.logger.error('Kick token refresh failed. Status:', response.status);
+                return null;
+            }
+
+            const data = await response.json() as KickTokenRefreshResponse;
+            
+            if (!data.success || !data.token) {
+                this.logger.error('Kick token refresh failed:', data.error || 'No token returned');
+                return null;
+            }
+
+            this.logger.info('Kick token refreshed successfully');
+            var userData = await this.getUserData(data.token, 'kick');
+            // Return TokenData format
+            return {
+                access_token: data.token,
+                user_data: userData.success ? userData.user : null,
+                platform: 'kick'
+            };
+        } catch (error) {
+            this.logger.error('Error refreshing Kick token:', error);
+            return null;
         }
     }
 
@@ -373,15 +438,42 @@ class AuthManager {
         try {
             const tokenFilePath = this.getTokenFilePath(platform);
             
+            // Check if file exists
+            console.log(tokenFilePath);
+            
             if (!fs.existsSync(tokenFilePath)) {
+                console.log('File does not exist');
                 return null;
             }
             
-            const tokenData: StoredTokenData = JSON.parse(fs.readFileSync(tokenFilePath, 'utf8'));
+            let tokenData: StoredTokenData;
+            try {
+                const fileContents = fs.readFileSync(tokenFilePath, 'utf8');
+                tokenData = JSON.parse(fileContents);
+            } catch (error) {
+                this.logger.error(`Error parsing ${platform} token data:`, error);
+                return null;
+            }
+
+            this.logger.info(`${platform} token data:`, tokenData);
 
             // Check if token has expired
             if (tokenData.expiresAt < Date.now()) {
-                this.logger.warn(`${platform} token has expired! Please re-authenticate.`);
+                this.logger.warn(`${platform} token has expired! Attempting to refresh...`);
+                
+                // Try to refresh Kick token if it's expired
+                if (platform === 'kick') {
+                    const refreshedToken = await this.refreshKickToken(tokenData.id);
+                    if (refreshedToken) {
+                        const saved = await this.saveToken(refreshedToken);
+                        if (saved) {
+                            this.logger.info('Successfully refreshed and saved Kick token');
+                            // Recursively call getStoredToken to return the new token
+                            return await this.getStoredToken(platform);
+                        }
+                    }
+                }
+                
                 dialog.showErrorBox('Error', `${platform} token has expired! Please re-authenticate.`);
                 this.clearToken(platform);
                 return null;
@@ -409,44 +501,59 @@ class AuthManager {
             
             if (!validationResult.valid) {
                 this.logger.warn(`Stored ${platform} token is invalid:`, validationResult.error);
+                
+                // Try to refresh Kick token if validation fails
+                if (platform === 'kick') {
+                    this.logger.info('Attempting to refresh invalid Kick token...');
+                    const refreshedToken = await this.refreshKickToken(tokenData.id);
+                    if (refreshedToken) {
+                        const saved = await this.saveToken(refreshedToken);
+                        if (saved) {
+                            this.logger.info('Successfully refreshed and saved Kick token after validation failure');
+                            return await this.getStoredToken(platform);
+                        }
+                    }
+                }
+                
                 this.clearToken(platform);
                 return null;
             }
 
-            // Register user with Request+ API
-            await fetch('https://api.requestplus.xyz/registerUser', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'User-Agent': 'Request+ v1.0.7/release'
-                },
-                body: JSON.stringify({
-                    userID: tokenData.id,
-                    userName: tokenData.login,
-                    display_name: tokenData.display_name,
-                    platform: platform
-                })
-            }).then(res => res.json()).catch(err => {
-                if (err) {
-                    this.logger.error('Error registering user:', err);
-                }
-            });
+            if (this.settings.telemetryEnabled) {
+                await fetch('https://api.requestplus.xyz/registerUser', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'User-Agent': 'Request+ v1.0.7/release'
+                    },
+                    body: JSON.stringify({
+                        userID: tokenData.id,
+                        userName: tokenData.login,
+                        display_name: tokenData.display_name,
+                        platform: platform
+                    })
+                }).then(res => res.json()).catch(err => {
+                    if (err) {
+                        this.logger.error('Error registering user:', err);
+                    }
+                });
 
-            await fetch('https://api.requestplus.xyz/updateLastSeen', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'User-Agent': 'Request+ v1.0.7/release'
-                },
-                body: JSON.stringify({
-                    userID: tokenData.id,
-                    platform: platform
-                })
-            }).then(res => res.json()).catch(err => {
-                if (err) {
-                    this.logger.error('Error updating last seen:', err);
-                }
-            });
+                await fetch('https://api.requestplus.xyz/updateLastSeen', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'User-Agent': 'Request+ v1.0.7/release'
+                    },
+                    body: JSON.stringify({
+                        userID: tokenData.id,
+                        platform: platform
+                    })
+                }).then(res => res.json()).catch(err => {
+                    if (err) {
+                        this.logger.error('Error updating last seen:', err);
+                    }
+                });
+            }
 
             // Extract scopes
             let scopes: string[] = [];
@@ -469,7 +576,7 @@ class AuthManager {
                 platform: platform
             };
         } catch (error) {
-            this.logger.error(`Error retrieving ${platform} token:`, error);
+            this.logger.error(`Error retrieving ${platform} token:`, error instanceof Error ? error.stack : JSON.stringify(error));
             return null;
         }
     }
@@ -530,6 +637,8 @@ class AuthManager {
             kick: kickToken
         };
     }
+
+    
 }
 
 export default AuthManager;

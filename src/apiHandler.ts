@@ -34,6 +34,8 @@ interface TokenData {
         profile_image_url: string;
         email: string;
     };
+    platform: string;
+    verifier?: string;
     scopes: string[];
 }
 
@@ -146,7 +148,7 @@ class APIHandler {
                             if (accessToken) {
                                 fetch('/auth/token', {
                                     method: 'POST',
-                                    headers: { 'Content-Type': 'application/json', 'User-Agent': 'Request+/1.1.0 (https://github.com/DarkWolfie-YouTube/requestplus) darkwolfiefiver@gmail.com'},
+                                    headers: { 'Content-Type': 'application/json', 'User-Agent': 'Request+/1.1.1 (https://github.com/DarkWolfie-YouTube/requestplus) darkwolfiefiver@gmail.com'},
                                     body: JSON.stringify({
                                         access_token: accessToken,
                                         token_type: tokenType,
@@ -334,7 +336,7 @@ class APIHandler {
                         headers: {
                             'Client-ID': "if6usvbqj58fwdbycnu6v77jjsluq5",
                             'Authorization': `Bearer ${access_token}`,
-                            'User-Agent': 'Request+/1.1.0 (https://github.com/DarkWolfie-YouTube/requestplus) darkwolfiefiver@gmail.com'
+                            'User-Agent': 'Request+/1.1.1 (https://github.com/DarkWolfie-YouTube/requestplus) darkwolfiefiver@gmail.com'
                         }
                     });
                     const data: TwitchApiResponse = await response.json();
@@ -353,6 +355,7 @@ class APIHandler {
                         },
                         scopes: TWITCH_SCOPES,
                         platform: 'twitch'
+
                     };
                     
                     // Call your callback with the token
@@ -606,7 +609,7 @@ class APIHandler {
             const response = await fetch('https://api.kick.com/public/v1/users', {
                 headers: {
                     'Authorization': `Bearer ${token}`, 
-                    'User-Agent': 'Request+/1.1.0 (https://github.com/DarkWolfie-YouTube/requestplus) darkwolfiefiver@gmail.com'
+                    'User-Agent': 'Request+/1.1.1 (https://github.com/DarkWolfie-YouTube/requestplus) darkwolfiefiver@gmail.com'
                 }
             });
             const data = await response.json();
@@ -615,9 +618,9 @@ class APIHandler {
                 user_data: {
                     id: userID as string,
                     login: data.data[0].name,
-                    display_name: data.data[0].name,
                     profile_image_url: data.data[0].profile_picture,
-                    email: data.data[0].email || ''  
+                    email: data.data[0].email || '',
+                    display_name: data.data[0].name  
                 },
                 scopes: ['user:read', 'event:subscribe', 'chat:write'],
                 platform: 'kick',

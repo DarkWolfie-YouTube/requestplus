@@ -60,13 +60,13 @@ export function Topbar({
   };
 
   return (
-    <div className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between h-8 bg-secondary/50 border-b border-border select-none">
+    <div className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between h-8 bg-card/80 backdrop-blur-md border-b border-border/40 select-none shadow-sm">
       {/* Draggable area */}
       <div 
-        className="flex-1 h-full flex items-center px-3 cursor-move"
+        className="flex-1 h-full flex items-center px-4 cursor-move"
         style={{ WebkitAppRegion: 'drag' } as any}
       >
-        <span className="text-sm font-medium text-foreground/80">
+        <span className="text-sm text-foreground/90">
           {title}
         </span>
       </div>
@@ -79,7 +79,7 @@ export function Topbar({
         <Button
           variant="ghost"
           size="sm"
-          className="h-8 w-12 rounded-none hover:bg-muted/50 text-foreground/60 hover:text-foreground"
+          className="h-8 w-12 rounded-none hover:bg-accent/60 text-foreground/60 hover:text-foreground transition-colors"
           onClick={handleMinimize}
         >
           <Minus className="h-4 w-4" />
@@ -87,7 +87,7 @@ export function Topbar({
         <Button
           variant="ghost"
           size="sm"
-          className="h-8 w-12 rounded-none hover:bg-destructive hover:text-destructive-foreground text-foreground/60"
+          className="h-8 w-12 rounded-none hover:bg-destructive/90 hover:text-destructive-foreground text-foreground/60 transition-colors"
           onClick={handleClose}
         >
           <X className="h-4 w-4" />

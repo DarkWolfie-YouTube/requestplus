@@ -128,10 +128,10 @@ export function MusicPlayer({ currentTrack, setCurrentTrack }: MusicPlayerProps)
     : 0;
 
   return (
-    <div className="min-h-screen bg-background p-4 flex items-center justify-center">
-      <Card className="w-full max-w-md mx-auto p-4 space-y-4">
+    <div className="h-screen bg-background p-6 flex items-center justify-center overflow-hidden">
+      <Card className="w-full max-w-md mx-auto p-8 space-y-6 shadow-card-hover border-border/50 animate-scale-in max-h-full overflow-y-auto">
         {/* Album Art */}
-        <div className="aspect-square w-full max-w-xs mx-auto rounded-lg overflow-hidden shadow-lg">
+        <div className="aspect-square w-full max-w-sm mx-auto rounded-2xl overflow-hidden shadow-card-hover ring-1 ring-primary/10">
           <ImageWithFallback
             key={`${currentTrack.title}-${currentTrack.artist}-${currentTrack.cover}`}
             src={currentTrack.cover}
@@ -141,14 +141,14 @@ export function MusicPlayer({ currentTrack, setCurrentTrack }: MusicPlayerProps)
         </div>
 
         {/* Track Info */}
-        <div className="text-center space-y-1">
-          <h2 className="text-xl font-medium">{currentTrack.title}</h2>
-          <p className="text-muted-foreground">{currentTrack.artist}</p>
-          <p className="text-sm text-muted-foreground">{currentTrack.album}</p>
+        <div className="text-center space-y-2 px-4">
+          <h2 className="text-2xl truncate">{currentTrack.title}</h2>
+          <p className="text-muted-foreground text-lg">{currentTrack.artist}</p>
+          <p className="text-sm text-muted-foreground/80">{currentTrack.album}</p>
         </div>
 
         {/* Progress Bar */}
-        <div className="space-y-1">
+        <div className="space-y-2 px-2">
           <Slider
             value={[progressPercentage]}
             onValueChange={handleProgressChange}
@@ -156,53 +156,66 @@ export function MusicPlayer({ currentTrack, setCurrentTrack }: MusicPlayerProps)
             step={1}
             className="w-full"
           />
-          <div className="flex justify-between text-sm text-muted-foreground">
+          <div className="flex justify-between text-sm text-muted-foreground/80 px-1">
             <span>{formatTime(currentTrack.progress)}</span>
             <span>{formatTime(currentTrack.duration)}</span>
           </div>
         </div>
 
         {/* Main Controls */}
-        <div className="flex items-center justify-center gap-3 py-2">
-          <Button variant="ghost" size="icon" onClick={handlePrevious}>
+        <div className="flex items-center justify-center gap-4 py-4">
+          <Button 
+            variant="ghost" 
+            size="icon" 
+            onClick={handlePrevious}
+            className="h-12 w-12 rounded-full hover:bg-accent/80 hover-lift"
+          >
             <SkipBack className="h-5 w-5" />
           </Button>
           
           <Button
             size="icon"
-            className="h-12 w-12 rounded-full bg-primary hover:bg-primary/90"
+            className="h-16 w-16 rounded-full bg-primary hover:bg-primary/90 shadow-lg hover-glow"
             onClick={handlePlayPause}
           >
             {currentTrack.isPlaying ? (
-              <Pause className="h-6 w-6 text-primary-foreground" />
+              <Pause className="h-7 w-7 text-primary-foreground" />
             ) : (
-              <Play className="h-6 w-6 text-primary-foreground ml-0.5" />
+              <Play className="h-7 w-7 text-primary-foreground ml-0.5" />
             )}
           </Button>
           
-          <Button variant="ghost" size="icon" onClick={handleNext}>
+          <Button 
+            variant="ghost" 
+            size="icon" 
+            onClick={handleNext}
+            className="h-12 w-12 rounded-full hover:bg-accent/80 hover-lift"
+          >
             <SkipForward className="h-5 w-5" />
           </Button>
         </div>
 
         {/* Secondary Controls */}
-        <div className="flex items-center justify-between pt-1">
-          <div className="flex items-center gap-1">
-            <Button variant="ghost" size="icon" onClick={handleShuffle}>
-              { currentTrack.shuffle ? (
-                <Shuffle className="h-4 w-4 text-muted-foreground" />
-              ) : (
-                <Shuffle className="h-4 w-4" />
-              ) }
+        <div className="flex items-center justify-between px-4 pt-2">
+          <div className="flex items-center gap-2">
+            <Button 
+              variant="ghost" 
+              size="icon"
+              onClick={handleShuffle}
+              className={`h-10 w-10 rounded-full ${currentTrack.shuffle ? 'text-primary' : 'text-muted-foreground'} hover:bg-accent/80`}
+            >
+              <Shuffle className="h-4 w-4" />
             </Button>
-            <Button variant="ghost" size="icon" onClick={handleRepeat}>
-              {/* make a repeat button on 3 different states */}
-              { currentTrack.repeat == 0? (
-                <Repeat className="h-4 w-4" />
-              ) : currentTrack.repeat == 1? (
-                <Repeat className="h-4 w-4 text-muted-foreground" />
+            <Button 
+              variant="ghost" 
+              size="icon"
+              onClick={handleRepeat}
+              className={`h-10 w-10 rounded-full ${currentTrack.repeat !== 0 ? 'text-primary' : 'text-muted-foreground'} hover:bg-accent/80`}
+            >
+              {currentTrack.repeat === 2 ? (
+                <Repeat1 className="h-4 w-4" />
               ) : (
-                <Repeat1 className="h-4 w-4 text-muted-foreground" />
+                <Repeat className="h-4 w-4" />
               )}
             </Button>
           </div>
@@ -211,18 +224,19 @@ export function MusicPlayer({ currentTrack, setCurrentTrack }: MusicPlayerProps)
             variant="ghost"
             size="icon"
             onClick={handleLike}
+            className="h-10 w-10 rounded-full hover:bg-accent/80"
           >
             {isLiked ? (
-              <Heart className="h-4 w-4 text-red-500 fill-red-500" />
+              <Heart className="h-5 w-5 text-red-500 fill-red-500" />
             ) : (
-              <Heart className="h-4 w-4" />
+              <Heart className="h-5 w-5 text-muted-foreground" />
             )}
           </Button>
         </div>
 
         {/* Volume Control */}
-        <div className="flex items-center gap-2 pt-1">
-          <Volume2 className="h-4 w-4 text-muted-foreground" />
+        <div className="flex items-center gap-3 px-4 pt-2">
+          <Volume2 className="h-5 w-5 text-muted-foreground flex-shrink-0" />
           <Slider
             value={volume}
             onValueChange={handleVolumeChange}
@@ -230,7 +244,7 @@ export function MusicPlayer({ currentTrack, setCurrentTrack }: MusicPlayerProps)
             step={1}
             className="flex-1"
           />
-          <span className="text-sm text-muted-foreground w-8">{volume[0]}</span>
+          <span className="text-sm text-muted-foreground w-10 text-right">{volume[0]}%</span>
         </div>
       </Card>
     </div>
