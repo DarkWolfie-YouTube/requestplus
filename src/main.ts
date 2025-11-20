@@ -447,6 +447,7 @@ ipcMain.handle('save-settings', (event: Electron.IpcMainInvokeEvent, settinga: S
             if (chatHandler) chatHandler.updateSettings(settings);
             if (kickChat) kickChat.saveSettings(settings);
             apiHandler.updateSettings(settings);
+            gtsHandler.updateSettings(settings);
             resolve();
         } else {
             reject(new Error('Failed to save settings'));
@@ -461,6 +462,7 @@ ipcMain.on('settings-updated', (event: Electron.IpcMainEvent, settings: Settings
     if (chatHandler) chatHandler.updateSettings(settings);
     if (kickChat) kickChat.saveSettings(settings);
     apiHandler.updateSettings(settings);
+    gtsHandler.updateSettings(settings);
 });
 
 ipcMain.handle('window-minimize', (): void => {
