@@ -31,6 +31,7 @@ interface SettingsState {
   platform: string;
   filterExplicit: boolean;
   telemetryEnabled: boolean;
+  gtsEnabled: boolean;
 }
 
 interface SettingsProps {
@@ -310,6 +311,23 @@ export function Settings({
                 checked={settings.modsOnly}
                 onCheckedChange={(checked) => 
                   setSettings({...settings, modsOnly: checked})
+                }
+              />
+            </div>
+
+            <Separator />
+
+            <div className="flex items-center justify-between">
+              <div className="space-y-1">
+                <Label>Guess The song</Label>
+                <p className="text-sm text-muted-foreground">
+                  Allow Chat to earn points based on if they get the song correct before 30 seconds pass.
+                </p>
+              </div>
+              <Switch
+                checked={settings.gtsEnabled}
+                onCheckedChange={(checked) => 
+                  setSettings({...settings, gtsEnabled: checked})
                 }
               />
             </div>

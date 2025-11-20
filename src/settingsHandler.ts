@@ -3,15 +3,15 @@ import * as path from 'node:path';
 
 // Type definitions for settings structure
 interface Settings {
-    theme?: string;
-    showNotifications?: boolean;
-    enableRequests?: boolean;
-    modsOnly?: boolean;
-    requestLimit?: number;
-    autoPlay?: boolean;
-    filterExplicit?: boolean;
-    platform?: string;
-    telemetryEnabled?: boolean;
+    theme: string;
+    showNotifications: boolean;
+    enableRequests: boolean;
+    modsOnly: boolean;
+    autoPlay: boolean;
+    filterExplicit: boolean;
+    platform: string;
+    telemetryEnabled: boolean;
+    gtsEnabled: boolean;
     [key: string]: any; // Allow additional properties
 }
 
@@ -24,14 +24,34 @@ class SettingsHandler {
 
     load(): Settings {
         if (!fs.existsSync(this.settingsFilePath)) {
-            return {};
+            return {
+                theme: 'default',
+                showNotifications: true,
+                enableRequests: true,
+                modsOnly: false,
+                autoPlay: false,
+                filterExplicit: false,
+                platform: 'spotify',
+                telemetryEnabled: true,
+                gtsEnabled: false
+            };
         }
         try {
             const data = fs.readFileSync(this.settingsFilePath, 'utf-8');
             return JSON.parse(data) as Settings;
         } catch (error) {
             console.error('Error loading settings:', error);
-            return {};
+            return {
+                theme: 'default',
+                showNotifications: true,
+                enableRequests: true,
+                modsOnly: false,
+                autoPlay: false,
+                filterExplicit: false,
+                platform: 'spotify',
+                telemetryEnabled: true,
+                gtsEnabled: false
+            };
         }
     }
 

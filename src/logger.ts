@@ -16,7 +16,7 @@ class Logger {
         }
 
         this.logFolderPath = path.join(app.getPath('userData'), 'logs');
-        this.logFilePath = path.join(this.logFolderPath, `log-${new Date().toISOString().replace(/:/g, '-')}.txt`);
+        this.logFilePath = path.join(this.logFolderPath, `log.txt`);
         this.logLevel = 'info';
         
         this.initializeLogFile();
@@ -32,6 +32,16 @@ class Logger {
             // Create log file if it doesn't exist
             if (!fs.existsSync(this.logFilePath)) {
                 fs.writeFileSync(this.logFilePath, `Log file created at: ${new Date().toISOString()}\n`);
+            } else {
+                if (fs.existsSync(path.join(this.logFolderPath, `log_old.txt`))) {
+                    fs.unlinkSync(path.join(this.logFolderPath, `log_old.txt`));
+                    fs.renameSync(this.logFilePath, path.join(this.logFolderPath, `log_old.txt`));
+                    fs.writeFileSync(this.logFilePath, `Log file created at: ${new Date().toISOString()}\n`);
+                } else {
+                    fs.renameSync(this.logFilePath, path.join(this.logFolderPath, `log_old.txt`));
+                    fs.writeFileSync(this.logFilePath, `Log file created at: ${new Date().toISOString()}\n`);
+                }
+
             }
         } catch (error) {
             console.error('Failed to initialize log file:', error);

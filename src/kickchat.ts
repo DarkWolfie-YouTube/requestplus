@@ -5,6 +5,8 @@ import QueueHandler from './queueHandler';
 import { YTManager } from './ytManager';
 import { Settings } from './settingsHandler';
 import { setTimeout as wait } from 'node:timers/promises';
+import GTSHandler from './gtsHandler';
+import Logger from './logger';
 
 class KickChat {
     private connection: Websocket;
@@ -15,14 +17,18 @@ class KickChat {
     private settings: Settings;
     private ytManager: YTManager;
     private subscribed: boolean = false;
+    private gtsHandler: GTSHandler;
+    private logger: Logger;
 
-    constructor( token: string, userId: string, queue: QueueHandler, WSServer: WebSocketServer, settings: Settings, ytManager: YTManager) {
+    constructor( token: string, userId: string, queue: QueueHandler, WSServer: WebSocketServer, settings: Settings, ytManager: YTManager, gtsHandler: GTSHandler, logger: Logger) {
         this.token = token;
         this.userId = userId;
         this.queue = queue;
         this.WSServer = WSServer;
         this.settings = settings;
         this.ytManager = ytManager;
+        this.gtsHandler = gtsHandler;
+        this.logger = logger;
 
         this.setupWebsocket(token, userId);
     }
@@ -31,7 +37,7 @@ class KickChat {
         this.connection = new Websocket('wss://api.requestplus.xyz');
 
         this.connection.on('message', async (message) => {
-            console.log('Received message:', JSON.parse(message.toString()));
+            
 
             const data = JSON.parse(message.toString());
             switch (data.type) {
@@ -217,7 +223,7 @@ class KickChat {
                     break;
                     
                 case 'subscribed': 
-                    console.log('Successfully subscribed to channel:', userId);
+                    this.logger.info('Successfully subscribed to channel:', userId);
                     break;
                     
                 case 'refresh_token_callback':
@@ -231,11 +237,11 @@ class KickChat {
         });
 
         this.connection.on('error', (error) => {
-            console.error('WebSocket error:', error);
+            this.logger.error('WebSocket error:', error);
         });
 
         this.connection.on('close', () => {
-            console.log('WebSocket connection closed. Attempting to reconnect...');
+            this.logger.info('WebSocket connection closed. Attempting to reconnect...');
             this.subscribed = false;
             setTimeout(() => {
                 this.setupWebsocket(this.token, this.userId);
@@ -261,7 +267,7 @@ class KickChat {
             payload.reply_to_message_id = msg_id;
         }
         
-        console.log('Sending message payload:', payload);
+        this.logger.info('Sending message payload:', payload);
         
         try {
             const response = await fetch('https://api.kick.com/public/v1/chat', {
@@ -275,23 +281,23 @@ class KickChat {
             });
             
             const responseText = await response.text();
-            console.log('Response status:', response.status);
+            this.logger.info('Response status:', response.status);
             
             let result;
             try {
                 result = JSON.parse(responseText);
             } catch (e) {
-                console.error('Failed to parse response as JSON:', responseText);
+                this.logger.error('Failed to parse response as JSON:', responseText);
                 throw new Error('Invalid JSON response from Kick API');
             }
             
             if (!response.ok) {
-                console.error('Failed to send message. Status:', response.status);
-                console.error('Error details:', result);
+                this.logger.error('Failed to send message. Status:', response.status);
+                this.logger.error('Error details:', result);
                 
                 if (response.status === 401) {
                     // Token expired, try to refresh
-                    console.log('Token expired, attempting refresh...');
+                    this.logger.info('Token expired, attempting refresh...');
                     await this.refreshToken();
                     await this.sendMessage(message, msg_id);
                 } else if (response.status === 403) {
@@ -304,13 +310,13 @@ class KickChat {
             }
             
             if (result.data && result.data.is_sent) {
-                console.log('✓ Message sent successfully. Message ID:', result.data.message_id);
+                this.logger.info('✓ Message sent successfully. Message ID:', result.data.message_id);
             }
             
             
             return result;
         } catch (error) {
-            console.error('Error sending message to Kick:', error);
+            this.logger.error('Error sending message to Kick:', error);
             // Don't re-throw, just log the error so the bot continues
         }
     }

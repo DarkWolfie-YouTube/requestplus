@@ -157,7 +157,7 @@ class YTManager {
 
     async getRepeatMode(): Promise<repeatMode | null> {
         return this.makeAuthenticatedRequest<repeatMode>(() =>
-            this.instance.get('/repeat', {
+            this.instance.get('/repeat-mode', {
                 headers: { 'Authorization': `Bearer ${this.token}` }
             }), '/repeat'
         );

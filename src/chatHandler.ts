@@ -5,6 +5,7 @@ import { Settings } from './settingsHandler';
 import { RequestData } from './websocket';
 import QueueHandler from './queueHandler';
 import { YTManager } from './ytManager';
+import GTSHandler from './gtsHandler';
 
 // Type definitions
 interface TwitchAuth {
@@ -55,14 +56,18 @@ class ChatHandler {
     private settings: Settings;
     private queueHandler: QueueHandler;
     private ytManager: YTManager;
+    private gtsHandler: GTSHandler;
+    private channels: string[] = [];
 
-    constructor(logger: Logger, mainWindow: BrowserWindow, twitchAuth: TwitchAuth, WSServer: WSServerInterface, settings: Settings, queueHandler: QueueHandler, ytManager: YTManager) {
+    constructor(logger: Logger, mainWindow: BrowserWindow, twitchAuth: TwitchAuth, WSServer: WSServerInterface, settings: Settings, queueHandler: QueueHandler, ytManager: YTManager, GTSHandler: GTSHandler) {
         this.mainWindow = mainWindow;
         this.logger = logger;
         this.WSServer = WSServer;
         this.settings = settings;
         this.queueHandler = queueHandler;
         this.ytManager = ytManager;
+        this.gtsHandler = GTSHandler;
+        this.channels = [twitchAuth.login];
 
         const clientOptions: TMIClientOptions = {
             options: { debug: false },
@@ -239,6 +244,13 @@ class ChatHandler {
                 }
                 this.Client.say(channel, `Request+: Removed ${this.queueHandler.queue.items[index].title} by ${this.queueHandler.queue.items[index].artist} from the queue.`);
                 await this.queueHandler.removeFromQueue(index);
+            } 
+            if (message.toLowerCase().startsWith('!guess')) {
+                if (!tags.mod && tags.username?.toLowerCase() !== channel.replace('#', '').toLowerCase()) {
+                    this.Client.say(channel, `Request+: Only moderators can start a Guess the Song round.`);
+                    return;
+                }
+                this.gtsHandle(message.split('!guess ').slice(1).join());
             }
         });
         
@@ -254,6 +266,21 @@ class ChatHandler {
 
     async updateSettings(settinga: Settings): Promise<void> {
         this.settings = settinga;
+    }
+    async sendChatMessage(message: string): Promise<void> {
+        for (const channel of this.channels) {
+            this.Client.say(channel, message);
+        }
+    }
+    async gtsHandle(message: string): Promise<void> {
+        this.gtsHandler.updateSettings(this.settings);
+        const response = await this.gtsHandler.gtshandle(message);
+        if (response) {
+            this.Client.say(this.channels[0], `Request+: Correct guess! The song has been revealed.`);
+        } else {
+            this.Client.say(this.channels[0], `Request+: Incorrect guess. Try again!`);
+        }
+    
     }
 }
 

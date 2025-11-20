@@ -9,7 +9,7 @@ import { updateElectronApp } from 'update-electron-app';
 //Handlers
 import websocket from './websocket';
 import { TrackData } from './websocket';
-import Auth, { TokenData, Platform, RetrievedTokenData } from './authManager';
+import Auth, { TokenData, RetrievedTokenData } from './authManager';
 import logger from './logger';
 import ChatHandler from './chatHandler';
 import APIHandler from './apiHandler';
@@ -18,6 +18,7 @@ import { Settings } from './settingsHandler';
 import { songData, YTManager } from './ytManager';
 import PlaybackHandler, { songInfo } from './playbackHandler';
 import KickChat from './kickchat';
+import GTSHandler from './gtsHandler';
 
 var handleStartupEvent = function() {
   if (process.platform !== 'win32') {
@@ -114,20 +115,35 @@ let lastTrackProgress: number = 0;
 let ytManager: YTManager;
 let playbackHandler: PlaybackHandler;
 let kickChat: KickChat;
+let gtsHandler: GTSHandler;
 
 // Auto-queue monitor function
-function monitorTrackProgress(trackData: songInfo): void {
+async function monitorTrackProgress(trackData: songInfo): Promise<void> {
     if (!queueHandler || !trackData) return;
     if (!trackData.isPlaying) return;
     if (!trackData.progress) return;
     if (!trackData.duration) return;
-
-    const queue = queueHandler.getQueue();
-    if (queue.items.length === 0) return;
-
+    if (!gtsHandler) return;
     const progress = trackData.progress || 0;
     const duration = trackData.duration || 0;
     const trackId = trackData.id || '';
+    const timeRemaining = duration - progress;
+    const timeElapsed = progress;
+    const TEN_SECONDS = 10000;
+    const THIRTY_SECONDS = 30000;
+
+    if (gtsHandler.hasGuessed = false && timeElapsed >= THIRTY_SECONDS) {
+        gtsHandler.failedToGuess();
+    }
+
+    if (timeRemaining <= 6000 && timeRemaining > 0 && !apiHandler.hideSongFromView) {
+        Logger.info(`Track ending soon (${Math.floor(timeRemaining / 1000)}s remaining) calling Guess the song hide function...`);
+        gtsHandler.callForHide();
+        await chatHandler.sendChatMessage('Guess the Song! Type !guess <song name> to make your guess before the guessing period ends!');
+    }
+    const queue = queueHandler.getQueue();
+    if (queue.items.length === 0) return;
+
 
     if (currentTrackId !== trackId) {
         currentTrackId = trackId;
@@ -140,11 +156,9 @@ function monitorTrackProgress(trackData: songInfo): void {
 
     if (duration <= 0) return;
 
-    const timeRemaining = duration - progress;
-    const TEN_SECONDS = 10000;
-
+    
     if (timeRemaining <= TEN_SECONDS && timeRemaining > 0 && !autoQueueTriggered) {
-        Logger.info(`Track ending soon (${Math.floor(timeRemaining / 1000)}s remaining), adding next queue item`);
+        Logger.info(`Track ending soon (${Math.floor(timeRemaining / 1000)}s remaining) calling auto-queue function...`);
         autoQueueNextTrack();
         autoQueueTriggered = true;
     }
@@ -290,7 +304,8 @@ async function createWindow(): Promise<void> {
             nodeIntegration: false,
             contextIsolation: true,
             preload: path.join(__dirname, 'preload.js'),
-            devTools: !app.isPackaged
+            devTools: !app.isPackaged,
+            webSecurity: true,
         }, 
         frame: false,
         title: "Request+",
@@ -319,33 +334,56 @@ async function createWindow(): Promise<void> {
         Logger.info('Logger initialized');
     }
     queueHandler = new QueueHandler(Logger, mainWindow);
+    settings = await settingsHandler.load();
 
     AuthManager = new Auth(userDataPath, Logger, mainWindow, settings);
+        
     if (!WSServer) {
         WSServer = new websocket(443, mainWindow, Logger);
     }
-    settings = await settingsHandler.load();
     
     if (!ytManager) {
         ytManager = new YTManager();
     }
 
-    await checkStoredTokens();
-    
     await checkForUpdates(mainWindow, Logger);
     
     if (!playbackHandler) {
         playbackHandler = new PlaybackHandler(settings.platform, WSServer, Logger, ytManager);
     }
+    
 
     if (!apiHandler) {
-        apiHandler = new APIHandler(mainWindow, playbackHandler, Logger, settings, (tokenData: TokenData) => AuthManager.saveToken(tokenData));
+        apiHandler = new APIHandler(mainWindow, playbackHandler, Logger, settings, (tokenData: TokenData) => saveTokenAndActivateChat(tokenData));
+    }
+
+    if (!gtsHandler) {
+        gtsHandler = new GTSHandler(app, mainWindow, apiHandler, playbackHandler, Logger, settings);
     }
     
+    await checkStoredTokens();
 
     mainWindow.on('closed', () => {
         mainWindow = null;
     });
+}
+
+async function saveTokenAndActivateChat(tokenData: TokenData): Promise<boolean> {
+    try {
+        await AuthManager.saveToken(tokenData);
+        await checkStoredTokens();
+        if (!chatHandler) {
+            chatHandler = new ChatHandler(Logger, mainWindow, ({ login: twitchUser.login, access_token: twitchAccessToken }), WSServer, settings, queueHandler, ytManager, gtsHandler);
+            chatHandler.connect();
+        }
+        if (!kickChat) {
+            kickChat = new KickChat(kickAccessToken, kickUser.id, queueHandler, WSServer, settings, ytManager, gtsHandler, Logger);
+        }
+        return true;
+    } catch (error) {
+        Logger.error('Error saving token:', error);
+        return false;
+    }
 }
 
 async function checkStoredTokens(): Promise<void> {
@@ -364,11 +402,11 @@ async function checkStoredTokens(): Promise<void> {
             mainWindow?.webContents.send('twitch-auth-success', twitchUser);
             
             if (!chatHandler) {
-                chatHandler = new ChatHandler(Logger, mainWindow, ({ login: twitchUser.login, access_token: twitchAccessToken }), WSServer, settings, queueHandler, ytManager);
+                chatHandler = new ChatHandler(Logger, mainWindow, ({ login: twitchUser.login, access_token: twitchAccessToken }), WSServer, settings, queueHandler, ytManager, gtsHandler);
                 chatHandler.connect();
             }
         }
-
+        await wait(1000);
         // Check Kick token
         const storedKickToken: RetrievedTokenData | null = await AuthManager.getStoredToken('kick');
         if (storedKickToken) {
@@ -382,7 +420,7 @@ async function checkStoredTokens(): Promise<void> {
             mainWindow?.webContents.send('kick-auth-success', kickUser);
             
             if (kickUser && !kickChat) {
-                kickChat = new KickChat(kickAccessToken, kickUser.id, queueHandler, WSServer, settings, ytManager); 
+                kickChat = new KickChat(kickAccessToken, kickUser.id, queueHandler, WSServer, settings, ytManager, gtsHandler, Logger); 
             }
         }
     } catch (error) {
@@ -645,7 +683,7 @@ ipcMain.handle('kick-logout', (): boolean => {
 });
 
 // Check active platforms
-ipcMain.handle('get-active-platforms', async (): Promise<Platform[]> => {
+ipcMain.handle('get-active-platforms', async (): Promise<string[]> => {
     return AuthManager ? AuthManager.getActivePlatforms() : [];
 });
 
@@ -704,11 +742,9 @@ async function requestTrackInfo(): Promise<void> {
     const currentSongInformation: songInfo = { ...info };
     mainWindow?.webContents.send('song-info', currentSongInformation);
     if (settings.platform === 'spotify') {
-        if (currentSongInformation) {
-            monitorTrackProgress(currentSongInformation);
-            await wait(2000);
-            checkCurrentlyPlayingTrack(currentSongInformation);
-        }
+        monitorTrackProgress(currentSongInformation);
+        await wait(2000);
+        checkCurrentlyPlayingTrack(currentSongInformation);
     }
 }
 

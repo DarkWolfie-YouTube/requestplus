@@ -329,7 +329,7 @@ const App = () => {
           </div>
 
           <Navigation currentView={currentView} onViewChange={setCurrentView} settings={settings} />
-          <Toaster />
+          <Toaster position="top-right" richColors />
         </div>
       </div>
     </div>

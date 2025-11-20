@@ -99,6 +99,16 @@
                         settingsReload()
                         return
                     }
+                    if (response.songHidden && response.gtsActive) {
+                        timeElapsed = 0
+                        songImg.src = "styles/unknown.png";
+                        songText.textContent = "Guess the song currently playing!";
+                        artistText.textContent = "Type your guess in chat!";
+                        durationText.textContent = "00:00";
+                        timeText.textContent = "00:00";
+                        timeBar.style.width = "0px";
+                        return
+                    }
                     if (response.isPlaying == false) {
                         songText.textContent = "No Song Playing";
                         artistText.textContent = "";

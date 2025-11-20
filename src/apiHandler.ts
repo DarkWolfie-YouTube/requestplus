@@ -62,6 +62,7 @@ class APIHandler {
     private theme: string;
     private refresh: boolean;
     private callback: any;
+    public hideSongFromView: boolean = false;
 
     constructor(
         mainWindow: BrowserWindow, 
@@ -77,7 +78,7 @@ class APIHandler {
         this.theme = settings.theme;
         this.refresh = null;
         this.callback = callback;
-
+        this.hideSongFromView = false;
         this.setupMiddleware();
         this.setupRoutes();
         this.startServer();
@@ -390,6 +391,10 @@ class APIHandler {
                 this.refresh = false;
                 return;
             }
+            if (this.hideSongFromView) {
+                res.json({ songHidden: true, gtsActive: true });
+                return;
+            };
             res.json(this.playbackHandler.currentSong);
         });
 
@@ -609,7 +614,7 @@ class APIHandler {
             const response = await fetch('https://api.kick.com/public/v1/users', {
                 headers: {
                     'Authorization': `Bearer ${token}`, 
-                    'User-Agent': 'Request+/1.1.1 (https://github.com/DarkWolfie-YouTube/requestplus) darkwolfiefiver@gmail.com'
+                    'User-Agent': 'Request+/1.1.2 (https://github.com/DarkWolfie-YouTube/requestplus) darkwolfiefiver@gmail.com'
                 }
             });
             const data = await response.json();
@@ -659,6 +664,12 @@ class APIHandler {
     public updateSettings(settings: Settings): void {
         this.theme = settings.theme;
         this.refresh = true;
+    }
+    public gtsHideSongFromView(): void {
+        this.hideSongFromView = true;
+    }
+    public gtsShowSongInView(): void {
+        this.hideSongFromView = false;
     }
 }
 

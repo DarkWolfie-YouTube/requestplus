@@ -19,7 +19,6 @@ interface TwitchValidationResponse {
     user_id: string;
     expires_in: number;
 }
-
 interface KickValidationResponse {
     data: [{
         id: string;
@@ -117,27 +116,15 @@ class AuthManager {
     private window: BrowserWindow;
     private settings: any;
 
-    constructor(userDataPath: string, logger: Logger, window: BrowserWindow) {
+    constructor(userDataPath: string, logger: Logger, window: BrowserWindow, settings: Settings) {
         this.twitchTokenFilePath = path.join(userDataPath, 'twitch_auth.json');
         this.kickTokenFilePath = path.join(userDataPath, 'kick_auth.json');
         this.logger = logger;
         this.window = window;
-        this.settings = {};
-
-        this.loadSettings();
+        this.settings = settings;
         
     }
 
-    private async loadSettings() {
-        try {
-        const data = await fs.promises.readFile(path.join(app.getPath('userData'), 'settings.json'), "utf-8");
-        this.settings = JSON.parse(data);
-        console.log("[INFO] Settings loaded successfully");
-        } catch (err) {
-        console.error("[ERROR] Failed to load settings.json:", err);
-        this.settings = {}; // fallback to empty object
-        }
-    }
 
     private getTokenFilePath(platform: string): string {
         return platform === 'twitch' ? this.twitchTokenFilePath : this.kickTokenFilePath;
@@ -524,7 +511,7 @@ class AuthManager {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
-                        'User-Agent': 'Request+ v1.0.7/release'
+                        'User-Agent': 'Request+ v1.1.2/release'
                     },
                     body: JSON.stringify({
                         userID: tokenData.id,
@@ -542,7 +529,7 @@ class AuthManager {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
-                        'User-Agent': 'Request+ v1.0.7/release'
+                        'User-Agent': 'Request+ v1.1.2/release'
                     },
                     body: JSON.stringify({
                         userID: tokenData.id,
@@ -642,3 +629,4 @@ class AuthManager {
 }
 
 export default AuthManager;
+export { TokenData, RetrievedTokenData, UserDataResult, ValidationResult, TwitchUser, KickUser, TwitchValidationResponse, KickValidationResponse, StoredTokenData, EncryptedData };
