@@ -136,7 +136,7 @@ async function monitorTrackProgress(trackData: songInfo): Promise<void> {
         gtsHandler.failedToGuess();
     }
 
-    if (timeRemaining <= 6000 && timeRemaining > 0 && !apiHandler.hideSongFromView) {
+    if (timeRemaining <= 6000 && timeRemaining > 0 && !apiHandler.hideSongFromView && settings.gtsEnabled) {
         Logger.info(`Track ending soon (${Math.floor(timeRemaining / 1000)}s remaining) calling Guess the song hide function...`);
         gtsHandler.callForHide();
         await chatHandler.sendChatMessage('Guess the Song! Type !guess <song name> to make your guess before the guessing period ends!');
