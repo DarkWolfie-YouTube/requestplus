@@ -557,7 +557,7 @@ export function Settings({
           <div>
             <h3 className="text-lg">About Request+</h3>
             <p className="text-sm text-muted-foreground/80">
-              Version 1.1.3 • Built for streamers by streamers
+              Version 1.2.0 • Built for streamers by streamers
             </p>
           </div>
 
