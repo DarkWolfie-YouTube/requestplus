@@ -29,12 +29,20 @@ export function MusicPlayer({ currentTrack, setCurrentTrack }: MusicPlayerProps)
   const [volume, setVolume] = useState([Math.floor(currentTrack.volume * 100)]);
   const [isLiked, setIsLiked] = useState(currentTrack.isLiked);
 
+
+
   // Update local state when currentTrack changes
   useEffect(() => {
     setVolume([Math.floor(currentTrack.volume * 100)]);
     setIsLiked(currentTrack.isLiked);
-  }, [currentTrack.volume, currentTrack.isLiked]);
+  }, [currentTrack.volume, currentTrack.isLiked,]);
 
+/**
+ * Format a given time in milliseconds to a string in the format
+ * mm:ss.
+ * @param {number} milliseconds - The time in milliseconds to format.
+ * @returns {string} - The formatted time string.
+ */
   const formatTime = (milliseconds: number) => {
     const totalSeconds = Math.floor(milliseconds / 1000);
     const mins = Math.floor(totalSeconds / 60);
@@ -234,6 +242,7 @@ export function MusicPlayer({ currentTrack, setCurrentTrack }: MusicPlayerProps)
           </Button>
         </div>
 
+        
         {/* Volume Control */}
         <div className="flex items-center gap-3 px-4 pt-2">
           <Volume2 className="h-5 w-5 text-muted-foreground flex-shrink-0" />

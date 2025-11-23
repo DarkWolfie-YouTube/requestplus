@@ -72,7 +72,8 @@ export function Settings({
   ];
   const platformOptions = [
     { value: 'spotify', label: 'Spotify' },
-    { value: 'youtube', label: 'YouTube' },
+    { value: 'youtube', label: 'YouTube (Pear)' },
+    { value: 'apple', label: 'Apple Music (Cider)' }
     // { value: 'soundcloud', label: 'SoundCloud' }
   ];
 
@@ -419,7 +420,7 @@ export function Settings({
 
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="platform">Platform</Label>
+              <Label htmlFor="platform">Main Platform</Label>
               <Select
                 value={settings.platform}
                 onValueChange={(value) => setSettings({...settings, platform: value})}
@@ -435,7 +436,24 @@ export function Settings({
                   ))}
                 </SelectContent>
               </Select>
+              </div>
+            <div className="space-y-2">
+              <Separator />
             </div>
+              { settings.platform === 'apple' && (
+                <div className="space-y-2">
+                <Label htmlFor="appleMusicToken">Cider API Token</Label>
+                <Input
+                  id="appleMusicToken"
+                  type="text"
+                  placeholder="Enter your Apple Music API Token"
+                  value={settings.appleMusicAppToken || ''}
+                  onChange={(e) => 
+                    setSettings({...settings, appleMusicAppToken: e.target.value})
+                  }
+                />
+                </div>
+              )}
           </div>
         </Card>
 

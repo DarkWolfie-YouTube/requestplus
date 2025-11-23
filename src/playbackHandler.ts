@@ -1,6 +1,7 @@
 import WebSocketServer from "./websocket";
 import Logger from "./logger";
 import { YTManager } from "./ytManager";
+import AMHandler, { AMCurrentSongResponse } from "./amhandler";
 
 interface songInfo {
   id: string;
@@ -23,12 +24,14 @@ class PlaybackHandler {
     private SpotifyWS: WebSocketServer;
     private logger: Logger;
     private YTManager: YTManager;
+    private AMHandler: AMHandler;
     
-    constructor(platform: string, spotifyWS: WebSocketServer, logger: Logger, ytManager: YTManager) {
+    constructor(platform: string, spotifyWS: WebSocketServer, logger: Logger, ytManager: YTManager, AMHandler: AMHandler) {
         this.platform = platform;
         this.SpotifyWS = spotifyWS;
         this.logger = logger;
         this.YTManager = ytManager;
+        this.AMHandler = AMHandler;
     }
 
     async getCurrentSong(): Promise<songInfo | null> {
@@ -36,6 +39,36 @@ class PlaybackHandler {
             return this.getYouTubeSong();
         } else if (this.platform === 'spotify') {
             return this.getSpotifySong();
+        } else if (this.platform === 'apple') {
+            const applemusicData: AMCurrentSongResponse = await this.AMHandler.getCurrentSong();
+            if (applemusicData) {
+                let repeatMode = 0;
+                if (applemusicData.info.repeatMode === 1) {
+                    repeatMode = 2;
+                } else if (applemusicData.info.repeatMode === 2) {
+                    repeatMode = 1;
+                } else {
+                    repeatMode = 0;
+                }
+                
+                this.currentSong = {
+                    id: applemusicData.info.playParams.id || '',
+                    title: applemusicData.info.name || 'Unknown Title',
+                    artist: applemusicData.info.artistName || 'Unknown Artist',
+                    album: applemusicData.info.albumName || '',
+                    duration: applemusicData.info.durationInMillis || 0,
+                    progress: applemusicData.info.currentPlaybackTime * 1000 || 0,
+                    isPlaying: (await this.AMHandler.getIsPlayingState()).is_playing || false,
+                    cover: applemusicData.info.artwork.url.replace('{w}', applemusicData.info.artwork.width.toString()).replace('{h}', applemusicData.info.artwork.height.toString()) || '',
+                    volume: await this.AMHandler.getVolume(),
+                    shuffle: applemusicData.info.shuffleMode === 1,
+                    repeat: repeatMode,
+                    isLiked: applemusicData.info.inLibrary || false
+                };
+                return this.currentSong;
+            }
+
+            return null;
         }
         
         this.logger.error(`Unknown platform: ${this.platform}`);

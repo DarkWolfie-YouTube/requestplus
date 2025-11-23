@@ -125,7 +125,7 @@ const App = () => {
         progress: info.progress,
         cover: newImage,
         isPlaying: info.isPlaying,
-        volume: info.volume || 100,
+        volume: info.volume,
         shuffle: info.shuffle || false,
         repeat: info.repeat || 0,
         isLiked: info.isLiked || false

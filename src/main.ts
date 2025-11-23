@@ -19,6 +19,7 @@ import { songData, YTManager } from './ytManager';
 import PlaybackHandler, { songInfo } from './playbackHandler';
 import KickChat from './kickchat';
 import GTSHandler from './gtsHandler';
+import AMHandler from './amhandler';
 
 var handleStartupEvent = function() {
   if (process.platform !== 'win32') {
@@ -116,6 +117,7 @@ let ytManager: YTManager;
 let playbackHandler: PlaybackHandler;
 let kickChat: KickChat;
 let gtsHandler: GTSHandler;
+let amHandler: AMHandler;
 
 // Auto-queue monitor function
 async function monitorTrackProgress(trackData: songInfo): Promise<void> {
@@ -346,10 +348,14 @@ async function createWindow(): Promise<void> {
         ytManager = new YTManager();
     }
 
+    if (!amHandler) {
+        amHandler = new AMHandler(mainWindow, Logger, settings);
+    }
+
     await checkForUpdates(mainWindow, Logger);
     
     if (!playbackHandler) {
-        playbackHandler = new PlaybackHandler(settings.platform, WSServer, Logger, ytManager);
+        playbackHandler = new PlaybackHandler(settings.platform, WSServer, Logger, ytManager, amHandler);
     }
     
 
@@ -448,6 +454,7 @@ ipcMain.handle('save-settings', (event: Electron.IpcMainInvokeEvent, settinga: S
             if (kickChat) kickChat.saveSettings(settings);
             apiHandler.updateSettings(settings);
             gtsHandler.updateSettings(settings);
+            amHandler.updateSettings(settings);
             resolve();
         } else {
             reject(new Error('Failed to save settings'));
@@ -463,6 +470,7 @@ ipcMain.on('settings-updated', (event: Electron.IpcMainEvent, settings: Settings
     if (kickChat) kickChat.saveSettings(settings);
     apiHandler.updateSettings(settings);
     gtsHandler.updateSettings(settings);
+    amHandler.updateSettings(settings);
 });
 
 ipcMain.handle('window-minimize', (): void => {
@@ -486,6 +494,8 @@ ipcMain.handle('song-play', async (): Promise<void> => {
         WSServer.WSSendToType({ command: 'PlayPause' } as WSCommand, 'spotify');
     } else if (platform === 'youtube' && ytManager) {
         await ytManager.playPause();
+    } else if (platform === 'apple' && amHandler) {
+        await amHandler.playPause();
     }
 });
 
@@ -496,6 +506,8 @@ ipcMain.handle('song-pause', async (): Promise<void> => {
         WSServer.WSSendToType({ command: 'PlayPause' } as WSCommand, 'spotify');
     } else if (platform === 'youtube' && ytManager) {
         await ytManager.playPause();
+    } else if (platform === 'apple' && amHandler) {
+        await amHandler.playPause();
     }
 });
 
@@ -506,6 +518,8 @@ ipcMain.handle('song-skip', async (): Promise<void> => {
         WSServer.WSSendToType({ command: 'Next' } as WSCommand, 'spotify');
     } else if (platform === 'youtube' && ytManager) {
         await ytManager.next();
+    } else if (platform === 'apple' && amHandler) {
+        await amHandler.nextTrack();
     }
 });
 
@@ -516,7 +530,10 @@ ipcMain.handle('song-previous', async (): Promise<void> => {
         WSServer.WSSendToType({ command: 'Prev' } as WSCommand, 'spotify');
     } else if (platform === 'youtube' && ytManager) {
         await ytManager.previous();
+    } else if (platform === 'apple' && amHandler) {
+        await amHandler.previousTrack();
     }
+
 });
 
 ipcMain.handle('song-like', async (): Promise<void> => {
@@ -526,6 +543,8 @@ ipcMain.handle('song-like', async (): Promise<void> => {
         WSServer.WSSendToType({ command: 'like' } as WSCommand, 'spotify');
     } else if (platform === 'youtube' && ytManager) {
         await ytManager.toggleLike();
+    } else if (platform === 'apple' && amHandler) {
+        await amHandler.likeSong();
     }
 });
 
@@ -536,6 +555,8 @@ ipcMain.handle('song-volume', async (event: Electron.IpcMainInvokeEvent, level: 
         WSServer.WSSendToType({ command: 'volume', data: { volume: level } } as WSCommand, 'spotify');
     } else if (platform === 'youtube' && ytManager) {
         await ytManager.setVolume(level * 100);
+    } else if (platform === 'apple' && amHandler) {
+        await amHandler.setVolume(level);
     }
 });
 
@@ -546,6 +567,8 @@ ipcMain.handle('song-seek', async (event: Electron.IpcMainInvokeEvent, position:
         WSServer.WSSendToType({ command: 'seek', data: { position } } as WSCommand, 'spotify');
     } else if (platform === 'youtube' && ytManager) {
         await ytManager.seek(Math.floor(position / 1000));
+    } else if (platform === 'apple' && amHandler) {
+        await amHandler.seekTo(position / 1000);
     }
 });
 
@@ -556,6 +579,8 @@ ipcMain.handle('song-shuffle', async (): Promise<void> => {
         WSServer.WSSendToType({ command: 'shuffle' } as WSCommand, 'spotify');
     } else if (platform === 'youtube' && ytManager) {
         await ytManager.toggleShuffle();
+    } else if (platform === 'apple' && amHandler) {
+        await amHandler.setShuffle();
     }
 });
 
@@ -566,7 +591,9 @@ ipcMain.handle('song-repeat', async (): Promise<void> => {
         WSServer.WSSendToType({ command: 'repeat' } as WSCommand, 'spotify');
     } else if (platform === 'youtube' && ytManager) {
         await ytManager.cycleRepeat();
-    }
+    } else if (platform === 'apple' && amHandler) {
+        await amHandler.setRepeat();
+    }   
 });
 
 // Twitch Auth Handlers
@@ -710,9 +737,7 @@ ipcMain.handle('set-pre-release-check', (event: Electron.IpcMainInvokeEvent, ena
 app.whenReady().then(createWindow);
 
 app.on('window-all-closed', (): void => {
-    if (process.platform !== 'darwin') {
-        app.quit();
-    }
+    app.quit();
 });
 
 app.on('activate', (): void => {
