@@ -40,7 +40,19 @@ class PlaybackHandler {
         } else if (this.platform === 'spotify') {
             return this.getSpotifySong();
         } else if (this.platform === 'apple') {
+            const isPlayingState = (await this.AMHandler.getIsPlayingState()).is_playing;
             const applemusicData: AMCurrentSongResponse = await this.AMHandler.getCurrentSong();
+            if (!isPlayingState) {
+                if (applemusicData === null) {
+                this.currentSong.isPlaying = false;
+                this.currentSong.progress = 0;
+                return this.currentSong;
+                } else {
+                this.currentSong.isPlaying = false;
+                this.currentSong.progress = applemusicData.info.currentPlaybackTime * 1000 || 0;
+                return this.currentSong;
+                }
+            }
             if (applemusicData) {
                 let repeatMode = 0;
                 if (applemusicData.info.repeatMode === 1) {
@@ -52,7 +64,7 @@ class PlaybackHandler {
                 }
                 
                 this.currentSong = {
-                    id: applemusicData.info.playParams.id || '',
+                    id: (applemusicData.info.playParams.catalogId ? applemusicData.info.playParams.catalogId : applemusicData.info.playParams.id) || '',
                     title: applemusicData.info.name || 'Unknown Title',
                     artist: applemusicData.info.artistName || 'Unknown Artist',
                     album: applemusicData.info.albumName || '',
@@ -151,7 +163,7 @@ class PlaybackHandler {
                 id: spotifyData.id || '',
                 title: spotifyData.title || 'Unknown Title',
                 artist: artists,
-                album: spotifyData.album || '',
+                album: spotifyData.album_title || '',
                 duration: spotifyData.duration || 0,
                 progress: spotifyData.progress || 0,
                 cover: spotifyData.image || spotifyData.image_large_url || '',

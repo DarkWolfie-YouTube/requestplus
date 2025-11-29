@@ -1,4 +1,4 @@
-import { app, BrowserWindow, shell } from 'electron';
+import { app, BrowserWindow, dialog, shell } from 'electron';
 import fetch from 'node-fetch';
 import { version as currentVersion } from '../package.json';
 import * as fs from 'fs';
@@ -197,6 +197,122 @@ async function checkForUpdates(window: BrowserWindow | null, logger: Logger): Pr
                 2000 // Wait 2 seconds after the checking toast
             );
         }
+
+        const endpoint2 = "https://api.requestplus.xyz/termsUpdate";
+        var response2 = await fetch(endpoint2, {
+            headers: {
+                'User-Agent': 'RequestPlus-UpdateChecker'
+            },
+            method: "GET",
+        });
+
+        if (response2.status !== 200) {
+            logger.warn(`Terms update check returned status ${response2.status}`);
+            return;
+        }
+        var data2 = await response2.json() as { latestTermsVersion: string; termsUrl: string; mstesting: boolean; mstestingversion: string; };
+        const latestTermsVersion = data2.latestTermsVersion;
+        const termsUrl = data2.termsUrl;
+        const mstesting = data2.mstesting;
+        const mstestingversion = data2.mstestingversion;
+        if (mstesting && currentVersion === mstestingversion) {
+            logger.info('MS Testing mode enabled');
+            dialog.showMessageBox({
+                type: 'info',
+                buttons: ['OK'],
+                defaultId: 0,
+                cancelId: 0,
+                title: 'Hello! :wave:',
+                message: 'Hello Tester! Thanks for opening Request+! To test full functionality you will need to open the docs page and do the setup guide or youtube tutorial! If you need any help as to why the program name is different, I can\'t reserve the name Request+ because of a old project I deleted to favor this one to upload the MSIX/APPX bundles... It doesn\'t misrepresent anything, it\'s just a naming issue with Microsoft Store policies (3 MONTH WAIT). Thanks for testing! - Quil\n\nThis message will be disabled in the future using an API call.',
+            });
+        }
+
+        if (fs.existsSync(path.join(app.getPath('userData'), 'terms-version.txt'))) {
+            const localTermsVersion = fs.readFileSync(path.join(app.getPath('userData'), 'terms-version.txt'), 'utf8').trim();
+            if (localTermsVersion !== latestTermsVersion) {
+                await sendToastWithDelay(
+                    window, 
+                    `New Terms of Service available.`, 
+                    'info', 
+                    10000,
+                    500
+                );
+
+                dialog.showMessageBox({
+                    type: 'info',
+                    buttons: ['Accept', 'View Terms', 'Decline'],
+                    defaultId: 1,
+                    cancelId: 2,
+                    title: 'Terms of Service Update',
+                    message: 'The Terms of Service have been updated. Please review and accept the new terms to continue using the application.',
+                }).then(async (result) => {
+                    if (result.response === 0) {
+                        // Accept
+                        fs.writeFileSync(path.join(app.getPath('userData'), 'terms-version.txt'), latestTermsVersion, 'utf8');
+                        await sendToastWithDelay(window, 'Terms accepted. Thank you!', 'success', 5000, 100);
+                    } else if (result.response === 1) {
+                        // View Terms
+                        await shell.openExternal(termsUrl);
+                        // After viewing, prompt to accept again
+                        const acceptResult = await dialog.showMessageBox({
+                            type: 'question',
+                            buttons: ['Accept', 'Decline'],
+                            defaultId: 0,
+                            cancelId: 1,
+                            title: 'Terms of Service Update',
+                            message: 'Have you accepted the updated Terms of Service?',
+                        });
+                        if (acceptResult.response === 0) {
+                            fs.writeFileSync(path.join(app.getPath('userData'), 'terms-version.txt'), latestTermsVersion, 'utf8');
+                            await sendToastWithDelay(window, 'Terms accepted. Thank you!', 'success', 5000, 100);
+                        } else {
+                            app.quit();
+                        }
+                    } else if (result.response === 2) {
+                        // Decline
+                        app.quit();
+                    }
+                });
+            }
+        } else {
+            // No local terms version file, create one with the latest version after accept terms
+            dialog.showMessageBox({
+                type: 'info',
+                buttons: ['Accept', 'View Terms', 'Decline'],
+                defaultId: 1,
+                cancelId: 2,
+                title: 'Terms of Service Update',
+                message: 'The Terms of Service have been updated. Please review and accept the new terms to continue using the application.',
+            }).then(async (result) => {
+                if (result.response === 0) {
+                    // Accept
+                    fs.writeFileSync(path.join(app.getPath('userData'), 'terms-version.txt'), latestTermsVersion, 'utf8');
+                    await sendToastWithDelay(window, 'Terms accepted. Thank you!', 'success', 5000, 100);
+                } else if (result.response === 1) {
+                    // View Terms
+                    await shell.openExternal(termsUrl);
+                    // After viewing, prompt to accept again
+                    const acceptResult = await dialog.showMessageBox({
+                        type: 'question',
+                        buttons: ['Accept', 'Decline'],
+                        defaultId: 0,
+                        cancelId: 1,
+                        title: 'Terms of Service Update',
+                        message: 'Have you accepted the updated Terms of Service?',
+                    });
+                    if (acceptResult.response === 0) {
+                        fs.writeFileSync(path.join(app.getPath('userData'), 'terms-version.txt'), latestTermsVersion, 'utf8');
+                        await sendToastWithDelay(window, 'Terms accepted. Thank you!', 'success', 5000, 100);
+                    } else {
+                        app.quit();
+                    }
+                } else if (result.response === 2) {
+                    // Decline
+                    app.quit();
+                }
+            })
+        }
+
     } catch (error) {
         console.error('Update check failed:', error);
         logger.error('Update check failed: ' + (error as Error).message);
@@ -210,6 +326,8 @@ async function checkForUpdates(window: BrowserWindow | null, logger: Logger): Pr
             500
         );
     }
+
+
 }
 
 function compareVersions(current: string, latest: string): boolean {

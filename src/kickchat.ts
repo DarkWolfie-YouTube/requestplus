@@ -7,6 +7,7 @@ import { Settings } from './settingsHandler';
 import { setTimeout as wait } from 'node:timers/promises';
 import GTSHandler from './gtsHandler';
 import Logger from './logger';
+import AMHandler from './amhandler';
 
 class KickChat {
     private connection: Websocket;
@@ -19,8 +20,9 @@ class KickChat {
     private subscribed: boolean = false;
     private gtsHandler: GTSHandler;
     private logger: Logger;
+    private appleMusicHandler: AMHandler;
 
-    constructor( token: string, userId: string, queue: QueueHandler, WSServer: WebSocketServer, settings: Settings, ytManager: YTManager, gtsHandler: GTSHandler, logger: Logger) {
+    constructor( token: string, userId: string, queue: QueueHandler, WSServer: WebSocketServer, settings: Settings, ytManager: YTManager, gtsHandler: GTSHandler, AppleMusicHandler: AMHandler, logger: Logger) {
         this.token = token;
         this.userId = userId;
         this.queue = queue;
@@ -29,6 +31,7 @@ class KickChat {
         this.ytManager = ytManager;
         this.gtsHandler = gtsHandler;
         this.logger = logger;
+        this.appleMusicHandler = AppleMusicHandler;
 
         this.setupWebsocket(token, userId);
     }
@@ -125,12 +128,13 @@ class KickChat {
                                                     
                                                     await this.sendMessage(`Request+: Added ${title} by ${artists} to the moderation queue.`, data.data.message_id);
                                                     await this.queue.addToQueue({
-                                                        id: id,
+                                                        id: id + '-' + data.data.sender.username,
                                                         title: title,
                                                         artist: artists,
                                                         album: response.album.name,
                                                         duration: response.duration_ms,
                                                         requestedBy: data.data.sender.username || "Unknown",
+                                                        platform: 'spotify',
                                                         iscurrentlyPlaying: false,
                                                         cover: coverUrl
                                                     });
@@ -207,6 +211,8 @@ class KickChat {
                                         await this.sendMessage(`Request+: Please provide a youtube video link!`, data.data.message_id);
                                         return;
                                     }
+                                } else if (this.settings.platform === 'apple') {
+                                    
                                 }
                             }
                             break;

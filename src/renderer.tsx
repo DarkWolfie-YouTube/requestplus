@@ -6,7 +6,7 @@ import { Navigation } from './components/Navigation';
 import { Toaster } from './components/ui/sonner';
 import { Topbar } from './components/Topbar';
 import { QueuePage } from './components/Queue';
-import { Queue } from './queueHandler';
+import { Queue, QueueItem } from './queueHandler';
 import { toast } from 'sonner';
 
 interface Track {
@@ -96,6 +96,11 @@ const App = () => {
       });
       return;
     }
+    setQueue({
+        items: [],
+        currentCount: 0,
+        currentlyPlayingIndex: -1
+      });
 
     // Track info handler
     const handleTrackInfo = (info: songInfo) => {
@@ -120,7 +125,7 @@ const App = () => {
       setCurrentTrack({
         title: info.title || 'Unknown Track',
         artist: info.artist || 'Unknown Artist',
-        album: 'Current Track',
+        album: info.album || 'Unknown Album',
         duration: info.duration,
         progress: info.progress,
         cover: newImage,
@@ -261,6 +266,9 @@ const App = () => {
 
 // Then set up listener with the defined callback
   api.updateQueuePage(handleQueueUpdate);
+  api.updateQueuePage(handleQueueUpdate);
+  api.updateQueuePage(handleQueueUpdate);
+  api.updateQueuePage(handleQueueUpdate);
 
   // Fetch initial queue data
   fetchInitialQueue();
@@ -276,65 +284,81 @@ const App = () => {
   }, []);
 
   // Function to handle track selection from queue
-  const handleTrackSelect = (track: any) => {
-    // Convert queue item to track format if needed
-    setCurrentTrack({
-      title: track.title,
-      artist: track.artist,
-      album: track.album || 'Unknown Album',
-      duration: track.duration,
-      progress: 0, // Reset progress when selecting new track
-      cover: track.cover,
-      isPlaying: true, // Start playing when selected
-      volume: currentTrack.volume,
-      shuffle: currentTrack.shuffle,
-      repeat: currentTrack.repeat,
-      isLiked: track.isLiked || false
-    });
+const handleTrackSelect = (track: QueueItem) => {
+    // Update the current track and mark it as playing
+    const updatedTrack = {
+      ...track,
+      progress: 0,
+      isPlaying: true
+    };
+    setCurrentTrack(updatedTrack);
+    
+    // Update queue to reflect the currently playing song
+    const updatedQueueItems: QueueItem[] = queue.items.map((track: QueueItem) => ({
+      ...track,
+      isCurrentlyPlaying: track.id === track.id
+    }));
+    const updatedQueue = {
+      ...queue,
+      items: updatedQueueItems
+    }
+    setQueue(updatedQueue);
+  };
+
+  const renderCurrentView = () => {
+    switch (currentView) {
+      case 'player':
+        return (
+          <MusicPlayer 
+            currentTrack={currentTrack} 
+            setCurrentTrack={setCurrentTrack}
+            queue={queue}
+          />
+        );
+      case 'queue':
+        return (
+          <QueuePage 
+            queue={queue}
+            setQueue={setQueue}
+            onTrackSelect={handleTrackSelect}
+          />
+        );
+      case 'settings':
+        return (
+          <Settings 
+            twitchUser={twitchUser}
+            setTwitchUser={setTwitchUser}
+            kickUser={kickUser}
+            setKickUser={setKickUser}
+            overlayPath={overlayPath}
+            updateSettings={updateSettings}
+            setUpdateSettings={setUpdateSettings}
+            settings={settings}
+            setSettings={setSettings}
+          />
+        );
+      default:
+        return <MusicPlayer currentTrack={currentTrack} setCurrentTrack={setCurrentTrack} />;
+    }
   };
 
   return (
-    <div className="size-full bg-background">
-      <div className="h-screen flex flex-col">
-        <Topbar />
-        <div className="flex-1 pt-8">
-          <div className="pb-16">
-            {currentView === 'player' ? (
-              <MusicPlayer 
-                currentTrack={currentTrack} 
-                setCurrentTrack={setCurrentTrack}
-              />
-            ) : currentView === 'queue' ? (
-              queue && (
-                <QueuePage 
-                  items={queue.items} 
-                  currentCount={queue.currentCount} 
-                  currentlyPlayingIndex={queue.currentlyPlayingIndex}
-                  onTrackSelect={handleTrackSelect}
-                />
-              )
-            ) : (
-              <Settings 
-                twitchUser={twitchUser}
-                setTwitchUser={setTwitchUser}
-                kickUser={kickUser}
-                setKickUser={setKickUser}
-                overlayPath={overlayPath}
-                updateSettings={updateSettings}
-                setUpdateSettings={setUpdateSettings}
-                settings={settings}
-                setSettings={setSettings}
-              />
-            )}
-          </div>
-
-          <Navigation currentView={currentView} onViewChange={setCurrentView} settings={settings} />
-          <Toaster position="top-right" richColors />
-        </div>
+    <div className="h-screen w-screen bg-background flex flex-col overflow-hidden">
+      {/* Topbar */}
+      <Topbar />
+      {/* Main Content */}
+      <div className="flex-1 overflow-auto">
+        {renderCurrentView()}
       </div>
+
+      {/* Navigation */}
+      <Navigation currentView={currentView} onViewChange={setCurrentView} settings={settings} />
+
+      {/* Toast Notifications */}
+      <Toaster position="top-right" richColors />
     </div>
   );
-};
+}
 
 const container = document.getElementById('root');
 if (container) {

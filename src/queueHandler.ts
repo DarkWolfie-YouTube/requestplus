@@ -10,6 +10,7 @@ interface QueueItem {
     album: string;
     duration: number;
     requestedBy: string;
+    platform: string;
     iscurrentlyPlaying: boolean;
     isQueued?: boolean; // Track if item has been added to Spotify queue
     cover?: string;
@@ -31,10 +32,12 @@ class QueueHandler {
     };
     private logger: Logger;
     private mainWindow: BrowserWindow;
+    private settings: Settings;
     
-    constructor(logger: Logger, mainWindow: BrowserWindow) {
+    constructor(logger: Logger, mainWindow: BrowserWindow, settings: Settings) {
         this.logger = logger;
         this.mainWindow = mainWindow;
+        this.settings = settings;
     }
 
     async addToQueue(item: QueueItem): Promise<void> {

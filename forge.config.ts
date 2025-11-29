@@ -37,6 +37,16 @@ module.exports = {
       },
     },
     {
+      name: '@electron-forge/maker-appx',
+      config: {
+        publisher: process.env.CERT_PUBLISHER,
+        devCert: 'C:/Users/DarkWolfie/Desktop/backup/Twitch Marathon Timer/build/cert.pfx',
+        certPass: process.env.CERT_PASSWORD,
+        packageName: 'QuilDayTrack.Request',
+        packageDisplayName: 'Request+'
+      }
+    },
+    {
       name: '@electron-forge/maker-dmg',
       platforms: ['darwin'],
       config: {

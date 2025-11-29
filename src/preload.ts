@@ -108,12 +108,17 @@ const electronAPI: ElectronAPI = {
   updateQueuePage: (callback) => {
     console.log('Setting up queue update listener in preload');
     
-    // Remove any existing listeners first
-    ipcRenderer.removeAllListeners('update-queue');
-    
+    if (typeof callback !== 'function') {
+      console.error('Queue update callback is not a function');
+      return;
+    }
     // Set up the new listener
     ipcRenderer.on('update-queue', (event, queue) => {
       console.log('Queue update received in preload:', queue);
+      if (typeof callback !== 'function') {
+        console.error('Queue update callback is not a function');
+        return;
+      }
       callback(queue); // Call the renderer callback with just the queue data
     });
   },

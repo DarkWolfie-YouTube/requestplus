@@ -2,9 +2,11 @@ import * as React from 'react';
 import { useState, useEffect } from 'react';
 import { Button } from './ui/button';
 import { Card } from './ui/card';
+
 import { Slider } from './ui/slider';
 import { Volume2, Heart, SkipBack, Play, Pause, SkipForward, Repeat, Shuffle, Repeat1 } from 'lucide-react';
 import { ImageWithFallback } from './figma/ImageWithFallback';
+import { Queue } from 'src/queueHandler';
 
 interface Track {
   title: string;
@@ -23,12 +25,14 @@ interface Track {
 interface MusicPlayerProps {
   currentTrack: Track;
   setCurrentTrack: (track: Track) => void;
+  queue: Queue;
 }
 
-export function MusicPlayer({ currentTrack, setCurrentTrack }: MusicPlayerProps) {
+export function MusicPlayer({ currentTrack, setCurrentTrack, queue }: MusicPlayerProps) {
   const [volume, setVolume] = useState([Math.floor(currentTrack.volume * 100)]);
   const [isLiked, setIsLiked] = useState(currentTrack.isLiked);
 
+  
 
 
   // Update local state when currentTrack changes
@@ -68,9 +72,22 @@ export function MusicPlayer({ currentTrack, setCurrentTrack }: MusicPlayerProps)
     api.previous?.();
   };
 
-  const handleNext = () => {
+  const handleNext = async () => {
     const api = (window as any).api;
-    api.skip?.();
+    if (!api) return;
+    if (queue.items.length === 0) {
+      api.skip?.();
+      return;
+    }
+
+    if (queue.currentlyPlayingIndex === queue.items.length - 1) {
+      api.skip?.();
+      return;
+    }
+
+    api.playTrackAtIndex?.(queue.currentlyPlayingIndex + 1);
+    await setTimeout(api.skip?.(), 300);
+
   };
 
   const handleProgressChange = (value: number[]) => {
@@ -136,8 +153,8 @@ export function MusicPlayer({ currentTrack, setCurrentTrack }: MusicPlayerProps)
     : 0;
 
   return (
-    <div className="h-screen bg-background p-6 flex items-center justify-center overflow-hidden">
-      <Card className="w-full max-w-md mx-auto p-8 space-y-6 shadow-card-hover border-border/50 animate-scale-in max-h-full overflow-y-auto">
+    <div className="h-screen bg-background p-2 flex items-center justify-center overflow-hidden">
+      <Card className="w-full max-w-md mx-auto p-8 space-y-3 shadow-card-hover border-border/50 animate-scale-in max-h-full overflow-y-auto">
         {/* Album Art */}
         <div className="aspect-square w-full max-w-sm mx-auto rounded-2xl overflow-hidden shadow-card-hover ring-1 ring-primary/10">
           <ImageWithFallback

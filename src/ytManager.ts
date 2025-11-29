@@ -2,6 +2,7 @@ import axios, { AxiosError, AxiosInstance } from 'axios';
 import fs from 'node:fs';
 import path from 'node:path';
 import { app } from 'electron';
+import Logger from './logger';
 
 interface songData {
     title: string;
@@ -44,10 +45,14 @@ class YTManager {
     private instance: AxiosInstance;
     private token: string | null = null;
     private tokenPath: string;
+    private logger: Logger;
+    private timesTried: number;
 
-    constructor() {
+    constructor(Logger: Logger) {
         this.apiBaseUrl = 'http://localhost:26538/api/v1';
         this.tokenPath = path.join(app.getPath('userData'), 'ytmanager.token');
+        this.logger = Logger
+        this.timesTried = 0;
         
         this.instance = axios.create({
             baseURL: this.apiBaseUrl,
@@ -75,7 +80,15 @@ class YTManager {
                     await this.newToken();
                 }
             } catch (error) {
-                await this.newToken();
+                this.logger.error('[YTManager] Error validating existing token:', (error as AxiosError).message);
+                this.logger.warn('[YTManager] This error was thrown while validating the existing token. A new token had been requested but not returned. Please make sure Pear Desktop is running and Request+ is authorized in Pear Desktop. Re running token Check in 30 seconds.');
+                
+                if (this.timesTried >= 3) {
+                    this.logger.error('[YTManager] Maximum token validation attempts reached. Please restart the application if you wish to continue using Youtube playback features.');
+                } else{ 
+                    setTimeout(() => this.initializeToken(), 30000);
+                    this.timesTried++;
+                }
             }
         } else {
             await this.newToken();
@@ -101,7 +114,9 @@ class YTManager {
                 throw new Error("Invalid token response");
             }
         } catch (error) {
-            throw new Error("Failed to obtain new token for YTManager.");
+            this.logger.error('[YTManager] Error obtaining new token:', (error as AxiosError).message);
+            this.logger.warn('[YTManager] This can be due to Pear Desktop not running or Request+ not being authorized in Pear Desktop. Please make sure both are running and authorized.');
+            return Promise.reject(error);
         }
     }
 

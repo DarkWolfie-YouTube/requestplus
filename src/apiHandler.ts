@@ -149,7 +149,7 @@ class APIHandler {
                             if (accessToken) {
                                 fetch('/auth/token', {
                                     method: 'POST',
-                                    headers: { 'Content-Type': 'application/json', 'User-Agent': 'Request+/1.1.1 (https://github.com/DarkWolfie-YouTube/requestplus) darkwolfiefiver@gmail.com'},
+                                    headers: { 'Content-Type': 'application/json', 'User-Agent': 'Request+/1.2.1 (https://github.com/DarkWolfie-YouTube/requestplus) darkwolfiefiver@gmail.com'},
                                     body: JSON.stringify({
                                         access_token: accessToken,
                                         token_type: tokenType,
@@ -337,7 +337,7 @@ class APIHandler {
                         headers: {
                             'Client-ID': "if6usvbqj58fwdbycnu6v77jjsluq5",
                             'Authorization': `Bearer ${access_token}`,
-                            'User-Agent': 'Request+/1.1.1 (https://github.com/DarkWolfie-YouTube/requestplus) darkwolfiefiver@gmail.com'
+                            'User-Agent': 'Request+/1.2.1 (https://github.com/DarkWolfie-YouTube/requestplus) darkwolfiefiver@gmail.com'
                         }
                     });
                     const data: TwitchApiResponse = await response.json();
@@ -614,7 +614,7 @@ class APIHandler {
             const response = await fetch('https://api.kick.com/public/v1/users', {
                 headers: {
                     'Authorization': `Bearer ${token}`, 
-                    'User-Agent': 'Request+/1.1.2 (https://github.com/DarkWolfie-YouTube/requestplus) darkwolfiefiver@gmail.com'
+                    'User-Agent': 'Request+/1.2.1 (https://github.com/DarkWolfie-YouTube/requestplus) darkwolfiefiver@gmail.com'
                 }
             });
             const data = await response.json();

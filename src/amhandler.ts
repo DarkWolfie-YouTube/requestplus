@@ -3,7 +3,7 @@
  * @copyright 2025 Quil DayTrack 
  * 
  * @license GPL-v3.0
- * @version 1.1.3
+ * @version 1.2.1
  *
  * @description
  * An Apple Music Handler for Cider enchancing playback and song information retrieval.
@@ -16,6 +16,9 @@ import PlaybackHandler, {songInfo} from "./playbackHandler";
 import Logger from "./logger";
 import * as NavigationMenuPrimitive from '@radix-ui/react-navigation-menu';
 import axios, { AxiosInstance } from "axios";
+import QueueHandler, { QueueItem } from "./queueHandler";
+import fetch from "node-fetch";
+import { combineAppliedNumericalValuesIncludingErrorValues } from "recharts/types/state/selectors/axisSelectors";
 
 
 interface AMSongObject {
@@ -24,6 +27,12 @@ interface AMSongObject {
     href: string;
     attributes: AMSongAttributes;
     relationships: Object;
+}
+
+interface AMAPISongObject {
+    data: {
+        data: AMSongObject[];
+    };
 }
 
 interface AMISPlayingResponse {
@@ -106,6 +115,7 @@ interface AMSongAttributeArtwork {
 interface AMSongAttributePlayParams {
     id: string;
     kind: string;
+    catalogId?: string;
     [key: string]: any;
 }
 
@@ -128,7 +138,7 @@ export default class AMHandler {
             timeout: 10000,
             headers: {
                 'apptoken': this.apptoken,
-                'User-Agent': 'Request+/1.2.0 Release'
+                'User-Agent': 'Request+/1.2.1 Release'
             }
         });
     }
@@ -263,14 +273,81 @@ export default class AMHandler {
         this.settings = settings;
         this.apptoken = this.settings.appleMusicAppToken;
     }
+
+    public async handleChatRequest(message: string, channel: string, tags: any, client: any, queueHandler: QueueHandler, settings: Settings): Promise<void> {
+        //get song requested data
+        let songID;
+        var messageLink = message.match(/https?:\/\/music\.apple\.com\/[a-z]{2}\/album\/[a-z0-9\-\_]+\/[0-9]+\?i=([0-9]+)/);
+        if (messageLink && messageLink[1]) {
+            songID = messageLink[1];
+        } else {
+            songID = message;
+        }
+        let songInfo: AMSongObject;
+        await fetch(`http://localhost:10767/api/v1/amapi/run-v3`, {
+            method: 'POST',
+            headers: {
+                'apptoken': this.apptoken,
+                'Content-Type': 'application/json',
+                'User-Agent': 'Request+/1.2.1 Release'
+            },
+            body: JSON.stringify({
+                "path": "/v1/catalog/us/songs/" + songID,
+            })
+        })
+        .then(response => response.json())
+        .then((data: AMAPISongObject) => {
+            songInfo = data.data.data[0];
+        })
+        console.log(songInfo);
+        console.log(songInfo.attributes);
+        if (songInfo) {
+            if (queueHandler) {
+                let queueItem: QueueItem = {
+                    id: songID + '-' + tags.username,
+                    title: songInfo.attributes.name,
+                    artist: songInfo.attributes.artistName,
+                    album: songInfo.attributes.albumName,
+                    cover: songInfo.attributes.artwork.url.replace('{w}x{h}', `${songInfo.attributes.artwork.width}x${songInfo.attributes.artwork.height}`),
+                    duration: songInfo.attributes.durationInMillis,
+                    requestedBy: tags.username,
+                    platform: 'apple',
+                    iscurrentlyPlaying: false,
+                };
+                await queueHandler.addToQueue(queueItem);
+                client.say(channel, `@${tags.username}, your Apple Music request for "${songInfo.attributes.name}" by ${songInfo.attributes.artistName} has been added to the queue!`);
+            } else {
+                client.say(channel, `@${tags.username}, the request queue is not available at the moment.`);
+            }
+        } else {
+            client.say(channel, `@${tags.username}, sorry, I couldn't find the requested song on Apple Music.`);
+        }
+    }
+
+    public async queueTrack(songID: string): Promise<void> {
+        try{ 
+            console.log(`Queueing Apple Music track with ID: ${songID}`);
+            await fetch(`http://localhost:10767/api/v1/playback/play-next`, {
+                method: 'POST',
+                headers: {
+                    'apptoken': this.apptoken,
+                    'Content-Type': 'application/json',
+                    'User-Agent': 'Request+/1.2.1 Release'
+                },
+                body: JSON.stringify({
+                    "type": "songs",
+                    "id": `${songID}`
+                })
+            }).then(response => response.json()).then(response => {
+                console.log(response);
+                this.logger.info('Queued Apple Music track with ID: ' + songID);
+            });
+        } catch (error) {
+            this.logger.error(error);
+        }
+    }
 }
 
 
 
-// data.data.attributes.name
-// data.data.attributes.artistName
-// data.data.attributes.albumName
-// data.data.attributes.durationInMillis
-// data.data.attributes.playParams.id
-// data.data.attributes.artwork.url
 export { AMSongObject, AMCurrentSongResponse, AMISPlayingResponse, AMVolumeResponse, AMCurrentSongObject, AMSongAttributes, AMSongAttributeArtwork, AMSongAttributePlayParams };

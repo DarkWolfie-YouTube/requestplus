@@ -334,7 +334,7 @@ export function Settings({
             </div>
 
             <Separator />
-            { settings.platform === 'spotify' && (
+            { settings.platform !== 'youtube' && (
             <div className="space-y-4">
             <div className="flex items-center justify-between">
               <div className="space-y-1">
@@ -353,7 +353,7 @@ export function Settings({
             </div>
             )}
             <Separator />
-            { settings.platform === 'spotify' && (
+            { settings.platform !== 'youtube' && (
             <div className="space-y-4">
             <div className="flex items-center justify-between">
               <div className="space-y-1">
@@ -397,7 +397,7 @@ export function Settings({
                 <SelectTrigger>
                   <SelectValue placeholder="Select a theme" />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent position="item-center" align="center" sideOffset={4} sticky="always" side="bottom">
                   {themeOptions.map((option) => (
                     <SelectItem key={option.value} value={option.value}>
                       {option.label}
@@ -428,7 +428,7 @@ export function Settings({
                 <SelectTrigger>
                   <SelectValue placeholder="Select a platform" />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent position="item-center">
                   {platformOptions.map((option) => (
                     <SelectItem key={option.value} value={option.value}>
                       {option.label}
@@ -557,7 +557,7 @@ export function Settings({
           <div>
             <h3 className="text-lg">About Request+</h3>
             <p className="text-sm text-muted-foreground/80">
-              Version 1.2.0 • Built for streamers by streamers
+              Version 1.2.1 • Built for streamers by streamers
             </p>
           </div>
 

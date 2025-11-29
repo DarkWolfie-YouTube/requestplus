@@ -89,9 +89,6 @@ const TWITCH_CLIENT_ID: string = 'if6usvbqj58fwdbycnu6v77jjsluq5';
 const TWITCH_REDIRECT_URI: string = 'http://localhost:444';
 const TWITCH_SCOPES: string[] = ['user:read:email', 'chat:read', 'chat:edit'];
 
-const KICK_CLIENT_ID: string = '01K90W9460Q5JKJD89KHVC1S6K';
-const KICK_REDIRECT_URI: string = 'https://api.requestplus.xyz/kcallback';
-const KICK_SCOPES: string[] = ['profile', 'chat'];
 
 // Global variables with proper typing
 let WSServer: websocket;
@@ -118,6 +115,7 @@ let playbackHandler: PlaybackHandler;
 let kickChat: KickChat;
 let gtsHandler: GTSHandler;
 let amHandler: AMHandler;
+let lastRequestQueueName: string;
 
 // Auto-queue monitor function
 async function monitorTrackProgress(trackData: songInfo): Promise<void> {
@@ -180,10 +178,18 @@ async function autoQueueNextTrack(): Promise<void> {
     const nextTrack = queue.items[0];
     
     try {
-        WSServer.WSSendToType({
-            command: 'addTrack',
-            data: { uri: `spotify:track:${nextTrack.id}` }
-        }, 'spotify');
+        if (settings.platform === 'spotify') {
+            if (nextTrack.platform === 'spotify') {
+                WSServer.WSSendToType({
+                    command: 'addTrack',
+                    data: { uri: `spotify:track:${nextTrack.id.split('-')[0]}` }
+                }, 'spotify');
+            } 
+        } else if (settings.platform === 'apple') {
+            if (nextTrack.platform === 'apple') {
+                amHandler.queueTrack(nextTrack.id.split('-')[0]);
+            }
+        }
 
         Logger.info(`Auto-queued track: ${nextTrack.title} by ${nextTrack.artist}`);
         
@@ -192,6 +198,9 @@ async function autoQueueNextTrack(): Promise<void> {
             'info',
             4000
         );
+
+        await chatHandler.sendChatMessage(`Auto-queued: ${nextTrack.title} by ${nextTrack.artist}`);
+        lastRequestQueueName = nextTrack.requestedBy;
 
         await queueHandler.setTrackAsQueued(0);
 
@@ -217,13 +226,17 @@ async function checkCurrentlyPlayingTrack(trackData: TrackData): Promise<void> {
         trackId = trackId.replace('spotify:track:', '');
     }
 
-    const matchingTrackIndex = queue.items.findIndex(item => item.id === trackId);
+    const matchingTrackIndex = queue.items.findIndex(item => item.id === trackId + '-' + lastRequestQueueName);
 
     if (matchingTrackIndex !== -1) {
         if (currentTrackId2 === trackId) {
             return;
         }
         Logger.info(`Currently playing track matches queue item at index ${matchingTrackIndex}`);
+        if (matchingTrackIndex !== 0) {
+          Logger.info('Song is not at the top of the queue. Stopping.') 
+          return; 
+        }
         
         await queueHandler.setCurrentlyPlaying(matchingTrackIndex);
         
@@ -241,7 +254,7 @@ async function checkCurrentlyPlayingTrack(trackData: TrackData): Promise<void> {
             await queueHandler.removeFromQueue(matchingTrackIndex);
             Logger.info(`Removed played track from queue: ${track.title}`);
             currentTrackId2 = '';
-        }, 20000);
+        }, 2000);
     }
 }
 
@@ -327,6 +340,8 @@ async function createWindow(): Promise<void> {
     } else {
         mainWindow.loadFile(path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`));
     }
+    //load devtools
+    // mainWindow.webContents.openDevTools();
     
     const userDataPath: string = app.getPath('userData');
     if (Logger) {
@@ -335,7 +350,7 @@ async function createWindow(): Promise<void> {
         Logger = new logger();
         Logger.info('Logger initialized');
     }
-    queueHandler = new QueueHandler(Logger, mainWindow);
+    queueHandler = new QueueHandler(Logger, mainWindow, settings);
     settings = await settingsHandler.load();
 
     AuthManager = new Auth(userDataPath, Logger, mainWindow, settings);
@@ -345,7 +360,7 @@ async function createWindow(): Promise<void> {
     }
     
     if (!ytManager) {
-        ytManager = new YTManager();
+        ytManager = new YTManager(Logger);
     }
 
     if (!amHandler) {
@@ -379,11 +394,11 @@ async function saveTokenAndActivateChat(tokenData: TokenData): Promise<boolean> 
         await AuthManager.saveToken(tokenData);
         await checkStoredTokens();
         if (!chatHandler) {
-            chatHandler = new ChatHandler(Logger, mainWindow, ({ login: twitchUser.login, access_token: twitchAccessToken }), WSServer, settings, queueHandler, ytManager, gtsHandler);
+            chatHandler = new ChatHandler(Logger, mainWindow, ({ login: twitchUser.login, access_token: twitchAccessToken }), WSServer, settings, queueHandler, ytManager, gtsHandler, amHandler);
             chatHandler.connect();
         }
         if (!kickChat) {
-            kickChat = new KickChat(kickAccessToken, kickUser.id, queueHandler, WSServer, settings, ytManager, gtsHandler, Logger);
+            kickChat = new KickChat(kickAccessToken, kickUser.id, queueHandler, WSServer, settings, ytManager, gtsHandler, amHandler, Logger);
         }
         return true;
     } catch (error) {
@@ -408,7 +423,7 @@ async function checkStoredTokens(): Promise<void> {
             mainWindow?.webContents.send('twitch-auth-success', twitchUser);
             
             if (!chatHandler) {
-                chatHandler = new ChatHandler(Logger, mainWindow, ({ login: twitchUser.login, access_token: twitchAccessToken }), WSServer, settings, queueHandler, ytManager, gtsHandler);
+                chatHandler = new ChatHandler(Logger, mainWindow, ({ login: twitchUser.login, access_token: twitchAccessToken }), WSServer, settings, queueHandler, ytManager, gtsHandler, amHandler);
                 chatHandler.connect();
             }
         }
@@ -426,7 +441,7 @@ async function checkStoredTokens(): Promise<void> {
             mainWindow?.webContents.send('kick-auth-success', kickUser);
             
             if (kickUser && !kickChat) {
-                kickChat = new KickChat(kickAccessToken, kickUser.id, queueHandler, WSServer, settings, ytManager, gtsHandler, Logger); 
+                kickChat = new KickChat(kickAccessToken, kickUser.id, queueHandler, WSServer, settings, ytManager, gtsHandler, amHandler, Logger); 
             }
         }
     } catch (error) {
@@ -521,6 +536,11 @@ ipcMain.handle('song-skip', async (): Promise<void> => {
     } else if (platform === 'apple' && amHandler) {
         await amHandler.nextTrack();
     }
+});
+
+ipcMain.handle('play-track-at-index', async (event: Electron.IpcMainInvokeEvent, index: number): Promise<void> => {
+    const platform = settings.platform
+    autoQueueNextTrack();
 });
 
 ipcMain.handle('song-previous', async (): Promise<void> => {
@@ -768,7 +788,7 @@ async function requestTrackInfo(): Promise<void> {
     if (!info) return;
     const currentSongInformation: songInfo = { ...info };
     mainWindow?.webContents.send('song-info', currentSongInformation);
-    if (settings.platform === 'spotify') {
+    if (settings.platform !== 'youtube') {
         monitorTrackProgress(currentSongInformation);
         await wait(2000);
         checkCurrentlyPlayingTrack(currentSongInformation);

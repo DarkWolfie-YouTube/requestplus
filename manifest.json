@@ -3,11 +3,11 @@
       "name": "Request+",
       "description": "Spicetify extension to request songs.",
       "preview": "screenshot.png",
-      "main": "requestplus.js",
+      "main": "spicetify.js",
       "readme": "SPICETIFY.md",
       "authors": [
         { "name": "Quil DayTrack", "url": "https://github.com/darkwolfie37" }
       ],
-      "tags": ["music", "twitch"]
+      "tags": ["music", "twitch", "overlay", "request"]
     }
 ]

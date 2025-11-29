@@ -6,6 +6,7 @@ import { RequestData } from './websocket';
 import QueueHandler from './queueHandler';
 import { YTManager } from './ytManager';
 import GTSHandler from './gtsHandler';
+import AMHandler from './amhandler';
 
 // Type definitions
 interface TwitchAuth {
@@ -57,9 +58,10 @@ class ChatHandler {
     private queueHandler: QueueHandler;
     private ytManager: YTManager;
     private gtsHandler: GTSHandler;
+    private amHandler: AMHandler;
     private channels: string[] = [];
 
-    constructor(logger: Logger, mainWindow: BrowserWindow, twitchAuth: TwitchAuth, WSServer: WSServerInterface, settings: Settings, queueHandler: QueueHandler, ytManager: YTManager, GTSHandler: GTSHandler) {
+    constructor(logger: Logger, mainWindow: BrowserWindow, twitchAuth: TwitchAuth, WSServer: WSServerInterface, settings: Settings, queueHandler: QueueHandler, ytManager: YTManager, GTSHandler: GTSHandler, amHandler: AMHandler) {
         this.mainWindow = mainWindow;
         this.logger = logger;
         this.WSServer = WSServer;
@@ -67,6 +69,7 @@ class ChatHandler {
         this.queueHandler = queueHandler;
         this.ytManager = ytManager;
         this.gtsHandler = GTSHandler;
+        this.amHandler = amHandler;
         this.channels = [twitchAuth.login];
 
         const clientOptions: TMIClientOptions = {
@@ -149,12 +152,13 @@ class ChatHandler {
                                     }
                                     this.Client.say(channel, `Request+: Added ${title} by ${artists} to the moderation queue.`);
                                     await this.queueHandler.addToQueue({
-                                        id: id,
+                                        id: id + '-' + tags.username,
                                         title: title,
                                         artist: artists,
                                         album: response.album.name,
                                         duration: response.duration_ms,
                                         requestedBy: tags.username || "Unknown",
+                                        platform: 'spotify',
                                         iscurrentlyPlaying: false,
                                         cover: coverUrl // Add the cover image
                                     });
@@ -219,6 +223,9 @@ class ChatHandler {
                         return;
                     }
                 }
+            } else if (this.settings.platform === 'apple') {
+                this.amHandler.handleChatRequest(message, channel, tags, this.Client, this.queueHandler, this.settings);
+                return;
             }
         }      
     

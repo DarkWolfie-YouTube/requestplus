@@ -41,7 +41,7 @@ export function Navigation({ currentView, onViewChange, settings}: NavigationPro
             Player
           </Button>
           
-          { settings.platform === 'spotify' && (
+          { settings.platform !== 'youtube' && (
             <Button
               variant={currentView === 'queue' ? 'default' : 'ghost'}
               size="sm"

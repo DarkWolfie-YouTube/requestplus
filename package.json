@@ -1,11 +1,11 @@
 {
   "name": "requestplus",
   "productName": "Request+",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Supercharged Music Overlay for Streamers!",
   "main": ".vite/build/main.js",
   "scripts": {
-    "start": "electron-forge start",
+    "start": "electron-forge start --inspect-electron",
     "package": "electron-forge package",
     "make": "electron-forge make",
     "publish": "electron-forge publish",
@@ -16,17 +16,14 @@
     "url": "https://github.com/DarkWolfie-YouTube/requestplus.git"
   },
   "keywords": [],
-  "author": {
-    "name": "Quil DayTrack",
-    "email": "quil.cluckington@blepworksltd.shop",
-    "url": "https://darkwolfie.com"
-  },
-  "license": "MIT",
+  "author": "Quil DayTrack",
+  "license": "GPL-3.0-only",
   "devDependencies": {
     "@electron-forge/cli": "^7.8.3",
-    "@electron-forge/maker-deb": "^7.8.3",
+    "@electron-forge/maker-appx": "^7.10.2",
+    "@electron-forge/maker-deb": "^7.10.2",
     "@electron-forge/maker-dmg": "^7.8.3",
-    "@electron-forge/maker-rpm": "^7.8.3",
+    "@electron-forge/maker-rpm": "^7.10.2",
     "@electron-forge/maker-squirrel": "^7.8.3",
     "@electron-forge/maker-zip": "^7.8.3",
     "@electron-forge/plugin-auto-unpack-natives": "^7.8.3",
