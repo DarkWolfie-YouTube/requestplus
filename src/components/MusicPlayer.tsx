@@ -7,6 +7,7 @@ import { Slider } from './ui/slider';
 import { Volume2, Heart, SkipBack, Play, Pause, SkipForward, Repeat, Shuffle, Repeat1 } from 'lucide-react';
 import { ImageWithFallback } from './figma/ImageWithFallback';
 import { Queue } from 'src/queueHandler';
+import { Settings } from 'src/settingsHandler';
 
 interface Track {
   title: string;
@@ -26,9 +27,10 @@ interface MusicPlayerProps {
   currentTrack: Track;
   setCurrentTrack: (track: Track) => void;
   queue: Queue;
+  settings: Settings;
 }
 
-export function MusicPlayer({ currentTrack, setCurrentTrack, queue }: MusicPlayerProps) {
+export function MusicPlayer({ currentTrack, setCurrentTrack, queue, settings }: MusicPlayerProps) {
   const [volume, setVolume] = useState([Math.floor(currentTrack.volume * 100)]);
   const [isLiked, setIsLiked] = useState(currentTrack.isLiked);
 
@@ -86,7 +88,11 @@ export function MusicPlayer({ currentTrack, setCurrentTrack, queue }: MusicPlaye
     }
 
     api.playTrackAtIndex?.(queue.currentlyPlayingIndex + 1);
-    await setTimeout(api.skip?.(), 300);
+    if (settings.platform === 'apple') {
+      await setTimeout(api.skip(), 1300);
+    } else {
+      await setTimeout(api.skip?.(), 300);
+    }
 
   };
 

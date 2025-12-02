@@ -9,11 +9,11 @@ module.exports = {
     name: 'Request+',
     icon: 'build/icon', // Electron Forge will automatically append the correct extension (.ico, .icns, etc.)
     // Code signing configuration (Windows)
-    ...(process.env.CERT_PASSWORD && {
+    ...(process.env.APPX_CERT_PASSWORD && {
       win32metadata: {
-        CompanyName: 'DarkWolfieVT',
+        CompanyName: 'Quil DayTrack',
         ProductName: 'Request+',
-        FileDescription: 'Request+ - DJ Song Request Manager'
+        FileDescription: 'Supercharged Music Overlay for Streamers!'
       },
       osxSign: false, // Disable default signing to use custom
       osxNotarize: false
@@ -25,26 +25,16 @@ module.exports = {
       name: '@electron-forge/maker-squirrel',
       config: {
         name: 'RequestPlus',
-        title: 'RequestPlus',
+        title: 'Request+',
         setupIcon: path.resolve('build/icon.ico'),
         loadingGif: path.resolve('build/loading.gif'),
         // Code signing for Squirrel installer
-        ...(process.env.CERT_PASSWORD && {
-          signWithParams: `/f "C:/Users/DarkWolfie/Desktop/backup/Twitch Marathon Timer/build/cert.pfx" /p "${process.env.CERT_PASSWORD}" /tr http://timestamp.digicert.com /td sha256 /fd sha256`,
+        ...(process.env.APPX_CERT_PASSWORD && {
+          signWithParams: `/f "C:/Users/DarkWolfie/Desktop/backup/Twitch Marathon Timer/build/cert.pfx" /p "${process.env.APPX_CERT_PASSWORD}" /tr http://timestamp.digicert.com /td sha256 /fd sha256`,
           certificateFile: 'C:/Users/DarkWolfie/Desktop/backup/Twitch Marathon Timer/build/cert.pfx',
-          certificatePassword: process.env.CERT_PASSWORD
+          certificatePassword: process.env.APPX_CERT_PASSWORD
         })
       },
-    },
-    {
-      name: '@electron-forge/maker-appx',
-      config: {
-        publisher: process.env.CERT_PUBLISHER,
-        devCert: 'C:/Users/DarkWolfie/Desktop/backup/Twitch Marathon Timer/build/cert.pfx',
-        certPass: process.env.CERT_PASSWORD,
-        packageName: 'QuilDayTrack.Request',
-        packageDisplayName: 'Request+'
-      }
     },
     {
       name: '@electron-forge/maker-dmg',

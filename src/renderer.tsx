@@ -313,6 +313,7 @@ const handleTrackSelect = (track: QueueItem) => {
             currentTrack={currentTrack} 
             setCurrentTrack={setCurrentTrack}
             queue={queue}
+            settings={settings}
           />
         );
       case 'queue':

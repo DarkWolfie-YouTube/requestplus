@@ -9,7 +9,10 @@
     "package": "electron-forge package",
     "make": "electron-forge make",
     "publish": "electron-forge publish",
-    "lint": "echo \"No linting configured\""
+    "lint": "echo \"No linting configured\"",
+    "build:appx": "node build-appx.js",
+    "build:nsis": "node build-appx.js nsis",
+    "build:portable": "node build-appx.js portable"
   },
   "repository": {
     "type": "git",
@@ -23,13 +26,16 @@
     "@electron-forge/maker-appx": "^7.10.2",
     "@electron-forge/maker-deb": "^7.10.2",
     "@electron-forge/maker-dmg": "^7.8.3",
+    "@electron-forge/maker-msix": "^7.10.2",
     "@electron-forge/maker-rpm": "^7.10.2",
     "@electron-forge/maker-squirrel": "^7.8.3",
     "@electron-forge/maker-zip": "^7.8.3",
     "@electron-forge/plugin-auto-unpack-natives": "^7.8.3",
     "@electron-forge/plugin-fuses": "^7.8.3",
     "@electron-forge/plugin-vite": "^7.8.3",
+    "@electron-forge/publisher-github": "^7.10.2",
     "@electron/fuses": "^1.8.0",
+    "@electron/packager": "^18.4.4",
     "@types/body-parser": "^1.19.6",
     "@types/cors": "^2.8.19",
     "@types/electron-squirrel-startup": "^1.0.2",
@@ -40,13 +46,14 @@
     "@typescript-eslint/parser": "^5.62.0",
     "autoprefixer": "^10.4.21",
     "electron": "37.3.1",
+    "electron-builder": "^26.0.12",
     "electron-squirrel-startup": "^1.0.1",
     "eslint": "^8.57.1",
     "eslint-plugin-import": "^2.32.0",
     "postcss": "^8.5.6",
     "tailwindcss": "^4.1.12",
     "typescript": "~4.5.4",
-    "vite": "^5.4.19"
+    "vite": "^6.4.1"
   },
   "dependencies": {
     "@tailwindcss/postcss": "^4.1.12",
@@ -59,6 +66,7 @@
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
     "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
     "embla-carousel-react": "^8.6.0",
     "express": "^4.21.2",
     "input-otp": "^1.4.2",

@@ -40,43 +40,48 @@
 
         function init() {
             apiInit()
-            songProgress.style.width = "100px"
+            songProgress.style.width = "1px"
         }
 
 
         function apiInit() {
-            $.ajax({
-                url: 'http://localhost:444/settings',
-                type: 'GET',
-                crossDomain: true,
-                success: function(response) {
-                    if (response.theme) {
-                        if (response.theme == "default") {
-                            document.getElementById("theme-css").href = "styles/style.css";
-                        } else if (response.theme == "gojo") {
-                            document.getElementById("theme-css").href = "styles/gojo.css";
-                        } else if (response.theme == "hologram") {
-                            document.getElementById("theme-css").href = "styles/hologram.css";
-                        } else if (response.theme == "ichinyan") {
-                            document.getElementById("theme-css").href = "styles/ichinyan.css";
-                        } else if (response.theme == "mdev") {
-                            document.getElementById("theme-css").href = "styles/mdev.css";
-                        } else if (response.theme == "moonkingbean") {
-                            document.getElementById("theme-css").href = "styles/moonkingBEAN.css";
-                        } else if (response.theme == "twinGhost") {
-                            document.getElementById("theme-css").href = "styles/twinGhost.css";
-                        } else if (response.theme == "custom") {
-                            document.getElementById("theme-css").href = "styles/custom.css";
-                        }
-                    }
+    $.ajax({
+        url: 'http://localhost:444/settings',
+        type: 'GET',
+        crossDomain: true,
+        timeout: 5000, // Add timeout
+        success: function(response) {
+            if (response.theme) {
+                // Theme mapping object for cleaner code
+                const themeMap = {
+                    'default': 'styles/style.css',
+                    'gojo': 'styles/gojo.css',
+                    'hologram': 'styles/hologram.css',
+                    'ichinyan': 'styles/ichinyan.css',
+                    'mdev': 'styles/mdev.css',
+                    'moonkingbean': 'styles/moonkingBEAN.css',
+                    'twinGhost': 'styles/twinGhost.css',
+                    'custom': 'styles/custom.css'
+                };
 
-                    //theme done, init song info loop
-                    songInfoLoop();
-                    setInterval(songInfoLoop, 1000);
+                // Apply theme if it exists in the map
+                if (themeMap[response.theme]) {
+                    document.getElementById("theme-css").href = themeMap[response.theme];
                 }
+            }
 
-            });
+            // Theme done, init song info loop
+            songInfoLoop();
+            setInterval(songInfoLoop, 1000);
+        },
+        error: function(xhr, status, error) {
+            console.log('API Error:', error);
+            console.log('Status:', status);
+            console.log("The Application isn't running, retrying in 5 seconds...");
+            setTimeout(apiInit, 5000);
         }
+    });
+}
         const overlayContainer = document.getElementById('overlay-container');
 
 
