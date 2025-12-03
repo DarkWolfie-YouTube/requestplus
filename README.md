@@ -6,8 +6,8 @@
 ---
 
 ## 🧠 Overview  
-**Request+** is a free and open-source tool designed for Twitch streamers who want seamless, real-time song requests integrated directly with Spotify.  
-Built with **React** and **Electron**, Request+ provides a smooth desktop experience — while **Spicetify** handles communication with Spotify for playback and track control.
+**Request+** is a free and open-source tool designed for Twitch streamers who want seamless, real-time song requests integrated directly with Spotify, YouTube Music, and Apple Music.  
+Built with **React** and **Electron**, Request+ provides a smooth desktop experience — while **Spicetify**, **Pear**, and **Cider** handles communication for playback and track control.
 
 It’s simple, free, and streamer-focused. No subscriptions. No ads. Just you, your chat, and your music.
 
@@ -43,8 +43,9 @@ It’s simple, free, and streamer-focused. No subscriptions. No ads. Just you, y
 You can find the latest release on the [**Releases Page**](https://github.com/darkwolfie-youtube/requestplus/releases).
 
 Download the version for your platform:  
-- **Windows (.exe)**  
-- **macOS (.dmg)**   
+- **Windows (.exe | Microsoft Store)**  
+- **macOS (.dmg)**
+- **Linux (.deb)**
 
 ### 🧩 Requirements  
 - **Spotify desktop app** (latest version)  
