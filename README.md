@@ -5,9 +5,14 @@
 
 ---
 
+> [!IMPORTANT]
+> If you use Request+, you hereby agree to the [Terms of Service](https://requestplus.xyz/terms-of-service)
+
+
+
 ## 🧠 Overview  
-**Request+** is a free and open-source tool designed for Twitch streamers who want seamless, real-time song requests integrated directly with Spotify.  
-Built with **React** and **Electron**, Request+ provides a smooth desktop experience — while **Spicetify** handles communication with Spotify for playback and track control.
+**Request+** is a free and open-source tool designed for Twitch streamers who want seamless, real-time song requests integrated directly with Spotify, YouTube Music, and Apple Music.  
+Built with **React** and **Electron**, Request+ provides a smooth desktop experience — while **Spicetify**, **Pear**, and **Cider** handle communication for playback and track control.
 
 It’s simple, free, and streamer-focused. No subscriptions. No ads. Just you, your chat, and your music.
 
@@ -21,7 +26,7 @@ It’s simple, free, and streamer-focused. No subscriptions. No ads. Just you, y
 - 🗂 **Request Queue Management** — Skip, reorder, and manage incoming requests.  
 -  **Lightweight UI** — React + Electron for fast, minimal system resource usage.  
 - 🆓 **Completely Free** — No premium or paywalled features.  
-- ☁️ **Data Privacy** — Only Twitch usernames and tokens are stored; no personal data or playback history is retained. (It's never even sent to a server!)  
+- ☁️ **Data Privacy** — Only Twitch and kick usernames and tokens are stored; You can find more about our practices in our [privacy policy](https://requestplus.xyz/privacy-policy).
 
 ---
 
@@ -43,8 +48,9 @@ It’s simple, free, and streamer-focused. No subscriptions. No ads. Just you, y
 You can find the latest release on the [**Releases Page**](https://github.com/darkwolfie-youtube/requestplus/releases).
 
 Download the version for your platform:  
-- **Windows (.exe)**  
-- **macOS (.dmg)**   
+- **Windows (.exe | Microsoft Store)**  
+- **macOS (.dmg)**
+- **Linux (.deb)**
 
 ### 🧩 Requirements  
 - **Spotify desktop app** (latest version)  
@@ -73,11 +79,7 @@ npm run start
 # Build for production
 npm run make
 ```
-
-Sure! Here’s the entire **README.md** in clean, copy-ready Markdown format — you can paste this directly into your GitHub repo:
-
 ---
-
 
 Make sure **Spicetify** is installed and configured correctly on your system:
 
