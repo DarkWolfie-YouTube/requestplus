@@ -79,11 +79,7 @@ npm run start
 # Build for production
 npm run make
 ```
-
-Sure! Here’s the entire **README.md** in clean, copy-ready Markdown format — you can paste this directly into your GitHub repo:
-
 ---
-
 
 Make sure **Spicetify** is installed and configured correctly on your system:
 
