@@ -6,13 +6,13 @@
 ---
 
 > [!IMPORTANT]
-> If you use Request+, you are subject to hearby agree to the [Terms of Service](https://requestplus.xyz/terms-of-service)
+> If you use Request+, you hereby agree to the [Terms of Service](https://requestplus.xyz/terms-of-service)
 
 
 
 ## 🧠 Overview  
 **Request+** is a free and open-source tool designed for Twitch streamers who want seamless, real-time song requests integrated directly with Spotify, YouTube Music, and Apple Music.  
-Built with **React** and **Electron**, Request+ provides a smooth desktop experience — while **Spicetify**, **Pear**, and **Cider** handles communication for playback and track control.
+Built with **React** and **Electron**, Request+ provides a smooth desktop experience — while **Spicetify**, **Pear**, and **Cider** handle communication for playback and track control.
 
 It’s simple, free, and streamer-focused. No subscriptions. No ads. Just you, your chat, and your music.
 
@@ -26,7 +26,7 @@ It’s simple, free, and streamer-focused. No subscriptions. No ads. Just you, y
 - 🗂 **Request Queue Management** — Skip, reorder, and manage incoming requests.  
 -  **Lightweight UI** — React + Electron for fast, minimal system resource usage.  
 - 🆓 **Completely Free** — No premium or paywalled features.  
-- ☁️ **Data Privacy** — Only Twitch and kick usernames and tokens are stored; You can find more about our practices [here](https://requestplus.xyz/privacy-policy)
+- ☁️ **Data Privacy** — Only Twitch and kick usernames and tokens are stored; You can find more about our practices in our [privacy policy](https://requestplus.xyz/privacy-policy).
 
 ---
 
