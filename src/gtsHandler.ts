@@ -3,7 +3,7 @@
  * @copyright 2025 Quil DayTrack 
  * 
  * @license GPL-v3.0
- * @version 1.2.1
+ * @version 1.2.2
  *
  * @description
  * A Guess the Song Extension Handler, allowes chat to guess the next song before displaying it after 30 seconds!
@@ -76,6 +76,10 @@ export default class GTSHandler {
 
     public updateSettings(settings: Settings): void {
         this.settings = settings;
+        if (this.settings.theme.includes("nowplaying")) {
+            this.gtsActive = false;
+            return;
+        }
         if (this.settings.gtsEnabled) {
             this.gtsActive = true;
         } else {

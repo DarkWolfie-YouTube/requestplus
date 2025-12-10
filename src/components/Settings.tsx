@@ -65,10 +65,16 @@ export function Settings({
     { value: 'custom', label: 'Custom (CHECK THE WIKI)' },
     { value: 'gojo', label: 'Gojo' },
     { value: 'hologram', label: 'Hologram' },
-    { value: 'ichinyan', label: 'Ichinyan' },
     { value: 'mdev', label: 'MDev' },
     { value: 'moonkingbean', label: 'MoonKingBean' },
-    { value: 'twinGhost', label: 'TwinGhost' }
+    { value: 'twinGhost', label: 'TwinGhost' },
+    { value: 'nowplaying-default', label: 'NowPlaying (Default)' },
+    { value: 'nowplaying-custom', label: 'NowPlaying (Custom)' },
+    { value: 'nowplaying-gojo', label: 'NowPlaying (Gojo)' },
+    { value: 'nowplaying-hologram', label: 'NowPlaying (Hologram)' },
+    { value: 'nowplaying-mdev', label: 'NowPlaying (MDev)' },
+    { value: 'nowplaying-moonkingbean', label: 'NowPlaying (MoonKingBean)' },
+    { value: 'nowplaying-twinGhost', label: 'NowPlaying (TwinGhost)' }
   ];
   const platformOptions = [
     { value: 'spotify', label: 'Spotify' },
@@ -557,7 +563,7 @@ export function Settings({
           <div>
             <h3 className="text-lg">About Request+</h3>
             <p className="text-sm text-muted-foreground/80">
-              Version 1.2.1 • Built for streamers by streamers
+              Version 1.2.2 • Built for streamers by streamers
             </p>
           </div>
 

@@ -813,4 +813,4 @@ function sendToast(message: string, type: 'info' | 'success' | 'error' | 'warnin
     }
 }
 
-setInterval(requestTrackInfo, 1000);
+setInterval(requestTrackInfo, 500);

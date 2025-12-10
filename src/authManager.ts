@@ -186,7 +186,7 @@ class AuthManager {
             const response = await fetch('https://api.kick.com/public/v1/users', {
                 headers: {
                     'Authorization': `Bearer ${token}`, 
-                    'User-Agent': 'Request+/1.2.1 (https://github.com/DarkWolfie-YouTube/requestplus) darkwolfiefiver@gmail.com'
+                    'User-Agent': 'Request+/1.2.2 (https://github.com/DarkWolfie-YouTube/requestplus) darkwolfiefiver@gmail.com'
                 }
             });
 
@@ -236,7 +236,7 @@ class AuthManager {
             const response = await fetch('https://api.kick.com/public/v1/users', {
                 headers: {
                     'Authorization': `Bearer ${token}`, 
-                    'User-Agent': 'Request+/1.2.1 (https://github.com/DarkWolfie-YouTube/requestplus) darkwolfiefiver@gmail.com'
+                    'User-Agent': 'Request+/1.2.2 (https://github.com/DarkWolfie-YouTube/requestplus) darkwolfiefiver@gmail.com'
                 }
             });
 
@@ -302,7 +302,7 @@ class AuthManager {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'User-Agent': 'Request+ v1.2.1/release'
+                    'User-Agent': 'Request+ v1.2.2/release'
                 },
                 body: JSON.stringify({
                     userId: userId
@@ -509,7 +509,7 @@ class AuthManager {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
-                        'User-Agent': 'Request+ v1.2.1/release'
+                        'User-Agent': 'Request+ v1.2.2/release'
                     },
                     body: JSON.stringify({
                         userID: tokenData.id,
@@ -527,7 +527,7 @@ class AuthManager {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
-                        'User-Agent': 'Request+ v1.2.1/release'
+                        'User-Agent': 'Request+ v1.2.2/release'
                     },
                     body: JSON.stringify({
                         userID: tokenData.id,

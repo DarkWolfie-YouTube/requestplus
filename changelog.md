@@ -1,57 +1,41 @@
-# 🚀 Request+ v1.2.1
-
-> [!IMPORTANT]
-> Apple Music support is provided through **[Cider](https://cider.sh)**.
-> Cider is a paid program, so not all users may choose to use this feature.
+# 🚀 Request+ v1.2.2
 
 ---
 
-# 🍎 Apple Music Support (via Cider)
+# Overlay Update!
 
-* Added full **Chat Song Request** support for Apple Music.
-* Added **Moderation Queue** support for Apple Music.
-* Improved and unified chat handler functions for all supported platforms.
+- Instead of showing the overlay all the time, the overlay can now show the new song playing and dissapear after 10 seconds
+  - These options are now new themes, they work just like the regular themes.
 
----
-
-# 🎶 Music Player & Queue Page Improvements
-
-* Fixed a bug where the **Queue Page** would not display whether a song was queued or currently playing.
-* Added functionality to **skip directly to the next queued track**.
-* Queue system buttons now work reliably and as intended.
+I plan on adding a UI object for this overlay detailing what song got added to the queue. Keep a look out for a testers button in settings!
 
 ---
 
-# 🔄 Queue System Rework
+# Theme Additions
 
-* Added requester usernames to queue track IDs, ensuring identical song requests from different users are handled separately.
-* Added full **Apple Music Queue Support**.
+Added: 
 
----
+- NowPlaying (Default)
+- NowPlaying (Custom)
+- NowPlaying (Gojo)
+- NowPlaying (MDev)
+- NowPlaying (Hologram)
+- NowPlaying (MoonKingBean)
+- NowPlaying (TwinGhost)
 
-# 🎨 UI/UX Enhancements
+Removed:
 
-* Added subtle new **animations** for a smoother, more dynamic interface.
-* Fixed several issues with **select menus**, improving interaction and consistency.
-
----
-
-# 🛍️ Now Available on the Microsoft Store!
-
-Request+ is now officially available on the **Microsoft Store**:
-👉 [https://apps.microsoft.com/detail/9NSTQFMRPBH0?hl=en-us&gl=US&ocid=pdpshare](https://apps.microsoft.com/detail/9NSTQFMRPBH0?hl=en-us&gl=US&ocid=pdpshare)
-
-This makes installing and updating Request+ easier than ever — no manual setup required.
+- Ichinyan - Simplicity Reasons
 
 ---
 
-# 🐧 Linux Builds Are Here!
+## Small Changes
 
-We are now officially building **Linux-compatible versions** of Request+.
-This is an early-stage effort, so expect improvements and expanded support over upcoming releases.
+I can now pop up any message in the client at any time with any title or info I want, you will be only able to see these messages once so make sure to read them!!! They may contain important information!!!
 
----
+--- 
 
-With this update, Request+ continues to grow across all platforms — Windows, Linux, and now Apple Music via Cider — while delivering major improvements to the queue system, UI, and chat integrations.
+Thanks for choosing Request+ for your song request needs!
 
-**Thank you for supporting Request+ 💙**
+
+

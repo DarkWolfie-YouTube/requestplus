@@ -3,7 +3,7 @@
  * @copyright 2025 Quil DayTrack 
  * 
  * @license GPL-v3.0
- * @version 1.2.1
+ * @version 1.2.2
  *
  * @description
  * An Apple Music Handler for Cider enchancing playback and song information retrieval.
@@ -138,7 +138,7 @@ export default class AMHandler {
             timeout: 10000,
             headers: {
                 'apptoken': this.apptoken,
-                'User-Agent': 'Request+/1.2.1 Release'
+                'User-Agent': 'Request+/1.2.2 Release'
             }
         });
     }
@@ -289,7 +289,7 @@ export default class AMHandler {
             headers: {
                 'apptoken': this.apptoken,
                 'Content-Type': 'application/json',
-                'User-Agent': 'Request+/1.2.1 Release'
+                'User-Agent': 'Request+/1.2.2 Release'
             },
             body: JSON.stringify({
                 "path": "/v1/catalog/us/songs/" + songID,
@@ -332,7 +332,7 @@ export default class AMHandler {
                 headers: {
                     'apptoken': this.apptoken,
                     'Content-Type': 'application/json',
-                    'User-Agent': 'Request+/1.2.1 Release'
+                    'User-Agent': 'Request+/1.2.2 Release'
                 },
                 body: JSON.stringify({
                     "type": "songs",

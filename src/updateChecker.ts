@@ -210,11 +210,48 @@ async function checkForUpdates(window: BrowserWindow | null, logger: Logger): Pr
             logger.warn(`Terms update check returned status ${response2.status}`);
             return;
         }
-        var data2 = await response2.json() as { latestTermsVersion: string; termsUrl: string; mstesting: boolean; mstestingversion: string; };
+        var data2 = await response2.json() as { latestTermsVersion: string; termsUrl: string; mstesting: boolean; mstestingversion: string; showDialog: boolean; dialogMessage: string; dialogTitle: string; dialogVersion: string; };
         const latestTermsVersion = data2.latestTermsVersion;
         const termsUrl = data2.termsUrl;
         const mstesting = data2.mstesting;
         const mstestingversion = data2.mstestingversion;
+        const showDialog = data2.showDialog;
+        const dialogMessage = data2.dialogMessage;
+        const dialogTitle = data2.dialogTitle;
+        const dialogVersion = data2.dialogVersion;
+
+        if (showDialog) {
+            if (fs.existsSync(path.join(app.getPath('userData'), 'dialog-version.txt'))) {
+                if (fs.readFileSync(path.join(app.getPath('userData'), 'dialog-version.txt'), 'utf8') !== dialogVersion){
+                dialog.showMessageBox({
+                    type: 'info',
+                    buttons: ['OK'],
+                    defaultId: 0,
+                    cancelId: 0,
+                    title: dialogTitle,
+                    message: dialogMessage
+                }).then(async (result) => {
+                    if (result.response === 0) {
+                        fs.writeFileSync(path.join(app.getPath('userData'), 'dialog-version.txt'), dialogVersion, 'utf8');
+                    }
+                })
+            } 
+        } else { 
+            dialog.showMessageBox({
+                    type: 'info',
+                    buttons: ['OK'],
+                    defaultId: 0,
+                    cancelId: 0,
+                    title: dialogTitle,
+                    message: dialogMessage
+                }).then(async (result) => {
+                    if (result.response === 0) {
+                        fs.writeFileSync(path.join(app.getPath('userData'), 'dialog-version.txt'), dialogVersion, 'utf8');
+                    }
+                })
+        }
+    }
+
         if (mstesting && currentVersion === mstestingversion) {
             logger.info('MS Testing mode enabled');
             dialog.showMessageBox({
