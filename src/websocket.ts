@@ -76,14 +76,47 @@ interface ClientInfo {
     version?: string;
 }
 
+interface SearchAPITrackData {
+    album: SearchAPIAlbumData
+    artists: Array<{ name: string }>
+    name: string
+    id: string
+    uri: string
+    external_urls: { spotify: string }
+    type: string
+    popularity: number
+    is_local: boolean
+    is_playable: boolean
+    track_number: number
+}
+
+interface SearchAPIAlbumData {
+    album_type: string;
+    total_tracks: number;
+    available_markets: string[];
+    external_urls: { spotify: string };
+    href: string;
+    id: string;
+    images: Array<{ height: number; width: number; url: string }>;
+    name: string;
+    release_date: string;
+    release_date_precision: string;
+    restrictions?: { reason: string };
+    type: string;
+    uri: string;
+    artists: Array<{ name: string }>
+}
+
 class WebSocketServer {
     private port: number;
     private wss: WSS | null;
     private clients: Map<WebSocket, ClientInfo>;
     private mainWindow: BrowserWindow;
     private logger: Logger;
-    public lastInfo: TrackData | null;
+    public lastSInfo: TrackData | null;
+    public lastSOInfo: TrackData | null;
     public lastReq: RequestData | null;
+    public SearchResults: Array<SearchAPITrackData> = []
 
     constructor(port: number, mainWindow: BrowserWindow, logger: Logger) {
         this.port = port;
@@ -91,7 +124,8 @@ class WebSocketServer {
         this.clients = new Map();
         this.mainWindow = mainWindow;
         this.logger = logger;
-        this.lastInfo = null;
+        this.lastSInfo = null;
+        this.lastSOInfo = null;
         this.lastReq = null;
         
         this.initServer();
@@ -176,7 +210,8 @@ class WebSocketServer {
                         }
                     });
 
-                    if (parsed.command === "currentTrack") {
+                    if (client.type === 'spotify') {
+                        if (parsed.command === "currentTrack") {
                         const data: TrackData = {
                             ...parsed.data,
                             isPlaying: parsed.isPlaying,
@@ -215,7 +250,7 @@ class WebSocketServer {
                             }
                         }
 
-                        this.lastInfo = data;
+                        this.lastSInfo = data;
                         
                         // Notify main process for auto-queue monitoring
                         try {
@@ -235,6 +270,81 @@ class WebSocketServer {
                         this.lastReq = parsed.data as RequestData;
                         return;
                     }
+
+                    if (parsed.command === "searchResults") {
+                        console.log('Search Results:', parsed.data);
+                        this.SearchResults = parsed.data.tracks.items;
+                        return;
+                    }
+                } else if (client.type === 'soundcloud') {
+
+                    if (parsed.command === "currentTrack") {
+                        const data: TrackData = {
+                            ...parsed.data,
+                            isPlaying: parsed.isPlaying,
+                            progress: parsed.progress,
+                            volume: parsed.volume,
+                            shuffle: parsed.shuffle,
+                            repeat: parsed.repeat,
+                            isLiked: parsed.isLiked,
+                            id: parsed.id
+                        };
+                            console.log('Soundcloud track data received:', data);
+                        // Add track ID extraction for auto-queue system
+                        if (parsed.data) {
+                            // Extract track ID from URI or use existing ID
+                            if (parsed.data.uri && parsed.data.uri.includes('spotify:track:')) {
+                                data.id = parsed.data.uri.replace('spotify:track:', '');
+                            } else if (parsed.data.id) {
+                                data.id = parsed.data.id;
+                            }
+
+                            // Extract duration if available
+                            if (parsed.data.duration_ms) {
+                                data.duration = parsed.data.duration_ms;
+                            }
+                        }
+
+                        if (data.local_file_path) {
+                            try {
+                                const metadata = await musicmetadata.parseFile(data.local_file_path);
+                                if (metadata.common.picture && metadata.common.picture.length > 0) {
+                                    const imageB64 = Buffer.from(metadata.common.picture[0].data).toString('base64');
+                                    data.image = `data:${metadata.common.picture[0].format};base64,${imageB64}`;
+                                }
+                            } catch (error) {
+                                this.logger.error('Error parsing music metadata:', error);
+                            }
+                        }
+
+                        this.lastSOInfo = data;
+                        
+                        // Notify main process for auto-queue monitoring
+                        try {
+                            // Import the global function (you'll need to set this up in main.ts)
+                            if ((global as any).setCurrentSongInformation) {
+                                (global as any).setCurrentSongInformation(data);
+                            }
+                        } catch (error) {
+                            this.logger.error('Error updating current song information:', error);
+                        }
+                        
+                        return;
+                    }
+                    
+                    if (parsed.command === "requestHandled") {
+                        this.logger.info('Request handled for: ', parsed.data);
+                        this.lastReq = parsed.data as RequestData;
+                        return;
+                    }
+
+                    if (parsed.command === "searchResults") {
+                        console.log('Search Results:', parsed.data);
+                        this.SearchResults = parsed.data.tracks.items;
+                        return;
+                    }
+                }
+
                 } catch (error) {
                     this.logger.error('Error processing WebSocket message:', error);
                 }

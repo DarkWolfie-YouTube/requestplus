@@ -116,6 +116,7 @@ let kickChat: KickChat;
 let gtsHandler: GTSHandler;
 let amHandler: AMHandler;
 let lastRequestQueueName: string;
+let songIntervalID: NodeJS.Timeout;
 
 // Auto-queue monitor function
 async function monitorTrackProgress(trackData: songInfo): Promise<void> {
@@ -383,6 +384,8 @@ async function createWindow(): Promise<void> {
     }
     
     await checkStoredTokens();
+    updateIntervalForSongInfo();
+    checkExperimentalUser();
 
     mainWindow.on('closed', () => {
         mainWindow = null;
@@ -393,11 +396,11 @@ async function saveTokenAndActivateChat(tokenData: TokenData): Promise<boolean> 
     try {
         await AuthManager.saveToken(tokenData);
         await checkStoredTokens();
-        if (!chatHandler) {
+        if (!chatHandler && twitchAccessToken) {
             chatHandler = new ChatHandler(Logger, mainWindow, ({ login: twitchUser.login, access_token: twitchAccessToken }), WSServer, settings, queueHandler, ytManager, gtsHandler, amHandler);
             chatHandler.connect();
         }
-        if (!kickChat) {
+        if (!kickChat && kickAccessToken) {
             kickChat = new KickChat(kickAccessToken, kickUser.id, queueHandler, WSServer, settings, ytManager, gtsHandler, amHandler, Logger);
         }
         return true;
@@ -427,7 +430,7 @@ async function checkStoredTokens(): Promise<void> {
                 chatHandler.connect();
             }
         }
-        await wait(1000);
+        await wait(400);
         // Check Kick token
         const storedKickToken: RetrievedTokenData | null = await AuthManager.getStoredToken('kick');
         if (storedKickToken) {
@@ -470,6 +473,7 @@ ipcMain.handle('save-settings', (event: Electron.IpcMainInvokeEvent, settinga: S
             apiHandler.updateSettings(settings);
             gtsHandler.updateSettings(settings);
             amHandler.updateSettings(settings);
+            updateIntervalForSongInfo();
             resolve();
         } else {
             reject(new Error('Failed to save settings'));
@@ -479,6 +483,7 @@ ipcMain.handle('save-settings', (event: Electron.IpcMainInvokeEvent, settinga: S
 
 ipcMain.on('settings-updated', (event: Electron.IpcMainEvent, settings: Settings): void => {
     console.log('Settings updated:', settings);
+    settings = settings;
     settingsHandler.save(settings);
     playbackHandler.updateSettings(settings.platform);
     if (chatHandler) chatHandler.updateSettings(settings);
@@ -486,6 +491,7 @@ ipcMain.on('settings-updated', (event: Electron.IpcMainEvent, settings: Settings
     apiHandler.updateSettings(settings);
     gtsHandler.updateSettings(settings);
     amHandler.updateSettings(settings);
+    updateIntervalForSongInfo();
 });
 
 ipcMain.handle('window-minimize', (): void => {
@@ -511,6 +517,8 @@ ipcMain.handle('song-play', async (): Promise<void> => {
         await ytManager.playPause();
     } else if (platform === 'apple' && amHandler) {
         await amHandler.playPause();
+    } else if (platform === 'soundcloud' && WSServer) {
+        WSServer.WSSendToType({ command: 'PlayPause' } as WSCommand, 'soundcloud');
     }
 });
 
@@ -535,6 +543,8 @@ ipcMain.handle('song-skip', async (): Promise<void> => {
         await ytManager.next();
     } else if (platform === 'apple' && amHandler) {
         await amHandler.nextTrack();
+    } else if (platform === 'soundcloud' && WSServer) {
+        WSServer.WSSendToType({ command: 'Next' } as WSCommand, 'soundcloud');
     }
 });
 
@@ -552,6 +562,8 @@ ipcMain.handle('song-previous', async (): Promise<void> => {
         await ytManager.previous();
     } else if (platform === 'apple' && amHandler) {
         await amHandler.previousTrack();
+    } else if (platform === 'soundcloud' && WSServer) {
+        WSServer.WSSendToType({ command: 'Prev' } as WSCommand, 'soundcloud');
     }
 
 });
@@ -565,6 +577,8 @@ ipcMain.handle('song-like', async (): Promise<void> => {
         await ytManager.toggleLike();
     } else if (platform === 'apple' && amHandler) {
         await amHandler.likeSong();
+    } else if (platform === 'soundcloud' && WSServer) {
+        WSServer.WSSendToType({ command: 'like' } as WSCommand, 'soundcloud');
     }
 });
 
@@ -577,6 +591,8 @@ ipcMain.handle('song-volume', async (event: Electron.IpcMainInvokeEvent, level: 
         await ytManager.setVolume(level * 100);
     } else if (platform === 'apple' && amHandler) {
         await amHandler.setVolume(level);
+    } else if (platform === 'soundcloud' && WSServer) {
+        WSServer.WSSendToType({ command: 'volume', data: { volume: level } } as WSCommand, 'soundcloud');
     }
 });
 
@@ -813,4 +829,70 @@ function sendToast(message: string, type: 'info' | 'success' | 'error' | 'warnin
     }
 }
 
-setInterval(requestTrackInfo, 500);
+function updateIntervalForSongInfo(): void {
+    if (songIntervalID) {
+        clearInterval(songIntervalID);
+    }
+    if (settings.platform === 'apple') {
+    songIntervalID = setInterval(() => {
+        requestTrackInfo();
+    }, 2000);}
+    else {
+    songIntervalID = setInterval(() => {
+        requestTrackInfo();
+    }, 500);
+ }
+}
+
+
+
+ipcMain.handle('searchTest', async (): Promise<void> => {
+    if (WSServer) {
+        WSServer.WSSendToType({ command: "searchRequest", data: { query: "Shockwave Marshmello" } } as WSCommand, 'spotify');
+    }
+    await wait(1000);
+    console.log('first search result', WSServer?.SearchResults[0]);
+})
+
+// fetch https://api.requestplus.xyz/experimental when logged in to Twitch or Kick and find the user's ID and if it is in the list set global.IsExperimentalUser = true; else false
+
+function checkExperimentalUser(): Promise<boolean> {
+    return new Promise(async (resolve) => {
+        try {
+            const response = await fetch('https://api.requestplus.xyz/experimental');
+            const data = await response.json();
+            console.log('Experimental user data:', data);
+            
+            if (twitchUser && data.twitch_ids.includes(twitchUser.id)) {
+                resolve(true);
+                mainWindow?.webContents.send('show-toast', {
+                    message: 'You are an experimental user! Enjoy early access to new features.',
+                    type: 'success',
+                    duration: 5000
+                })
+                mainWindow?.webContents.send('experimental-user-status', true);
+                return;
+            }
+            if (kickUser && data.kick_ids.includes(kickUser.id)) {
+                resolve(true);
+                mainWindow?.webContents.send('show-toast', {
+                    message: 'You are an experimental user! Enjoy early access to new features.',
+                    type: 'success',
+                    duration: 5000
+                })
+                mainWindow?.webContents.send('experimental-user-status', true);
+                return;
+            }
+            resolve(false);
+        } catch (error) {
+            Logger.error('Error checking experimental user status:', error);
+            resolve(false);
+            mainWindow?.webContents.send('show-toast', {
+                message: 'Error checking experimental user status',
+                type: 'error',
+                duration: 5000
+            });
+        }
+    });
+}
+

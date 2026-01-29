@@ -23,13 +23,15 @@ interface Logger {
 interface WSCommand {
     command: string;
     data?: {
-        uri: string;
+        uri?: string;
+        query?: string;
     };
     [key: string]: any;
 }
 
 interface WSServerInterface {
     WSSend(message: WSCommand): void;
+    WSSendToType(message: WSCommand, type: string): void;
     lastReq: RequestData | null;
 }
 
@@ -73,7 +75,7 @@ class ChatHandler {
         this.channels = [twitchAuth.login];
 
         const clientOptions: TMIClientOptions = {
-            options: { debug: false },
+            options: { debug: true },
             connection: {
                 reconnect: true,
                 secure: true
@@ -102,6 +104,11 @@ class ChatHandler {
                     this.Client.say(channel, `Request+: Only moderators can use song requests.`);
                     return;
                 }
+                if (this.settings.subsOnly === true && !tags.subscriber && !tags.mod && tags.username?.toLowerCase() !== channel.replace('#', '').toLowerCase()) {
+                    this.Client.say(channel, `Request+: Only subscribers can use song requests.`);
+                    return;
+                }
+                console.log("is subscriber: " + tags.subscriber);
                 if (this.settings.platform === 'spotify') {
                     if (request.includes("https://open.spotify.com/")) {
                         // Check for invalid link types
@@ -188,11 +195,18 @@ class ChatHandler {
                         this.Client.say(channel, "Request+: the song was sent to queue, but didn't return any song information. Song maybe is queued. ERR: RPLUS_SONG_KINDA_QUEUED");
                     }
                 } else {
-                    this.Client.say(channel, `Request+: Please provide a spotify track link! Usage: !sr <link>`);
+                    const search = request.replace(/ /g, '%20');
+                    if (this.WSServer) {
+                        this.WSServer.WSSendToType({ command: 'searchRequest', data: { query: `${search}` } }, 'spotify');
+                    }
+
+
+
+
+
+                    // this.Client.say(channel, `Request+: Please provide a spotify track link! Usage: !sr <link>`);
                 }
             } else if (this.settings.platform === 'youtube') {
-                console.log("YouTube request detected");
-                console.log("Request link: " + request);
                 if (request.includes("https://www.youtube.com/") || request.includes("https://youtube.com/") || request.includes("https://music.youtube.com/") || request.includes("https://youtu.be/")) {
                     let videoId: string | null = null;
                     let ida: string;
@@ -213,15 +227,16 @@ class ChatHandler {
                         }
                     console.log("Extracted video ID: " + videoId);
                     if (videoId) {
-                        console.log("Adding video ID to queue: " + videoId);
                         await this.ytManager.addItemToQueueById(videoId);
-                        console.log("Video added to queue");
                         this.Client.say(channel, `Request+: Added the YouTube video to the queue.`);
                         return;
                     } else {
                         this.Client.say(channel, `Request+: Please provide a youtube video link!`);
                         return;
                     }
+                } else {
+                    this.Client.say(channel, `Request+: Please provide a youtube video link! Usage: !sr <link>`);
+                    return;
                 }
             } else if (this.settings.platform === 'apple') {
                 this.amHandler.handleChatRequest(message, channel, tags, this.Client, this.queueHandler, this.settings);

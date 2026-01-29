@@ -63,6 +63,11 @@ interface ElectronAPI {
 
   ytTest: () => Promise<songData>;
 
+  // Debug function
+  searchTest: () => Promise<void>;
+
+  experimentalFeatureEnabled: (callback: (isEnabled: boolean) => void) => void;
+
   // Preload function
   preload: () => void;
 }
@@ -180,6 +185,14 @@ const electronAPI: ElectronAPI = {
 
   ytTest: async () => {
     return await ipcRenderer.invoke('ytTest');
+  },
+
+  searchTest: async () => {
+    return await ipcRenderer.invoke('searchTest');
+  },
+
+  experimentalFeatureEnabled: (callback) => {
+    ipcRenderer.on('experimental-user-status', (_, isEnabled) => callback(isEnabled));
   },
 
   // Preload function

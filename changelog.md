@@ -1,39 +1,25 @@
-# 🚀 Request+ v1.2.2
-
----
-
-# Overlay Update!
-
-- Instead of showing the overlay all the time, the overlay can now show the new song playing and dissapear after 10 seconds
-  - These options are now new themes, they work just like the regular themes.
-
-I plan on adding a UI object for this overlay detailing what song got added to the queue. Keep a look out for a testers button in settings!
-
----
-
-# Theme Additions
-
-Added: 
-
-- NowPlaying (Default)
-- NowPlaying (Custom)
-- NowPlaying (Gojo)
-- NowPlaying (MDev)
-- NowPlaying (Hologram)
-- NowPlaying (MoonKingBean)
-- NowPlaying (TwinGhost)
-
-Removed:
-
-- Ichinyan - Simplicity Reasons
-
----
-
-## Small Changes
-
-I can now pop up any message in the client at any time with any title or info I want, you will be only able to see these messages once so make sure to read them!!! They may contain important information!!!
+# 🚀 Request+ v1.2.3
 
 --- 
+
+> [!IMPORTANT]
+> I know that Spotify stuff isn't working, the song data for the queue and chat command stuff will be fixed in the next update which will require you make a oAuth application on the developer website. More info about that in the next update.
+
+
+
+
+
+# CIDER ISSUES
+  I seen some concern with Cider not working with requests. I have fixed a bug with the code and it shouldn't error out more explained in the Chnages and Fixes.
+
+
+# Changes and Fixes
+
+- Fixed a bug where Cider (Apple Music) wouldn't respond in chat properly
+- Fixed the Twitch Auth code stating that it failed when not logged into a Kick account.
+- Added a Experimental Check by UserID. You can request this in the discord! https://requestplus.xyz/discord
+- Added Platform Soundcloud, restricted by Experimental Check.
+- Added the soundcloud plugin source code. soundcloud.js
 
 Thanks for choosing Request+ for your song request needs!
 

@@ -58,7 +58,7 @@ const App = () => {
     progress: 0,
     cover: 'styles/unknown.png',
     isPlaying: false,
-    volume: 75,
+    volume: 0.75,
     shuffle: false,
     repeat: 0,
     isLiked: false
@@ -78,6 +78,7 @@ const App = () => {
     telemetryEnabled: true
   });
   const [queue, setQueue] = useState<Queue>([]);
+  const [experimentalFeatureEnabled, setExperimentalFeatureEnabled] = useState<boolean>(false);
 
   
 
@@ -269,6 +270,9 @@ const App = () => {
   api.updateQueuePage(handleQueueUpdate);
   api.updateQueuePage(handleQueueUpdate);
   api.updateQueuePage(handleQueueUpdate);
+  api.experimentalFeatureEnabled(async (isEnabled: boolean) => {
+    setExperimentalFeatureEnabled(isEnabled);
+  });
 
   // Fetch initial queue data
   fetchInitialQueue();
@@ -336,10 +340,12 @@ const handleTrackSelect = (track: QueueItem) => {
             setUpdateSettings={setUpdateSettings}
             settings={settings}
             setSettings={setSettings}
+            expermintalFeatureEnabled={experimentalFeatureEnabled}
+            setExperimentalFeatureEnabled={setExperimentalFeatureEnabled}
           />
         );
       default:
-        return <MusicPlayer currentTrack={currentTrack} setCurrentTrack={setCurrentTrack} />;
+        return <MusicPlayer currentTrack={currentTrack} setCurrentTrack={setCurrentTrack} queue={queue} settings={settings} />;
     }
   };
 

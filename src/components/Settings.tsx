@@ -44,6 +44,8 @@ interface SettingsProps {
   setUpdateSettings: (settings: UpdateSettings) => void;
   settings: SettingsState;
   setSettings: (settings: SettingsState) => void;
+  expermintalFeatureEnabled: boolean;
+  setExperimentalFeatureEnabled: (enabled: boolean) => void;
 }
 
 export function Settings({ 
@@ -55,7 +57,9 @@ export function Settings({
   updateSettings, 
   setUpdateSettings, 
   settings, 
-  setSettings 
+  setSettings,
+  expermintalFeatureEnabled,
+  setExperimentalFeatureEnabled 
 }: SettingsProps) {
   const [copied, setCopied] = useState(false);
   const [settingsSaved, setSettingsSaved] = useState(false);
@@ -77,10 +81,10 @@ export function Settings({
     { value: 'nowplaying-twinGhost', label: 'NowPlaying (TwinGhost)' }
   ];
   const platformOptions = [
-    { value: 'spotify', label: 'Spotify' },
-    { value: 'youtube', label: 'YouTube (Pear)' },
-    { value: 'apple', label: 'Apple Music (Cider)' }
-    // { value: 'soundcloud', label: 'SoundCloud' }
+    { value: 'spotify', label: 'Spotify', experimental: false },
+    { value: 'youtube', label: 'YouTube (Pear)', experimental: false },
+    { value: 'apple', label: 'Apple Music (Cider)', experimental: false },
+    { value: 'soundcloud', label: 'SoundCloud (EXPIRMENTAL)', experimental: true }
   ];
 
   const copyToClipboard = async (text: string) => {
@@ -321,6 +325,23 @@ export function Settings({
                 }
               />
             </div>
+            
+            <Separator />
+
+            <div className="flex items-center justify-between">
+              <div className="space-y-1">
+                <Label>Subscribers Only</Label>
+                <p className="text-sm text-muted-foreground">
+                  Only allow subscribers and mods to request songs
+                </p>
+              </div>
+              <Switch
+                checked={settings.subsOnly}
+                onCheckedChange={(checked) => 
+                  setSettings({...settings, subsOnly: checked})
+                }
+              />
+            </div>
 
             <Separator />
 
@@ -435,11 +456,21 @@ export function Settings({
                   <SelectValue placeholder="Select a platform" />
                 </SelectTrigger>
                 <SelectContent position="item-center">
-                  {platformOptions.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
+                  {expermintalFeatureEnabled ? (
+                    platformOptions.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))
+                  ) : (
+                    platformOptions
+                      .filter((option) => option.experimental === false)
+                      .map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ))
+                  )}
                 </SelectContent>
               </Select>
               </div>
@@ -563,7 +594,7 @@ export function Settings({
           <div>
             <h3 className="text-lg">About Request+</h3>
             <p className="text-sm text-muted-foreground/80">
-              Version 1.2.2 • Built for streamers by streamers
+              Version 1.2.3 • Built for streamers by streamers
             </p>
           </div>
 

@@ -6,7 +6,7 @@ module.exports = {
   packagerConfig: {
     asar: true,
     appBundleId: 'com.darkwolfie.requestplus',
-    name: 'Request+',
+    name: 'requestplus',
     icon: 'build/icon', // Electron Forge will automatically append the correct extension (.ico, .icns, etc.)
     // Code signing configuration (Windows)
     ...(process.env.APPX_CERT_PASSWORD && {
@@ -52,21 +52,12 @@ module.exports = {
       config: {
         options: {
           icon: 'build/icon.png',
-          maintainer: 'DarkWolfieVT',
+          maintainer: 'QuilDayTrack',
+          executeableName: "Request+",
           homepage: 'https://requestplus.xyz'
         }
       },
-    },
-    {
-      name: '@electron-forge/maker-rpm',
-      config: {
-        options: {
-          icon: 'build/icon.png',
-          maintainer: 'DarkWolfieVT',
-          homepage: 'https://requestplus.xyz'
-        }
-      },
-    },
+    }
   ],
   plugins: [
     {

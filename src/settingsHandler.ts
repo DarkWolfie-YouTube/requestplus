@@ -7,6 +7,7 @@ interface Settings {
     showNotifications: boolean;
     enableRequests: boolean;
     modsOnly: boolean;
+    subsOnly: boolean;
     autoPlay: boolean;
     filterExplicit: boolean;
     platform: string;
@@ -29,6 +30,7 @@ class SettingsHandler {
                 showNotifications: true,
                 enableRequests: true,
                 modsOnly: false,
+                subsOnly: false,
                 autoPlay: false,
                 filterExplicit: false,
                 platform: 'spotify',
@@ -46,6 +48,7 @@ class SettingsHandler {
                 showNotifications: true,
                 enableRequests: true,
                 modsOnly: false,
+                subsOnly: false,
                 autoPlay: false,
                 filterExplicit: false,
                 platform: 'spotify',

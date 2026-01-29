@@ -45,7 +45,7 @@ var requestplus = (() => {
 
                     const { command, welcome } = messageData;
                     if (welcome) {
-                        ws.send(JSON.stringify({ command: "identify", type: "spotify", version: "1.0.3" }));
+                        ws.send(JSON.stringify({ command: "identify", type: "spotify", version: "1.2.3" }));
                     }
                     switch (command) {
                     
@@ -273,6 +273,38 @@ var requestplus = (() => {
                                 command: "requestHandled",
                                 data: deta
                             }))
+                        case "searchRequest":
+                            if (messageData.data) {
+                                const query = messageData.data.query;
+                                console.log(query);
+                                if (typeof query === "string") {
+                                    Spicetify.CosmosAsync.get("https://api.spotify.com/v1/search?q=" + query + "&type=track").then((data) => {
+                                        ws.send(
+                                            JSON.stringify({
+                                                command: "searchResults",
+                                                data: data,
+                                            })
+                                        );
+                                    })
+                                } else {
+                                    console.warn("Invalid query provided in search command.");
+                                    ws.send(
+                                        JSON.stringify({
+                                            command: "error",
+                                            data: "Invalid query provided in search command.",
+                                        })
+                                    );
+                                }
+                            } else {
+                                console.warn("No data provided in search command.");
+                                ws.send(
+                                    JSON.stringify({
+                                        command: "error",
+                                        data: "No data provided in search command. Please pass a data element.",
+                                    })
+                                );
+                            }
+                            break;
                         default:
                             console.warn("Unknown command received:", command);
                     }

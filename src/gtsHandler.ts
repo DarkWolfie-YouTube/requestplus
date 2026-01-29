@@ -3,7 +3,7 @@
  * @copyright 2025 Quil DayTrack 
  * 
  * @license GPL-v3.0
- * @version 1.2.2
+ * @version 1.2.3
  *
  * @description
  * A Guess the Song Extension Handler, allowes chat to guess the next song before displaying it after 30 seconds!

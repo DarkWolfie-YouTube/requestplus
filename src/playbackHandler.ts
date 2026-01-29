@@ -81,8 +81,11 @@ class PlaybackHandler {
             }
 
             return null;
+        } else if (this.platform === 'soundcloud') {
+            // Handle SoundCloud platform
+            return this.getSoundCloudSong();
         }
-        
+
         this.logger.error(`Unknown platform: ${this.platform}`);
         return null;
     }
@@ -142,7 +145,7 @@ class PlaybackHandler {
             // Wait for data to be received
             await new Promise(resolve => setTimeout(resolve, 500));
             
-            const spotifyData = this.SpotifyWS.lastInfo;
+            const spotifyData = this.SpotifyWS.lastSInfo;
             
             if (!spotifyData) {
                 this.logger.warn('No Spotify data available');
@@ -177,6 +180,61 @@ class PlaybackHandler {
             return this.currentSong;
         } catch (err) {
             this.logger.error('Error fetching Spotify song data:', err);
+            return null;
+        }
+    }
+    private async getSoundCloudSong(): Promise<songInfo | null> {
+        try {
+            // Fetch current song info from Spotify WebSocket
+            await this.SpotifyWS.WSSendToType({ command: 'getdata' }, 'soundcloud');
+            
+            // Wait for data to be received
+            await new Promise(resolve => setTimeout(resolve, 500));
+            
+            const spotifyData = this.SpotifyWS.lastSOInfo;
+            console.log('SoundCloud Data:', spotifyData);
+            
+            if (!spotifyData) {
+                this.logger.warn('No Spotify data available');
+                return null;
+            }
+
+            // Collect all artist names
+            const dataArtists: string[] = [];
+            if (spotifyData.artist) dataArtists.push(spotifyData.artist);
+            
+            
+            const artists = dataArtists.length > 0 ? dataArtists.join(", ") : 'Unknown Artist';
+
+            //since duration is in the format of 0:00, replace to ms from there
+            const durationSplit = spotifyData.duration_time.split(':');
+            const durationMs = parseInt(durationSplit[0]) * 60 * 1000 + parseInt(durationSplit[1]) * 1000;
+            spotifyData.duration = durationMs;
+            //do this for current_time and set that to progress
+            const progressSplit = spotifyData.current_time.split(':');
+            const progressMs = parseInt(progressSplit[0]) * 60 * 1000 + parseInt(progressSplit[1]) * 1000;
+            spotifyData.progress = progressMs;
+
+            spotifyData.album_art_url = spotifyData.album_art_url.replace('50x50', '500x500');
+
+            this.currentSong = {
+                id: spotifyData.id || '',
+                title: spotifyData.title || 'Unknown Title',
+                artist: artists,
+                album: spotifyData.album_title || '',
+                duration: spotifyData.duration || 0,
+                progress: spotifyData.progress || 0,
+                cover: spotifyData.album_art_url || '',
+                isPlaying: spotifyData.isPlaying ?? false,
+                volume: spotifyData.volume ?? 100,
+                shuffle: spotifyData.shuffle ?? false,
+                repeat: spotifyData.repeat ?? 0,
+                isLiked: spotifyData.isLiked ?? false
+            };
+
+            return this.currentSong;
+        } catch (err) {
+            this.logger.error('Error fetching Soundcloud song data:', err);
             return null;
         }
     }

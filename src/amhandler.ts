@@ -3,7 +3,7 @@
  * @copyright 2025 Quil DayTrack 
  * 
  * @license GPL-v3.0
- * @version 1.2.2
+ * @version 1.2.3
  *
  * @description
  * An Apple Music Handler for Cider enchancing playback and song information retrieval.
@@ -138,7 +138,7 @@ export default class AMHandler {
             timeout: 10000,
             headers: {
                 'apptoken': this.apptoken,
-                'User-Agent': 'Request+/1.2.2 Release'
+                'User-Agent': 'Request+/1.2.3 Release'
             }
         });
     }
@@ -277,6 +277,14 @@ export default class AMHandler {
     public async handleChatRequest(message: string, channel: string, tags: any, client: any, queueHandler: QueueHandler, settings: Settings): Promise<void> {
         //get song requested data
         let songID;
+        // if message just = "!sr" then return error
+        if (message === "!sr") {
+            client.say(channel, `@${tags.username}, please provide a valid Apple Music song ID or link.`);
+            return;
+        } else if (!message.includes("https://music.apple.com/")) {
+            client.say(channel, `@${tags.username}, please provide a valid Apple Music song ID or link.`);
+            return;
+        }
         var messageLink = message.match(/https?:\/\/music\.apple\.com\/[a-z]{2}\/album\/[a-z0-9\-\_]+\/[0-9]+\?i=([0-9]+)/);
         if (messageLink && messageLink[1]) {
             songID = messageLink[1];
@@ -289,7 +297,7 @@ export default class AMHandler {
             headers: {
                 'apptoken': this.apptoken,
                 'Content-Type': 'application/json',
-                'User-Agent': 'Request+/1.2.2 Release'
+                'User-Agent': 'Request+/1.2.3 Release'
             },
             body: JSON.stringify({
                 "path": "/v1/catalog/us/songs/" + songID,
@@ -332,7 +340,7 @@ export default class AMHandler {
                 headers: {
                     'apptoken': this.apptoken,
                     'Content-Type': 'application/json',
-                    'User-Agent': 'Request+/1.2.2 Release'
+                    'User-Agent': 'Request+/1.2.3 Release'
                 },
                 body: JSON.stringify({
                     "type": "songs",
