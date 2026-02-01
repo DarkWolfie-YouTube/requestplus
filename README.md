@@ -1,7 +1,18 @@
+
+
+> [!IMPORTANT]
+> I will be reworking how account login's and server data is used. This effort will be to minimze code to make size smaller for most systems. Our Terms and Privacy Policy will be updated accordingly with these changes. I plan to keep transparancy with the open source community. Request+ will always be free, but making a account manager and stuff will be hard. Please note that some features in the future will be paid addons. This is to keep the cost of adding the features there for users. If supporters want to make a feature free for all, they are more than welcome to do so.
+>
+>
+> You can find more about this change in a new blog post soon on the website. The website will be redesigned. Thank you for your patience.
+
+
+
+
 # 🎵 Request+  
 *A modern Twitch song request overlay and Spotify integration app for streamers.*
 
-![Request+ Banner](https://requestplus.xyz/assets/bannerb.png) <!-- (Optional) Replace or remove if no banner -->
+![Request+ Banner](https://requestplus.xyz/assets/bannerb.png)
 
 ---
 
