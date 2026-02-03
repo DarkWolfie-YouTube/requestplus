@@ -63,7 +63,7 @@ class KickChat {
                                 const request = messagea.split(' ').slice(1).join(' ');
                                 
                                 if (this.settings.enableRequests === false) { 
-                                    await this.sendMessage("Request+: Song requests are currently disabled.", data.data.message_id);
+                                    await this.sendMessage("Song requests are currently disabled.", data.data.message_id);
                                     return;
                                 }
                                 
@@ -73,7 +73,7 @@ class KickChat {
                                 ) || false;
                                 
                                 if (this.settings.modsOnly === true && !isModerator) {
-                                    await this.sendMessage("Request+: Only moderators can use song requests.", data.data.message_id);
+                                    await this.sendMessage("Only moderators can use song requests.", data.data.message_id);
                                     return;
                                 }
                                 
@@ -81,15 +81,15 @@ class KickChat {
                                     if (request.includes("https://open.spotify.com/")) {
                                         // Check for invalid link types
                                         if (request.includes("https://open.spotify.com/album")) {
-                                            await this.sendMessage(`Request+: Please provide a spotify track link!`, data.data.message_id);
+                                            await this.sendMessage(`Please provide a spotify track link!`, data.data.message_id);
                                             return;
                                         }
                                         if (request.includes("https://open.spotify.com/playlist")) {
-                                            await this.sendMessage(`Request+: Please provide a spotify track link!`, data.data.message_id);
+                                            await this.sendMessage(`Please provide a spotify track link!`, data.data.message_id);
                                             return;
                                         }
                                         if (request.includes("https://open.spotify.com/episode")) {
-                                            await this.sendMessage(`Request+: Please provide a spotify track link!`, data.data.message_id);
+                                            await this.sendMessage(`Please provide a spotify track link!`, data.data.message_id);
                                             return;
                                         }
 
@@ -122,11 +122,11 @@ class KickChat {
                                                     }
 
                                                     if (this.WSServer.lastReq.explicit && !this.settings.filterExplicit) {
-                                                        await this.sendMessage(`Request+: This song has unsafe lyrics and has been moderated, this song wasn't added to the queue.`, data.data.message_id);
+                                                        await this.sendMessage(`This song has unsafe lyrics and has been moderated, this song wasn't added to the queue.`, data.data.message_id);
                                                         return;
                                                     }
                                                     
-                                                    await this.sendMessage(`Request+: Added ${title} by ${artists} to the moderation queue.`, data.data.message_id);
+                                                    await this.sendMessage(`Added ${title} by ${artists} to the moderation queue.`, data.data.message_id);
                                                     await this.queue.addToQueue({
                                                         id: id + '-' + data.data.sender.username,
                                                         title: title,
@@ -160,12 +160,12 @@ class KickChat {
                                            
                                             const artists = dataArtists.join(", ");
                                             const title = response.name;
-                                            await this.sendMessage(`Request+: Song ${title} by ${artists} has been queued.`, data.data.message_id);
+                                            await this.sendMessage(`Song ${title} by ${artists} has been queued.`, data.data.message_id);
                                         } else {
-                                            await this.sendMessage("Request+: the song was sent to queue, but didn't return any song information. Song maybe is queued. ERR: RPLUS_SONG_KINDA_QUEUED", data.data.message_id);
+                                            await this.sendMessage("the song was sent to queue, but didn't return any song information. Song maybe is queued. ERR: RPLUS_SONG_KINDA_QUEUED", data.data.message_id);
                                         }
                                     } else {
-                                        await this.sendMessage(`Request+: Please provide a spotify track link! Usage: !sr <link>`, data.data.message_id);
+                                        await this.sendMessage(`Please provide a spotify track link! Usage: !sr <link>`, data.data.message_id);
                                     }
                                 } else if (this.settings.platform === 'youtube') {
                                     console.log("YouTube request detected");
@@ -201,14 +201,14 @@ class KickChat {
                                             console.log("Adding video ID to queue: " + videoId);
                                             await this.ytManager.addItemToQueueById(videoId);
                                             console.log("Video added to queue");
-                                            await this.sendMessage(`Request+: Added the YouTube video to the queue.`, data.data.message_id);
+                                            await this.sendMessage(`Added the YouTube video to the queue.`, data.data.message_id);
                                             return;
                                         } else {
-                                            await this.sendMessage(`Request+: Please provide a youtube video link!`, data.data.message_id);
+                                            await this.sendMessage(`Please provide a youtube video link!`, data.data.message_id);
                                             return;
                                         }
                                     } else {
-                                        await this.sendMessage(`Request+: Please provide a youtube video link!`, data.data.message_id);
+                                        await this.sendMessage(`Please provide a youtube video link!`, data.data.message_id);
                                         return;
                                     }
                                 } else if (this.settings.platform === 'apple') {

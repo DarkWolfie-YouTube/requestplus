@@ -169,7 +169,7 @@ var requestplus = (() => {
                                         })
                                     );
                                     let newURI = messageData.data.uri.replace("spotify:track:", "");
-                                    let deta = await Spicetify.CosmosAsync.get('https://api.spotify.com/v1/tracks/' + newURI)
+                                    let deta = await fetchAPIData(spotifyHex(newURI));
                                     await ws.send(JSON.stringify({
                                         command: "requestHandled",
                                         data: deta
@@ -268,7 +268,7 @@ var requestplus = (() => {
                             break;
                         case "getInfo":
                             let newURI = messageData.data.uri.replace("spotify:track:", "");
-                            let deta = await Spicetify.CosmosAsync.get('https://api.spotify.com/v1/tracks/' + newURI)
+                            let deta = await fetchAPIData(spotifyHex(newURI));
                             await ws.send(JSON.stringify({
                                 command: "requestHandled",
                                 data: deta
@@ -331,3 +331,47 @@ var requestplus = (() => {
         await initializePlaybackAPI();
     })();
 })();
+
+
+
+function spotifyHex(spotifyId) {
+  const INVALID = "00000000000000000000000000000000";
+  if (typeof spotifyId !== "string") {
+    return INVALID;
+  }
+  if (spotifyId.length === 0 || spotifyId.length > 22) {
+    return INVALID;
+  }
+  const characters =
+    "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
+  let decimalValue = BigInt(0);
+  for (let i = 0; i < spotifyId.length; i++) {
+    const index = characters.indexOf(spotifyId[i]);
+    if (index === -1) {
+      return INVALID;
+    }
+    decimalValue = decimalValue * BigInt(62) + BigInt(index);
+  }
+  const hexValue = decimalValue.toString(16).padStart(32, "0");
+  if (hexValue.length > 32) {
+    return INVALID;
+  }
+  return hexValue;
+}
+
+
+async function fetchAPIData(id) {
+    return new Promise((resolve, reject) => {
+        fetch(`https://spclient.wg.spotify.com/metadata/4/track/${id}?market=from_token`, {
+        method: "GET",
+        headers: {
+            Accept: "application/json",
+            Authorization: `Bearer ${Spicetify.Platform.AuthorizationAPI.getState().token.accessToken}`,
+    }}).then((response) => response.json())
+    .then((data) => {
+        resolve(data);
+    }).catch((error) => {
+        reject(error)    
+    });
+    });
+};
