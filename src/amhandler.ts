@@ -285,12 +285,16 @@ export default class AMHandler {
             client.say(channel, `@${tags.username}, please provide a valid Apple Music song ID or link.`);
             return;
         }
+        if (!message.includes("?i=")) {
+            client.say(channel, `@${tags.username}, please provide a valid Apple Music song link that includes the song ID (i=). This is because albums or playlists are not supported for requests.`);
+        }
         var messageLink = message.match(/https?:\/\/music\.apple\.com\/[a-z]{2}\/album\/[a-z0-9\-\_]+\/[0-9]+\?i=([0-9]+)/);
         if (messageLink && messageLink[1]) {
             songID = messageLink[1];
         } else {
             songID = message;
         }
+        
         let songInfo: AMSongObject;
         await fetch(`http://localhost:10767/api/v1/amapi/run-v3`, {
             method: 'POST',
