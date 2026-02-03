@@ -152,8 +152,8 @@ class KickChat {
                                             const dataArtists: string[] = [];
                                             const response = this.WSServer.lastReq;
                                             
-                                            if (response.artists != null) {
-                                                for (const artist of response.artists) {
+                                            if (response.artist != null) {
+                                                for (const artist of response.artist) {
                                                     dataArtists.push(artist.name);
                                                 } 
                                             }
