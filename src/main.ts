@@ -5,10 +5,17 @@ import { setTimeout as wait } from 'node:timers/promises';
 import { checkForUpdates } from './updateChecker';
 import QueueHandler, { Queue } from './queueHandler';
 import { updateElectronApp } from 'update-electron-app';
+import { 
+  authManager, 
+  setupDeepLinkHandling, 
+  setupAuthEventListeners 
+} from './authmanager';
+import { websocketManager } from './websocketweb';
 
 //Handlers
 import websocket from './websocket';
 import { TrackData } from './websocket';
+
 import logger from './logger';
 import APIHandler from './apiHandler';
 import SettingsHandler from './settingsHandler';
@@ -258,16 +265,7 @@ declare const MAIN_WINDOW_VITE_NAME: string;
 
 settingsHandler = new SettingsHandler(app.getPath('userData'));
 
-async function createTwitchAuthWindow(): Promise<void> {
-    const authUrl: string = `https://id.twitch.tv/oauth2/authorize?client_id=${TWITCH_CLIENT_ID}&redirect_uri=${TWITCH_REDIRECT_URI}&response_type=token&scope=${TWITCH_SCOPES.join('+')}`;
-    shell.openExternal(authUrl);
-}
 
-async function createKickAuthWindow(): Promise<void> {
-    const randomState: string = Math.random().toString(36).substring(2, 15);
-    const authUrl: string = `https://api.requestplus.xyz/kcallback?state=${randomState}`;
-    shell.openExternal(authUrl);
-}
 
 async function ensureOverlayFile(): Promise<string> {
     const userDataPath: string = app.getPath('userData');
@@ -362,12 +360,23 @@ async function createWindow(): Promise<void> {
     }
 
     await checkForUpdates(mainWindow, Logger);
+    setupDeepLinkHandling(mainWindow);
+
+    // Setup auth event listeners
+    setupAuthEventListeners(mainWindow);
     
     if (!playbackHandler) {
         playbackHandler = new PlaybackHandler(settings.platform, WSServer, Logger, ytManager, amHandler);
     }
     
-
+    if (authManager.isAuthenticated()) {
+    const token = authManager.getAuthToken();
+    const hardwareInfo = authManager.getHardwareInfoPublic();
+    
+    if (token && hardwareInfo) {
+      websocketManager.connect(token.token, hardwareInfo.deviceId);
+    }
+  }
     
 
     if (!gtsHandler) {
@@ -602,6 +611,62 @@ ipcMain.handle('clear-queue', async (): Promise<boolean> => {
     return queueHandler ? queueHandler.clearQueue() : false;
 });
 
+ipcMain.handle('login', async () => {
+    try {
+    await authManager.startAuthFlow();
+    return { success: true };
+  } catch (error: any) {
+    console.error('Error starting auth flow:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+
+ipcMain.handle('auth:getStatus', async () => {
+  const isAuthenticated = authManager.isAuthenticated();
+  const token = authManager.getAuthToken();
+  const hardwareInfo = authManager.getHardwareInfoPublic();
+
+  return {
+    isAuthenticated,
+    token: token?.token || null,
+    deviceId: hardwareInfo?.deviceId || null,
+    expiresAt: token?.expiresAt || null
+  };
+});
+
+ipcMain.handle('fetch-user-data', async () => {
+    const userData = await authManager.fetchUserData();
+    return {
+        display_name: userData?.displayName || null,
+        profile_image_url: userData?.photoUrl || null,
+    }
+});
+
+
+
+ipcMain.handle('auth:getHardwareInfo', async () => {
+  return authManager.getHardwareInfoPublic();
+});
+
+/**
+ * Logout
+ */
+ipcMain.handle('auth:logout', async () => {
+  authManager.logout();
+  websocketManager.disconnect();
+  return { success: true };
+});
+
+/**
+ * Refresh token
+ */
+ipcMain.handle('auth:refresh', async () => {
+  const success = await authManager.refreshAuthToken();
+  return { success };
+});
+
+
 async function requestTrackInfo(): Promise<void> {
     if (!playbackHandler) return;
     const info = await playbackHandler.getCurrentSong();
@@ -661,5 +726,26 @@ ipcMain.handle('searchTest', async (): Promise<void> => {
 
 // fetch https://api.requestplus.xyz/experimental when logged in to Twitch or Kick and find the user's ID and if it is in the list set global.IsExperimentalUser = true; else false
 
+authManager.on('auth-success', (token) => {
+  console.log('[Main] Auth success, connecting WebSocket...');
+  const hardwareInfo = authManager.getHardwareInfoPublic();
+  if (hardwareInfo) {
+    websocketManager.connect(token.token, hardwareInfo.deviceId);
+  }
+});
+
+authManager.on('auth-refreshed', (token) => {
+  console.log('[Main] Token refreshed, reconnecting WebSocket...');
+  const hardwareInfo = authManager.getHardwareInfoPublic();
+  if (hardwareInfo) {
+    websocketManager.disconnect();
+    websocketManager.connect(token.token, hardwareInfo.deviceId);
+  }
+});
+
+authManager.on('auth-logout', () => {
+  console.log('[Main] Auth logout, disconnecting WebSocket...');
+  websocketManager.disconnect();
+});
 
 

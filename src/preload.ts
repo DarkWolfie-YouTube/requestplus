@@ -29,11 +29,9 @@ interface ElectronAPI {
   // Twitch authentication
   twitchLogin: () => Promise<void>;
   twitchLogout: () => Promise<void>;
-  kickLogin: () => Promise<void>;
-  kickLogout: () => Promise<void>;
-  kickRefresh: () => Promise<void>;
   authSuccess: (callback: (user: any) => void) => void;
-  kickAuthSuccess: (callback: (user: any) => void) => void;
+
+  fetchUserData: () => Promise<any>;
 
   // Settings
   loadSettings: () => Promise<any>;
@@ -70,6 +68,9 @@ interface ElectronAPI {
 
   // Preload function
   preload: () => void;
+
+  // Debug function
+  debug: () => void;
 }
 
 // Create the API object
@@ -137,8 +138,10 @@ const electronAPI: ElectronAPI = {
   twitchLogin: () => ipcRenderer.invoke('login'),
   twitchLogout: () => ipcRenderer.invoke('logout'),
   authSuccess: (callback) => {
-    ipcRenderer.on('auth-success', (_, user) => callback(user));
+    ipcRenderer.on('auth-status', (_, data) => callback(data));
   },
+
+  fetchUserData: () => ipcRenderer.invoke('fetch-user-data'),
 
   // Settings
   loadSettings: () => ipcRenderer.invoke('load-settings'),
@@ -192,6 +195,13 @@ const electronAPI: ElectronAPI = {
   // Preload function
   preload: () => {
     console.log('Preload called - API is ready');
+  },
+
+  // Debug function
+  debug: async () => {
+    console.log('Debug function called from preload');
+    console.log(await ipcRenderer.invoke('auth:getStatus'));
+    console.log(await ipcRenderer.invoke('auth:getHardwareInfo'));
   }
 };
 

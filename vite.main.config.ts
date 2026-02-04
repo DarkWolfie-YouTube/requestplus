@@ -9,11 +9,12 @@ export default defineConfig({
       input: {
         main: 'src/main.ts',
         websocket: 'src/websocket.ts', // Add this
-        authManager: 'src/authManager.ts',
+        authManager: 'src/authmanager.ts',
+        gtsHandler: 'src/gtsHandler.ts',
+        amHandler: 'src/amhandler.ts',
+        websocketweb: 'src/websocketweb.ts',
         logger: 'src/logger.ts',
-        kickchat: 'src/kickchat.ts',
         queueHandler: 'src/queueHandler.ts',
-        chatHandler: 'src/chatHandler.ts',
         apiHandler: 'src/apiHandler.ts',
         settingsHandler: 'src/settingsHandler.ts',
         updateChecker: 'src/updateChecker.ts',

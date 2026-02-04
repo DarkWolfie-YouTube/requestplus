@@ -65,7 +65,7 @@ const App = () => {
   });
 
   // Global state for settings
-  const [user, setUser] = useState<User | null>(null);
+  const [userd, setUserd] = useState<User | null>(null);
   const [overlayPath, setOverlayPath] = useState('');
   const [updateSettings, setUpdateSettings] = useState<UpdateSettings>({ checkPreReleases: false });
   const [settings, setSettings] = useState({
@@ -327,8 +327,8 @@ const handleTrackSelect = (track: QueueItem) => {
       case 'settings':
         return (
           <Settings 
-            user={user}
-            setUser={setUser}
+            userd={userd}
+            setUserd={setUserd}
             overlayPath={overlayPath}
             updateSettings={updateSettings}
             setUpdateSettings={setUpdateSettings}

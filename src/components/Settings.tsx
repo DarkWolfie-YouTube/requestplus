@@ -12,7 +12,7 @@ import { Copy, Check, ExternalLink, User, LogOut, RefreshCw } from 'lucide-react
 import { toast } from 'sonner';
 import { Command as CommandPrimitive } from 'cmdk';
 
-interface User {
+interface Userd {
   display_name: string;
   profile_image_url: string;
 }
@@ -35,8 +35,8 @@ interface SettingsState {
 }
 
 interface SettingsProps {
-  user: User | null;
-  setUser: (user: User | null) => void;
+  userd: Userd | null;
+  setUserd: (user: Userd | null) => void;
   overlayPath: string;
   updateSettings: UpdateSettings;
   setUpdateSettings: (settings: UpdateSettings) => void;
@@ -47,8 +47,8 @@ interface SettingsProps {
 }
 
 export function Settings({ 
-  user, 
-  setUser,
+  userd, 
+  setUserd,
   overlayPath, 
   updateSettings, 
   setUpdateSettings, 
@@ -103,7 +103,7 @@ export function Settings({
   const handleTwitchLogout = () => {
     if (typeof window !== 'undefined' && (window as any).api?.twitchLogout) {
       (window as any).api.twitchLogout();
-      setUser(null);
+      setUserd(null);
     }
   };
 
@@ -183,17 +183,17 @@ export function Settings({
             </p>
           </div>
 
-          {user ? (
+          {userd ? (
             <div className="space-y-4">
               <div className="flex items-center gap-3 p-4 bg-accent/30 rounded-lg">
                 <img 
-                  src={twitchUser.profile_image_url} 
+                  src={user.profile_image_url} 
                   alt="Profile" 
                   className="w-14 h-14 rounded-full ring-2 ring-primary/50"
                 />
                 <div className="flex-1">
                   <h4 className="mb-1">Twitch</h4>
-                  <p>{twitchUser.display_name}</p>
+                  <p>{user.display_name}</p>
                   <p className="text-sm text-muted-foreground">Connected</p>
                 </div>
               </div>
