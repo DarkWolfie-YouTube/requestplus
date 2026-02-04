@@ -149,7 +149,7 @@ class APIHandler {
                             if (accessToken) {
                                 fetch('/auth/token', {
                                     method: 'POST',
-                                    headers: { 'Content-Type': 'application/json', 'User-Agent': 'Request+/1.2.3 (https://github.com/DarkWolfie-YouTube/requestplus) darkwolfiefiver@gmail.com'},
+                                    headers: { 'Content-Type': 'application/json', 'User-Agent': 'Request+/1.2.4 (https://github.com/DarkWolfie-YouTube/requestplus) darkwolfiefiver@gmail.com'},
                                     body: JSON.stringify({
                                         access_token: accessToken,
                                         token_type: tokenType,
@@ -326,64 +326,7 @@ class APIHandler {
         });
 
         // New endpoint to receive the extracted token
-        this.app.post("/auth/token", async (req: Request, res: Response): Promise<void> => {
-            const { access_token, token_type, scope }: AuthTokenRequest = req.body;
-            
-            if (access_token) {
-                this.logger.info('Received access token:', access_token.substring(0, 10) + '...');
-                
-                try {
-                    const response = await fetch('https://api.twitch.tv/helix/users', {
-                        headers: {
-                            'Client-ID': "if6usvbqj58fwdbycnu6v77jjsluq5",
-                            'Authorization': `Bearer ${access_token}`,
-                            'User-Agent': 'Request+/1.2.3 (https://github.com/DarkWolfie-YouTube/requestplus) darkwolfiefiver@gmail.com'
-                        }
-                    });
-                    const data: TwitchApiResponse = await response.json();
-                    twitchUser = data.data[0];
-                    this.mainWindow.webContents.send('twitch-auth-success', twitchUser);
-
-                    // Save token to file
-                    const tokenData: TokenData = {
-                        access_token: access_token,
-                        user_data: {
-                            id: twitchUser.id,
-                            login: twitchUser.login,
-                            display_name: twitchUser.display_name,
-                            profile_image_url: twitchUser.profile_image_url,
-                            email: twitchUser.email,
-                        },
-                        scopes: TWITCH_SCOPES,
-                        platform: 'twitch'
-
-                    };
-                    
-                    // Call your callback with the token
-                    if (this.callback) {
-                        try {
-                            const result = await this.callback(tokenData);
-                            if (result) {
-                                res.json({ success: true, message: 'Token received successfully' });
-                            } else {
-                                res.json({ success: false, message: 'Invalid token' });
-                            }
-                        } catch (error) {
-                            console.error('Callback error:', error);
-                            res.status(500).json({ success: false, message: 'Server error' });
-                        }
-                    } else {
-                        res.status(500).json({ success: false, message: 'No callback configured' });
-                    }
-                } catch (error) {
-                    this.logger.error('Error fetching user data:', error);
-                    res.status(500).json({ success: false, message: 'Failed to fetch user data' });
-                }
-            } else {
-                this.logger.error('No access token received');
-                res.status(400).json({ success: false, message: 'No access token provided' });
-            }
-        });
+        
 
         this.app.get("/info", (req: Request, res: Response): void => {
             if (this.refresh) {
@@ -608,51 +551,6 @@ class APIHandler {
             res.send(errorHTML);
         });
 
-        this.app.get('/kickdone', async (req: Request, res: Response): Promise<void> => {
-            const { token, userID, verifier } = req.query;
-
-            const response = await fetch('https://api.kick.com/public/v1/users', {
-                headers: {
-                    'Authorization': `Bearer ${token}`, 
-                    'User-Agent': 'Request+/1.2.3 (https://github.com/DarkWolfie-YouTube/requestplus) darkwolfiefiver@gmail.com'
-                }
-            });
-            const data = await response.json();
-            var kickuser: TokenData = {
-                access_token: token as string,
-                user_data: {
-                    id: userID as string,
-                    login: data.data[0].name,
-                    profile_image_url: data.data[0].profile_picture,
-                    email: data.data[0].email || '',
-                    display_name: data.data[0].name  
-                },
-                scopes: ['user:read', 'event:subscribe', 'chat:write'],
-                platform: 'kick',
-                verifier: verifier as string
-            };
-            this.mainWindow.webContents.send('kick-auth-success', kickuser.user_data);
-
-            if (this.callback) {
-                try {
-                    const result = await this.callback(kickuser);
-                    if (result) {
-                        res.redirect(`http://localhost:444/success?platform=kick`);
-                    } else {
-                        res.redirect(`http://localhost:444/error?error=kinvalid_token`);
-                    }
-                } catch (error) {
-                    console.error('Callback error:', error);
-                    res.redirect(`http://localhost:444/error?error=server_error`);
-                }
-            } else {
-                res.redirect(`http://localhost:444/error?error=server_error`);
-            }
-
-
-
-
-        });
     }
 
     private startServer(): void {

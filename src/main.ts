@@ -9,15 +9,12 @@ import { updateElectronApp } from 'update-electron-app';
 //Handlers
 import websocket from './websocket';
 import { TrackData } from './websocket';
-import Auth, { TokenData, RetrievedTokenData } from './authManager';
 import logger from './logger';
-import ChatHandler from './chatHandler';
 import APIHandler from './apiHandler';
 import SettingsHandler from './settingsHandler';
 import { Settings } from './settingsHandler';
 import { songData, YTManager } from './ytManager';
 import PlaybackHandler, { songInfo } from './playbackHandler';
-import KickChat from './kickchat';
 import GTSHandler from './gtsHandler';
 import AMHandler from './amhandler';
 
@@ -94,9 +91,7 @@ const TWITCH_SCOPES: string[] = ['user:read:email', 'chat:read', 'chat:edit'];
 let WSServer: websocket;
 let currentSongInformation: songInfo;
 let mainWindow: BrowserWindow | null = null;
-let AuthManager: Auth;
 let Logger: logger;
-let chatHandler: ChatHandler;
 let settings: Settings;
 let overlayPath: string;
 let apiHandler: APIHandler;
@@ -112,7 +107,6 @@ let autoQueueTriggered: boolean = false;
 let lastTrackProgress: number = 0;
 let ytManager: YTManager;
 let playbackHandler: PlaybackHandler;
-let kickChat: KickChat;
 let gtsHandler: GTSHandler;
 let amHandler: AMHandler;
 let lastRequestQueueName: string;
@@ -140,7 +134,7 @@ async function monitorTrackProgress(trackData: songInfo): Promise<void> {
     if (timeRemaining <= 6000 && timeRemaining > 0 && !apiHandler.hideSongFromView && settings.gtsEnabled) {
         Logger.info(`Track ending soon (${Math.floor(timeRemaining / 1000)}s remaining) calling Guess the song hide function...`);
         gtsHandler.callForHide();
-        await chatHandler.sendChatMessage('Guess the Song! Type !guess <song name> to make your guess before the guessing period ends!');
+        // await chatHandler.sendChatMessage('Guess the Song! Type !guess <song name> to make your guess before the guessing period ends!');
     }
     const queue = queueHandler.getQueue();
     if (queue.items.length === 0) return;
@@ -200,7 +194,7 @@ async function autoQueueNextTrack(): Promise<void> {
             4000
         );
 
-        await chatHandler.sendChatMessage(`Auto-queued: ${nextTrack.title} by ${nextTrack.artist}`);
+        // await chatHandler.sendChatMessage(`Auto-queued: ${nextTrack.title} by ${nextTrack.artist}`);
         lastRequestQueueName = nextTrack.requestedBy;
 
         await queueHandler.setTrackAsQueued(0);
@@ -354,7 +348,6 @@ async function createWindow(): Promise<void> {
     queueHandler = new QueueHandler(Logger, mainWindow, settings);
     settings = await settingsHandler.load();
 
-    AuthManager = new Auth(userDataPath, Logger, mainWindow, settings);
         
     if (!WSServer) {
         WSServer = new websocket(443, mainWindow, Logger);
@@ -375,82 +368,19 @@ async function createWindow(): Promise<void> {
     }
     
 
-    if (!apiHandler) {
-        apiHandler = new APIHandler(mainWindow, playbackHandler, Logger, settings, (tokenData: TokenData) => saveTokenAndActivateChat(tokenData));
-    }
+    
 
     if (!gtsHandler) {
         gtsHandler = new GTSHandler(app, mainWindow, apiHandler, playbackHandler, Logger, settings);
     }
     
-    await checkStoredTokens();
     updateIntervalForSongInfo();
-    checkExperimentalUser();
-
     mainWindow.on('closed', () => {
         mainWindow = null;
     });
 }
 
-async function saveTokenAndActivateChat(tokenData: TokenData): Promise<boolean> {
-    try {
-        await AuthManager.saveToken(tokenData);
-        await checkStoredTokens();
-        if (!chatHandler && twitchAccessToken) {
-            chatHandler = new ChatHandler(Logger, mainWindow, ({ login: twitchUser.login, access_token: twitchAccessToken }), WSServer, settings, queueHandler, ytManager, gtsHandler, amHandler);
-            chatHandler.connect();
-        }
-        if (!kickChat && kickAccessToken) {
-            kickChat = new KickChat(kickAccessToken, kickUser.id, queueHandler, WSServer, settings, ytManager, gtsHandler, amHandler, Logger);
-        }
-        return true;
-    } catch (error) {
-        Logger.error('Error saving token:', error);
-        return false;
-    }
-}
 
-async function checkStoredTokens(): Promise<void> {
-    try {
-        // Check Twitch token
-        const storedTwitchToken: RetrievedTokenData | null = await AuthManager.getStoredToken('twitch');
-        if (storedTwitchToken) {
-            twitchAccessToken = storedTwitchToken.access_token;
-            twitchUser = {
-                id: storedTwitchToken.id,
-                login: storedTwitchToken.login,
-                display_name: storedTwitchToken.display_name,
-                profile_image_url: storedTwitchToken.profile_image_url,
-                email: storedTwitchToken.email || ''
-            };
-            mainWindow?.webContents.send('twitch-auth-success', twitchUser);
-            
-            if (!chatHandler) {
-                chatHandler = new ChatHandler(Logger, mainWindow, ({ login: twitchUser.login, access_token: twitchAccessToken }), WSServer, settings, queueHandler, ytManager, gtsHandler, amHandler);
-                chatHandler.connect();
-            }
-        }
-        await wait(400);
-        // Check Kick token
-        const storedKickToken: RetrievedTokenData | null = await AuthManager.getStoredToken('kick');
-        if (storedKickToken) {
-            kickAccessToken = storedKickToken.access_token;
-            kickUser = {
-                id: storedKickToken.id,
-                display_name: storedKickToken.login,
-                profile_image_url: storedKickToken.profile_image_url,
-                email: storedKickToken.email || undefined
-            };
-            mainWindow?.webContents.send('kick-auth-success', kickUser);
-            
-            if (kickUser && !kickChat) {
-                kickChat = new KickChat(kickAccessToken, kickUser.id, queueHandler, WSServer, settings, ytManager, gtsHandler, amHandler, Logger); 
-            }
-        }
-    } catch (error) {
-        Logger.error('Error checking stored tokens:', error);
-    }
-}
 
 // IPC Handlers
 ipcMain.handle('load-settings', async (): Promise<Settings> => {
@@ -468,8 +398,6 @@ ipcMain.handle('save-settings', (event: Electron.IpcMainInvokeEvent, settinga: S
         if (saved) {
             settings = settinga;
             playbackHandler.updateSettings(settings.platform);
-            if (chatHandler) chatHandler.updateSettings(settings);
-            if (kickChat) kickChat.saveSettings(settings);
             apiHandler.updateSettings(settings);
             gtsHandler.updateSettings(settings);
             amHandler.updateSettings(settings);
@@ -486,8 +414,6 @@ ipcMain.on('settings-updated', (event: Electron.IpcMainEvent, settings: Settings
     settings = settings;
     settingsHandler.save(settings);
     playbackHandler.updateSettings(settings.platform);
-    if (chatHandler) chatHandler.updateSettings(settings);
-    if (kickChat) kickChat.saveSettings(settings);
     apiHandler.updateSettings(settings);
     gtsHandler.updateSettings(settings);
     amHandler.updateSettings(settings);
@@ -497,10 +423,6 @@ ipcMain.on('settings-updated', (event: Electron.IpcMainEvent, settings: Settings
 ipcMain.handle('window-minimize', (): void => {
     if (mainWindow) mainWindow.minimize();
 });
-
-ipcMain.handle('kick-refresh', (): void => {
-    if (kickChat) kickChat.refreshToken();
-})
 
 ipcMain.handle('window-close', async (): Promise<void> => {
     if (mainWindow) {
@@ -633,124 +555,7 @@ ipcMain.handle('song-repeat', async (): Promise<void> => {
 });
 
 // Twitch Auth Handlers
-ipcMain.handle('twitch-login', (): void => {
-    createTwitchAuthWindow();
-});
 
-function handleTwitchLogout(): void {
-    try {
-        if (AuthManager) {
-            const success: boolean = AuthManager.clearToken('twitch');
-            if (success) {
-                Logger.info('Twitch token cleared successfully');
-            } else {
-                Logger.warn('Failed to clear stored Twitch token');
-            }
-        }
-
-        twitchAccessToken = undefined;
-        twitchUser = undefined;
-
-        if (chatHandler) {
-            chatHandler.disconnect?.();
-            chatHandler = null;
-        }
-        
-        if (mainWindow && !mainWindow.isDestroyed()) {
-            mainWindow.webContents.send('twitch-logout-success');
-        }
-
-        if (mainWindow && !mainWindow.isDestroyed()) {
-            const toastMessage: ToastMessage = { 
-                message: 'Successfully logged out of Twitch', 
-                type: 'success', 
-                duration: 3000 
-            };
-            mainWindow.webContents.send('show-toast', toastMessage);
-        }
-
-        Logger.info('Twitch logout completed successfully');
-
-    } catch (error) {
-        Logger.error('Error during Twitch logout:', error);
-        if (mainWindow && !mainWindow.isDestroyed()) {
-            const toastMessage: ToastMessage = { 
-                message: 'Error logging out of Twitch', 
-                type: 'error', 
-                duration: 5000 
-            };
-            mainWindow.webContents.send('show-toast', toastMessage);
-        }
-    }
-}
-
-ipcMain.handle('twitch-logout', (): boolean => {
-    handleTwitchLogout();
-    return true;
-});
-
-// Kick Auth Handlers
-ipcMain.handle('kick-login', (): void => {
-    createKickAuthWindow();
-});
-
-function handleKickLogout(): void {
-    try {
-        if (AuthManager) {
-            const success: boolean = AuthManager.clearToken('kick');
-            if (success) {
-                Logger.info('Kick token cleared successfully');
-            } else {
-                Logger.warn('Failed to clear stored Kick token');
-            }
-        }
-
-        kickAccessToken = undefined;
-        kickUser = undefined;
-
-        // TODO: Disconnect Kick chat handler when implemented
-        // if (kickChatHandler) {
-        //     kickChatHandler.disconnect?.();
-        //     kickChatHandler = null;
-        // }
-        
-        if (mainWindow && !mainWindow.isDestroyed()) {
-            mainWindow.webContents.send('kick-logout-success');
-        }
-
-        if (mainWindow && !mainWindow.isDestroyed()) {
-            const toastMessage: ToastMessage = { 
-                message: 'Successfully logged out of Kick', 
-                type: 'success', 
-                duration: 3000 
-            };
-            mainWindow.webContents.send('show-toast', toastMessage);
-        }
-
-        Logger.info('Kick logout completed successfully');
-
-    } catch (error) {
-        Logger.error('Error during Kick logout:', error);
-        if (mainWindow && !mainWindow.isDestroyed()) {
-            const toastMessage: ToastMessage = { 
-                message: 'Error logging out of Kick', 
-                type: 'error', 
-                duration: 5000 
-            };
-            mainWindow.webContents.send('show-toast', toastMessage);
-        }
-    }
-}
-
-ipcMain.handle('kick-logout', (): boolean => {
-    handleKickLogout();
-    return true;
-});
-
-// Check active platforms
-ipcMain.handle('get-active-platforms', async (): Promise<string[]> => {
-    return AuthManager ? AuthManager.getActivePlatforms() : [];
-});
 
 ipcMain.handle('get-overlay-path', (): string | null => {
     return overlayPath;
@@ -856,43 +661,5 @@ ipcMain.handle('searchTest', async (): Promise<void> => {
 
 // fetch https://api.requestplus.xyz/experimental when logged in to Twitch or Kick and find the user's ID and if it is in the list set global.IsExperimentalUser = true; else false
 
-function checkExperimentalUser(): Promise<boolean> {
-    return new Promise(async (resolve) => {
-        try {
-            const response = await fetch('https://api.requestplus.xyz/experimental');
-            const data = await response.json();
-            console.log('Experimental user data:', data);
-            
-            if (twitchUser && data.twitch_ids.includes(twitchUser.id)) {
-                resolve(true);
-                mainWindow?.webContents.send('show-toast', {
-                    message: 'You are an experimental user! Enjoy early access to new features.',
-                    type: 'success',
-                    duration: 5000
-                })
-                mainWindow?.webContents.send('experimental-user-status', true);
-                return;
-            }
-            if (kickUser && data.kick_ids.includes(kickUser.id)) {
-                resolve(true);
-                mainWindow?.webContents.send('show-toast', {
-                    message: 'You are an experimental user! Enjoy early access to new features.',
-                    type: 'success',
-                    duration: 5000
-                })
-                mainWindow?.webContents.send('experimental-user-status', true);
-                return;
-            }
-            resolve(false);
-        } catch (error) {
-            Logger.error('Error checking experimental user status:', error);
-            resolve(false);
-            mainWindow?.webContents.send('show-toast', {
-                message: 'Error checking experimental user status',
-                type: 'error',
-                duration: 5000
-            });
-        }
-    });
-}
+
 

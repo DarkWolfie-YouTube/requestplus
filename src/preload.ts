@@ -134,16 +134,10 @@ const electronAPI: ElectronAPI = {
   },
 
   // Twitch authentication
-  twitchLogin: () => ipcRenderer.invoke('twitch-login'),
-  twitchLogout: () => ipcRenderer.invoke('twitch-logout'),
-  kickLogin: () => ipcRenderer.invoke('kick-login'),
-  kickLogout: () => ipcRenderer.invoke('kick-logout'),
-  kickRefresh: () => ipcRenderer.invoke('kick-refresh'),
+  twitchLogin: () => ipcRenderer.invoke('login'),
+  twitchLogout: () => ipcRenderer.invoke('logout'),
   authSuccess: (callback) => {
-    ipcRenderer.on('twitch-auth-success', (_, user) => callback(user));
-  },
-  kickAuthSuccess: (callback) => {
-    ipcRenderer.on('kick-auth-success', (_, user) => callback(user));
+    ipcRenderer.on('auth-success', (_, user) => callback(user));
   },
 
   // Settings

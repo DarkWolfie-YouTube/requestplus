@@ -373,7 +373,7 @@ function compareVersions(current: string, latest: string): boolean {
         // Clean the version string
         const cleanVersion = version.replace(/^v/, '').trim();
         
-        // Handle beta versions like "1.2.3-BETA-PreR4" 
+        // Handle beta versions like "1.2.4-BETA-PreR4" 
         const betaMatch = cleanVersion.match(/^(.+?)-BETA-PreR(\d+)$/i);
         if (betaMatch) {
             const baseVersion = betaMatch[1];
@@ -385,7 +385,7 @@ function compareVersions(current: string, latest: string): boolean {
             };
         }
         
-        // Handle other pre-release formats like "1.2.3-beta.1", "1.2.3-alpha.1", etc.
+        // Handle other pre-release formats like "1.2.4-beta.1", "1.2.4-alpha.1", etc.
         const preReleaseMatch = cleanVersion.match(/^(.+?)-(alpha|beta|rc)\.?(\d+)?$/i);
         if (preReleaseMatch) {
             const baseVersion = preReleaseMatch[1];
@@ -397,7 +397,7 @@ function compareVersions(current: string, latest: string): boolean {
             };
         }
         
-        // Handle regular versions like "1.2.3"
+        // Handle regular versions like "1.2.4"
         return {
             base: cleanVersion.split('.').map(Number),
             isBeta: false,

@@ -35,10 +35,8 @@ interface SettingsState {
 }
 
 interface SettingsProps {
-  twitchUser: User | null;
-  setTwitchUser: (user: User | null) => void;
-  kickUser: User | null;
-  setKickUser: (user: User | null) => void;
+  user: User | null;
+  setUser: (user: User | null) => void;
   overlayPath: string;
   updateSettings: UpdateSettings;
   setUpdateSettings: (settings: UpdateSettings) => void;
@@ -49,10 +47,8 @@ interface SettingsProps {
 }
 
 export function Settings({ 
-  twitchUser, 
-  setTwitchUser,
-  kickUser,
-  setKickUser, 
+  user, 
+  setUser,
   overlayPath, 
   updateSettings, 
   setUpdateSettings, 
@@ -107,19 +103,7 @@ export function Settings({
   const handleTwitchLogout = () => {
     if (typeof window !== 'undefined' && (window as any).api?.twitchLogout) {
       (window as any).api.twitchLogout();
-      setTwitchUser(null);
-    }
-  };
-  const handleKickLogin = () => {
-    if (typeof window !== 'undefined' && (window as any).api?.kickLogin) {
-      (window as any).api.kickLogin();
-    }
-  };
-
-  const handleKickLogout = () => {
-    if (typeof window !== 'undefined' && (window as any).api?.kickLogout) {
-      (window as any).api.kickLogout();
-      setKickUser(null);
+      setUser(null);
     }
   };
 
@@ -193,13 +177,13 @@ export function Settings({
         {/* Twitch Account Section */}
         <Card className="p-6 space-y-6 shadow-card border-border/50">
           <div className="space-y-2">
-            <Label className="text-lg">Streaming Accounts</Label>
+            <Label className="text-lg">Request+ Account</Label>
             <p className="text-sm text-muted-foreground/80">
-              Connect your streaming accounts to manage requests
+              Connect your Request+ account to manage requests and overlays
             </p>
           </div>
 
-          {twitchUser ? (
+          {user ? (
             <div className="space-y-4">
               <div className="flex items-center gap-3 p-4 bg-accent/30 rounded-lg">
                 <img 
@@ -215,39 +199,13 @@ export function Settings({
               </div>
               <Button variant="outline" onClick={handleTwitchLogout} className="w-full hover-lift">
                 <LogOut className="h-4 w-4 mr-2" />
-                Logout from Twitch
+                Logout
               </Button>
             </div>
           ) : (
             <Button onClick={handleTwitchLogin} className="w-full hover-lift">
               <User className="h-4 w-4 mr-2" />
-              Login with Twitch
-            </Button>
-          )}
-          <Separator className="my-4" />
-          {kickUser ? (
-            <div className="space-y-4">
-              <div className="flex items-center gap-3 p-4 bg-accent/30 rounded-lg">
-                <img 
-                  src={kickUser.profile_image_url} 
-                  alt="Profile" 
-                  className="w-14 h-14 rounded-full ring-2 ring-primary/50"
-                />
-                <div className="flex-1">
-                  <h4 className="mb-1">Kick</h4>
-                  <p>{kickUser.display_name}</p>
-                  <p className="text-sm text-muted-foreground">Connected</p>
-                </div>
-              </div>
-              <Button variant="outline" onClick={handleKickLogout} className="w-full hover-lift">
-                <LogOut className="h-4 w-4 mr-2" />
-                Logout from Kick
-              </Button>
-            </div>
-          ) : (
-            <Button onClick={handleKickLogin} className="w-full hover-lift">
-              <User className="h-4 w-4 mr-2" />
-              Login with Kick
+              Login
             </Button>
           )}
         </Card>
@@ -594,7 +552,7 @@ export function Settings({
           <div>
             <h3 className="text-lg">About Request+</h3>
             <p className="text-sm text-muted-foreground/80">
-              Version 1.2.3 • Built for streamers by streamers
+              Version 1.2.4 • Built for streamers by streamers
             </p>
           </div>
 

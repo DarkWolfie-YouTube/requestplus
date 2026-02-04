@@ -65,8 +65,7 @@ const App = () => {
   });
 
   // Global state for settings
-  const [twitchUser, setTwitchUser] = useState<User | null>(null);
-  const [kickUser, setKickUser] = useState<User | null>(null);
+  const [user, setUser] = useState<User | null>(null);
   const [overlayPath, setOverlayPath] = useState('');
   const [updateSettings, setUpdateSettings] = useState<UpdateSettings>({ checkPreReleases: false });
   const [settings, setSettings] = useState({
@@ -179,12 +178,9 @@ const App = () => {
 
     // Listen for auth success
     api.authSuccess?.((user: User) => {
-      setTwitchUser(user);
+      setUser(user);
     });
 
-    api.kickAuthSuccess?.((user: User) => {
-      setKickUser(user);
-    });
 
     // Call preload if available
     if (api.preload && typeof api.preload === 'function') {
@@ -331,10 +327,8 @@ const handleTrackSelect = (track: QueueItem) => {
       case 'settings':
         return (
           <Settings 
-            twitchUser={twitchUser}
-            setTwitchUser={setTwitchUser}
-            kickUser={kickUser}
-            setKickUser={setKickUser}
+            user={user}
+            setUser={setUser}
             overlayPath={overlayPath}
             updateSettings={updateSettings}
             setUpdateSettings={setUpdateSettings}
