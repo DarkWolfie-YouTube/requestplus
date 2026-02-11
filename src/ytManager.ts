@@ -43,7 +43,7 @@ interface likeState {
 class YTManager {
     private apiBaseUrl: string;
     private instance: AxiosInstance;
-    private token: string | null = null;
+    private token: string;
     private tokenPath: string;
     private logger: Logger;
     private timesTried: number;
@@ -53,6 +53,7 @@ class YTManager {
         this.tokenPath = path.join(app.getPath('userData'), 'ytmanager.token');
         this.logger = Logger
         this.timesTried = 0;
+        this.token = '';
         
         this.instance = axios.create({
             baseURL: this.apiBaseUrl,
@@ -222,19 +223,20 @@ class YTManager {
     }
 
     async toggleLike(): Promise<void> {
-        if (this.isLiked()) {
+        if (await this.isLiked() === true) {
             await this.makeAuthenticatedRequest(() =>
                 this.instance.post('/dislike', {}, {
                     headers: { 'Authorization': `Bearer ${this.token}` }
                 }), '/dislike'
             );
             return;
+        } else {
+            await this.makeAuthenticatedRequest(() =>
+                this.instance.post('/like', {}, {
+                    headers: { 'Authorization': `Bearer ${this.token}` }
+                }), '/like'
+            );
         }
-        await this.makeAuthenticatedRequest(() =>
-            this.instance.post('/like', {}, {
-                headers: { 'Authorization': `Bearer ${this.token}` }
-            }), '/like'
-        );
     }
 
     async setVolume(level: number): Promise<void> {

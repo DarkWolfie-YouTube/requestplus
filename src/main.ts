@@ -377,6 +377,9 @@ async function createWindow(): Promise<void> {
       websocketManager.connect(token.token, hardwareInfo.deviceId);
     }
   }
+  if (!apiHandler) {
+        apiHandler = new APIHandler(mainWindow, playbackHandler, Logger, settings);
+    }
     
 
     if (!gtsHandler) {
@@ -384,6 +387,9 @@ async function createWindow(): Promise<void> {
     }
     
     updateIntervalForSongInfo();
+    if (authManager.isAuthenticated()) {
+        mainWindow.webContents.send('auth-check', true);
+    }
     mainWindow.on('closed', () => {
         mainWindow = null;
     });
@@ -397,7 +403,12 @@ ipcMain.handle('load-settings', async (): Promise<Settings> => {
 });
 
 ipcMain.handle('ytTest', async (): Promise<songData> => {
-    return ytManager.getCurrentSong();
+    var data = await ytManager.getCurrentSong();
+    if (data) {
+        return data;
+    } else {
+        return {} as songData;
+    }
 });
 
 ipcMain.handle('save-settings', (event: Electron.IpcMainInvokeEvent, settinga: Settings): Promise<void> => {
@@ -638,8 +649,9 @@ ipcMain.handle('auth:getStatus', async () => {
 ipcMain.handle('fetch-user-data', async () => {
     const userData = await authManager.fetchUserData();
     return {
-        display_name: userData?.displayName || null,
-        profile_image_url: userData?.photoUrl || null,
+        display_name: userData?.user.displayName || null,
+        profile_image_url: userData?.user.photoURL || null,
+        email: userData?.user.email || null
     }
 });
 
@@ -725,6 +737,14 @@ ipcMain.handle('searchTest', async (): Promise<void> => {
 })
 
 // fetch https://api.requestplus.xyz/experimental when logged in to Twitch or Kick and find the user's ID and if it is in the list set global.IsExperimentalUser = true; else false
+
+app.whenReady().then(async () => {
+    const isExperimentalUser = await authManager.checkExperimentalUser();
+    global.IsExperimentalUser = isExperimentalUser;
+    console.log('Is experimental user:', global.IsExperimentalUser);
+}
+
+
 
 authManager.on('auth-success', (token) => {
   console.log('[Main] Auth success, connecting WebSocket...');

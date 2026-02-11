@@ -69,15 +69,13 @@ class APIHandler {
         playbackHandler: PlaybackHandler, 
         logger: Logger, 
         settings: Settings, 
-        callback: any
     ) {
         this.app = express();
         this.mainWindow = mainWindow;
         this.playbackHandler = playbackHandler;
         this.logger = logger;
         this.theme = settings.theme;
-        this.refresh = null;
-        this.callback = callback;
+        this.refresh = false;
         this.hideSongFromView = false;
         this.setupMiddleware();
         this.setupRoutes();
@@ -149,7 +147,7 @@ class APIHandler {
                             if (accessToken) {
                                 fetch('/auth/token', {
                                     method: 'POST',
-                                    headers: { 'Content-Type': 'application/json', 'User-Agent': 'Request+/1.2.4 (https://github.com/DarkWolfie-YouTube/requestplus) darkwolfiefiver@gmail.com'},
+                                    headers: { 'Content-Type': 'application/json', 'User-Agent': 'Request+/2.0.0 (https://github.com/DarkWolfie-YouTube/requestplus) darkwolfiefiver@gmail.com'},
                                     body: JSON.stringify({
                                         access_token: accessToken,
                                         token_type: tokenType,

@@ -19,7 +19,7 @@ interface songInfo {
 }
 
 class PlaybackHandler {
-    public currentSong: songInfo | null = null;
+    public currentSong: songInfo;
     private platform: string; 
     private SpotifyWS: WebSocketServer;
     private logger: Logger;
@@ -32,6 +32,20 @@ class PlaybackHandler {
         this.logger = logger;
         this.YTManager = ytManager;
         this.AMHandler = AMHandler;
+        this.currentSong = {
+            id: '',
+            title: '',
+            artist: '',
+            album: '',
+            duration: 0,
+            progress: 0,
+            cover: '',
+            isPlaying: false,
+            volume: 0,
+            shuffle: false,
+            repeat: 0,
+            isLiked: false
+        };
     }
 
     async getCurrentSong(): Promise<songInfo | null> {
@@ -71,7 +85,7 @@ class PlaybackHandler {
                     duration: applemusicData.info.durationInMillis || 0,
                     progress: applemusicData.info.currentPlaybackTime * 1000 || 0,
                     isPlaying: (await this.AMHandler.getIsPlayingState()).is_playing || false,
-                    cover: applemusicData.info.artwork.url.replace('{w}', applemusicData.info.artwork.width.toString()).replace('{h}', applemusicData.info.artwork.height.toString()) || '',
+                    cover: (applemusicData.info.artwork.url.includes('{w}')? applemusicData.info.artwork.url.replace('{w}', applemusicData.info.artwork.width.toString()).replace('{h}', applemusicData.info.artwork.height.toString()) : applemusicData.info.artwork.url) || '',
                     volume: await this.AMHandler.getVolume(),
                     shuffle: applemusicData.info.shuffleMode === 1,
                     repeat: repeatMode,
@@ -124,7 +138,7 @@ class PlaybackHandler {
                 progress: ytSongData.elapsedSeconds * 1000,
                 cover: ytSongData.imageSrc || '',
                 isPlaying: !ytSongData.isPaused,
-                volume: (ytVolume?.state / 100) || 0,
+                volume: (ytVolume ? ytVolume.state : 0) || 0,
                 shuffle: ytShuffle ?? false,
                 repeat: ytRepeat ? this.convertYouTubeRepeatMode(ytRepeat.mode) : 0,
                 isLiked: ytLiked ?? false

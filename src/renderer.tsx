@@ -40,6 +40,7 @@ interface songInfo {
 interface User {
   display_name: string;
   profile_image_url: string;
+  email: string;
 }
 
 interface UpdateSettings {
@@ -177,9 +178,32 @@ const App = () => {
     });
 
     // Listen for auth success
-    api.authSuccess?.((user: User) => {
-      setUser(user);
+    api.authSuccess?.((response: any) => {
+      console.log('Received auth success response:', response);
+      if (response.status === 'started') {
+        toast.info('Authentication flow started. Please complete the process in your browser.');
+        return
+      } else if (response.status !== 'error') {
+        toast.success('Authentication successful!');
+      } else {
+        toast.error(`Authentication failed: ${response.error}`);
+      }
+      api.fetchUserData().then((userData: User) => {
+        setUserd(userData);
+      });
+      
     });
+
+    api.authCheck((isAuthenticated: boolean) => {
+      console.log('Received auth check:', isAuthenticated);
+      if (isAuthenticated) {
+        api.fetchUserData().then((userData: User) => {
+          setUserd(userData);
+        });
+      } else {
+        setUserd(null);
+      }
+    })
 
 
     // Call preload if available

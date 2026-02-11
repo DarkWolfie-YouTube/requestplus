@@ -12,6 +12,7 @@ import { EventEmitter } from 'events';
 
 const PROTOCOL = 'requestplus';
 const AUTH_API_URL = process.env.AUTH_API_URL || 'https://api.requestplus.xyz';
+let initialized = false;
 
 export interface AuthToken {
   token: string;
@@ -61,7 +62,7 @@ class AuthManager extends EventEmitter {
   private constructor() {
     super();
     this.configPath = path.join(app.getPath('userData'), 'auth-config.json');
-    this.initialize();
+    this.init();
   }
 
   public static getInstance(): AuthManager {
@@ -69,6 +70,16 @@ class AuthManager extends EventEmitter {
       AuthManager.instance = new AuthManager();
     }
     return AuthManager.instance;
+  }
+
+  private async init(){
+    if (initialized) return;
+    initialized = true;
+
+    if (!app.isReady()) {
+        await app.whenReady();
+    }
+    await this.initialize();
   }
 
   /**
@@ -436,6 +447,23 @@ class AuthManager extends EventEmitter {
     this.deleteAuthToken();
     this.emit('auth-logout');
   }
+
+  public async checkExperimentalUser(): Promise<boolean> {
+    const token = this.getAuthToken();
+    if (!token) {
+      console.log('[AuthManager] Not authenticated, cannot check experimental user status');
+      return false;
+    }
+
+    try {
+      const response = await apiClient.checkExperimentalUser();
+      console.log('[AuthManager] Experimental user status:', response.status);
+      return response.status;
+    } catch (error) {
+      console.error('[AuthManager] Error checking experimental user status:', error);
+      return false;
+    }
+  }
 }
 
 // Export singleton instance
@@ -644,6 +672,10 @@ class APIClient {
    */
   public async getRequestsPerDay(): Promise<any[]> {
     return this.request<any[]>('/requests-per-day');
+  }
+
+  public async checkExperimentalUser(): Promise<{ status: boolean }> {
+    return this.request<{ status: boolean }>('/experimental-user');
   }
 }
 

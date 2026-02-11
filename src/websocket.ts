@@ -210,7 +210,7 @@ class WebSocketServer {
                         }
                     });
 
-                    if (client.type === 'spotify') {
+                    if (client && client.type === 'spotify') {
                         if (parsed.command === "currentTrack") {
                         const data: TrackData = {
                             ...parsed.data,
@@ -276,74 +276,74 @@ class WebSocketServer {
                         this.SearchResults = parsed.data.tracks.items;
                         return;
                     }
-                } else if (client.type === 'soundcloud') {
+                    } else if (client && client.type === 'soundcloud') {
 
-                    if (parsed.command === "currentTrack") {
-                        const data: TrackData = {
-                            ...parsed.data,
-                            isPlaying: parsed.isPlaying,
-                            progress: parsed.progress,
-                            volume: parsed.volume,
-                            shuffle: parsed.shuffle,
-                            repeat: parsed.repeat,
-                            isLiked: parsed.isLiked,
-                            id: parsed.id
-                        };
-                            console.log('Soundcloud track data received:', data);
-                        // Add track ID extraction for auto-queue system
-                        if (parsed.data) {
-                            // Extract track ID from URI or use existing ID
-                            if (parsed.data.uri && parsed.data.uri.includes('spotify:track:')) {
-                                data.id = parsed.data.uri.replace('spotify:track:', '');
-                            } else if (parsed.data.id) {
-                                data.id = parsed.data.id;
+                        if (parsed.command === "currentTrack") {
+                            const data: TrackData = {
+                                ...parsed.data,
+                                isPlaying: parsed.isPlaying,
+                                progress: parsed.progress,
+                                volume: parsed.volume,
+                                shuffle: parsed.shuffle,
+                                repeat: parsed.repeat,
+                                isLiked: parsed.isLiked,
+                                id: parsed.id
+                            };
+                                console.log('Soundcloud track data received:', data);
+                            // Add track ID extraction for auto-queue system
+                            if (parsed.data) {
+                                // Extract track ID from URI or use existing ID
+                                if (parsed.data.uri && parsed.data.uri.includes('spotify:track:')) {
+                                    data.id = parsed.data.uri.replace('spotify:track:', '');
+                                } else if (parsed.data.id) {
+                                    data.id = parsed.data.id;
+                                }
+
+                                // Extract duration if available
+                                if (parsed.data.duration_ms) {
+                                    data.duration = parsed.data.duration_ms;
+                                }
                             }
 
-                            // Extract duration if available
-                            if (parsed.data.duration_ms) {
-                                data.duration = parsed.data.duration_ms;
+                            if (data.local_file_path) {
+                                try {
+                                    const metadata = await musicmetadata.parseFile(data.local_file_path);
+                                    if (metadata.common.picture && metadata.common.picture.length > 0) {
+                                        const imageB64 = Buffer.from(metadata.common.picture[0].data).toString('base64');
+                                        data.image = `data:${metadata.common.picture[0].format};base64,${imageB64}`;
+                                    }
+                                } catch (error) {
+                                    this.logger.error('Error parsing music metadata:', error);
+                                }
                             }
-                        }
 
-                        if (data.local_file_path) {
+                            this.lastSOInfo = data;
+                            
+                            // Notify main process for auto-queue monitoring
                             try {
-                                const metadata = await musicmetadata.parseFile(data.local_file_path);
-                                if (metadata.common.picture && metadata.common.picture.length > 0) {
-                                    const imageB64 = Buffer.from(metadata.common.picture[0].data).toString('base64');
-                                    data.image = `data:${metadata.common.picture[0].format};base64,${imageB64}`;
+                                // Import the global function (you'll need to set this up in main.ts)
+                                if ((global as any).setCurrentSongInformation) {
+                                    (global as any).setCurrentSongInformation(data);
                                 }
                             } catch (error) {
-                                this.logger.error('Error parsing music metadata:', error);
+                                this.logger.error('Error updating current song information:', error);
                             }
-                        }
-
-                        this.lastSOInfo = data;
-                        
-                        // Notify main process for auto-queue monitoring
-                        try {
-                            // Import the global function (you'll need to set this up in main.ts)
-                            if ((global as any).setCurrentSongInformation) {
-                                (global as any).setCurrentSongInformation(data);
-                            }
-                        } catch (error) {
-                            this.logger.error('Error updating current song information:', error);
+                            
+                            return;
                         }
                         
-                        return;
-                    }
-                    
-                    if (parsed.command === "requestHandled") {
-                        this.logger.info('Request handled for: ', parsed.data);
-                        this.lastReq = parsed.data as RequestData;
-                        return;
-                    }
+                        if (parsed.command === "requestHandled") {
+                            this.logger.info('Request handled for: ', parsed.data);
+                            this.lastReq = parsed.data as RequestData;
+                            return;
+                        }
 
-                    if (parsed.command === "searchResults") {
-                        console.log('Search Results:', parsed.data);
-                        this.SearchResults = parsed.data.tracks.items;
-                        return;
+                        if (parsed.command === "searchResults") {
+                            console.log('Search Results:', parsed.data);
+                            this.SearchResults = parsed.data.tracks.items;
+                            return;
+                        }
                     }
-                }
 
                 } catch (error) {
                     this.logger.error('Error processing WebSocket message:', error);

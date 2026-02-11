@@ -89,6 +89,7 @@ class WebSocketManager extends EventEmitter {
       setTimeout(() => {
         if (!this.isAuth) {
           reject(new Error('Connection timeout'));
+          this.scheduleReconnect();
         }
       }, 10000);
     });

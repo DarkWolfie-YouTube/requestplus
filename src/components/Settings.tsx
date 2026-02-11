@@ -15,6 +15,7 @@ import { Command as CommandPrimitive } from 'cmdk';
 interface Userd {
   display_name: string;
   profile_image_url: string;
+  email: string;
 }
 
 interface UpdateSettings {
@@ -187,13 +188,13 @@ export function Settings({
             <div className="space-y-4">
               <div className="flex items-center gap-3 p-4 bg-accent/30 rounded-lg">
                 <img 
-                  src={user.profile_image_url} 
+                  src={userd.profile_image_url} 
                   alt="Profile" 
                   className="w-14 h-14 rounded-full ring-2 ring-primary/50"
                 />
                 <div className="flex-1">
-                  <h4 className="mb-1">Twitch</h4>
-                  <p>{user.display_name}</p>
+                  <h4 className="mb-1">{userd.display_name}</h4>
+                  <p className="text-sm text-muted-foreground">{userd.email}</p>
                   <p className="text-sm text-muted-foreground">Connected</p>
                 </div>
               </div>
@@ -552,7 +553,7 @@ export function Settings({
           <div>
             <h3 className="text-lg">About Request+</h3>
             <p className="text-sm text-muted-foreground/80">
-              Version 1.2.4 • Built for streamers by streamers
+              Version 2.0.0 • Built for streamers by streamers
             </p>
           </div>
 

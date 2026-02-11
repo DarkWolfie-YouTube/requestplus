@@ -1,4 +1,4 @@
-# 🚀 Request+ v1.2.4
+# 🚀 Request+ v2.0.0
 
 --- 
 
