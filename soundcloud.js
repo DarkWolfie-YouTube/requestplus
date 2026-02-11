@@ -15,6 +15,7 @@
   let songinfocurrentsongurl;
   let songinfocurrentsongliked;
   let songinfovolume;
+  let songinforepeat;
 
   /**
    * Delay utility function
@@ -99,6 +100,7 @@
       var endduration = document.querySelectorAll(".playbackTimeline__duration span")[1];
       var currentduration = document.querySelectorAll(".playbackTimeline__timePassed span")[1];
       var currentsongtitle = document.querySelector(".playbackSoundBadge__title");
+      var repeatbtn = document.querySelector(".playControls__elements .repeatControl");
       
       var coverElement = document.querySelector(".playControls__soundBadge .image__lightOutline span");
       if (!coverElement) return false;
@@ -128,6 +130,14 @@
       songinfocursongcoverurl = currentsongcover;
       songinfoartist = currentartist.innerText;
       songinfovolume = getVolume();
+      if (repeatbtn.classList.contains("m-none")) {
+        songinforepeat = "none";
+      } else if (repeatbtn.classList.contains("m-one")) {
+        songinforepeat = "one";
+      } else {
+        songinforepeat = "all";
+      }
+      
       
       if (playbtn.classList.contains("playing")) {
         songinfostate = "playing";
@@ -160,7 +170,8 @@
           },
           isPlaying: songinfostate === "playing",
           isLiked: songinfocurrentsongliked,
-          volume: songinfovolume
+          volume: songinfovolume,
+          repeat: songinforepeat
         })
       );
     }
@@ -299,3 +310,4 @@
 
   console.log("RequestPlus|Integration loaded and initialized");
 })();
+

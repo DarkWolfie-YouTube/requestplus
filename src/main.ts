@@ -739,10 +739,21 @@ ipcMain.handle('searchTest', async (): Promise<void> => {
 // fetch https://api.requestplus.xyz/experimental when logged in to Twitch or Kick and find the user's ID and if it is in the list set global.IsExperimentalUser = true; else false
 
 app.whenReady().then(async () => {
+    await wait(4000);
     const isExperimentalUser = await authManager.checkExperimentalUser();
     global.IsExperimentalUser = isExperimentalUser;
     console.log('Is experimental user:', global.IsExperimentalUser);
+
+    if (isExperimentalUser == true) {
+        mainWindow?.webContents.send('experimental-user-status', isExperimentalUser);
+        mainWindow?.webContents.send('show-toast', {
+            message: 'You are an experimental user! Enjoy early access to new features.',
+            type: 'success',
+            duration: 5000
+        })
+    }
 }
+);
 
 
 
