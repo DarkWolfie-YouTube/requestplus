@@ -14,6 +14,13 @@ const PROTOCOL = 'requestplus';
 const AUTH_API_URL = process.env.AUTH_API_URL || 'https://api.requestplus.xyz';
 let initialized = false;
 
+// Safe logger helpers — no-ops if Logger isn't initialized yet (e.g. during auth callback process)
+const log = {
+    info:  (...args: any[]) => (global as any).Logger?.info(...args),
+    warn:  (...args: any[]) => (global as any).Logger?.warn(...args),
+    error: (...args: any[]) => (global as any).Logger?.error(...args),
+};
+
 export interface AuthToken {
   token: string;
   refreshToken: string;
@@ -159,14 +166,12 @@ class AuthManager extends EventEmitter {
     }
 
     this.isProtocolRegistered = true;
-    console.log('[AuthManager] Protocol handler registered for:', PROTOCOL);
   }
 
   /**
    * Handle deep link URL
    */
   public handleDeepLink(url: string): boolean {
-    console.log('[AuthManager] Handling deep link:', url);
 
     if (!url.startsWith(`${PROTOCOL}://`)) {
       console.warn('[AuthManager] Invalid protocol, expected:', PROTOCOL);
@@ -174,12 +179,10 @@ class AuthManager extends EventEmitter {
     }
 
     try {
+      (global as any).ISAUTHING = true;
       const parsedUrl = new URL(url);
       const path = parsedUrl.hostname;
       const params = Object.fromEntries(parsedUrl.searchParams);
-
-      console.log('[AuthManager] Deep link path:', path);
-      console.log('[AuthManager] Deep link params:', params);
 
       switch (path) {
         case 'auth':
@@ -187,11 +190,11 @@ class AuthManager extends EventEmitter {
         case 'logout':
           return this.handleLogout();
         default:
-          console.warn('[AuthManager] Unknown deep link path:', path);
+          log.warn(`[AuthManager] Unknown deep link path: ${path}`);
           return false;
       }
     } catch (error) {
-      console.error('[AuthManager] Error parsing deep link:', error);
+      log.error('[AuthManager] Error parsing deep link:', error);
       return false;
     }
   }
@@ -237,7 +240,7 @@ class AuthManager extends EventEmitter {
     this.authToken = null;
     this.deleteAuthToken();
     this.emit('auth-logout');
-    console.log('[AuthManager] Logged out');
+    log.info('[AuthManager] Logged out');
     return true;
   }
 
@@ -254,9 +257,9 @@ class AuthManager extends EventEmitter {
       };
 
       fs.writeFileSync(this.configPath, JSON.stringify(data, null, 2), 'utf-8');
-      console.log('[AuthManager] Auth token saved to disk');
+      log.info('[AuthManager] Auth token saved to disk');
     } catch (error) {
-      console.error('[AuthManager] Error saving auth token:', error);
+      log.error('[AuthManager] Error saving auth token:', error);
     }
   }
 
@@ -266,7 +269,7 @@ class AuthManager extends EventEmitter {
   private loadAuthToken() {
     try {
       if (!fs.existsSync(this.configPath)) {
-        console.log('[AuthManager] No saved auth token found');
+        log.info('[AuthManager] No saved auth token found');
         return;
       }
 
@@ -274,23 +277,23 @@ class AuthManager extends EventEmitter {
 
       // Check if token is expired
       if (data.expiresAt && data.expiresAt < Date.now()) {
-        console.log('[AuthManager] Saved token is expired');
+        log.info('[AuthManager] Saved token is expired');
         this.deleteAuthToken();
         return;
       }
 
       // Verify device ID matches (prevent token theft)
       if (data.deviceId !== this.hardwareInfo!.deviceId) {
-        console.warn('[AuthManager] Device ID mismatch, token may be stolen');
+        log.warn('[AuthManager] Device ID mismatch, token may be stolen');
         this.deleteAuthToken();
         return;
       }
 
       this.authToken = data;
-      console.log('[AuthManager] Auth token loaded from disk');
+      log.info('[AuthManager] Auth token loaded from disk');
       this.emit('auth-restored', this.authToken);
     } catch (error) {
-      console.error('[AuthManager] Error loading auth token:', error);
+      log.error('[AuthManager] Error loading auth token:', error);
       this.deleteAuthToken();
     }
   }
@@ -302,10 +305,10 @@ class AuthManager extends EventEmitter {
     try {
       if (fs.existsSync(this.configPath)) {
         fs.unlinkSync(this.configPath);
-        console.log('[AuthManager] Auth token deleted from disk');
+        log.info('[AuthManager] Auth token deleted from disk');
       }
     } catch (error) {
-      console.error('[AuthManager] Error deleting auth token:', error);
+      log.error('[AuthManager] Error deleting auth token:', error);
     }
   }
 
@@ -315,8 +318,6 @@ class AuthManager extends EventEmitter {
   public async startAuthFlow() {
     const deviceId = this.hardwareInfo!.deviceId;
     const authUrl = `${AUTH_API_URL}/desktop/auth/initiate?device_id=${encodeURIComponent(deviceId)}`;
-    
-    console.log('[AuthManager] Opening auth URL:', authUrl);
     
     // Open in default browser
     await shell.openExternal(authUrl);
@@ -330,7 +331,7 @@ class AuthManager extends EventEmitter {
   public getAuthToken(): AuthToken | null {
     // Check if token is expired
     if (this.authToken && this.authToken.expiresAt < Date.now()) {
-      console.log('[AuthManager] Token expired');
+      log.info('[AuthManager] Token expired');
       this.authToken = null;
       this.deleteAuthToken();
       return null;
@@ -375,10 +376,10 @@ class AuthManager extends EventEmitter {
       // Fetch full profile (includes photoURL and Firebase data)
       const profile = await apiClient.getFullProfile();
       
-      console.log('[AuthManager] User profile fetched successfully');
+      log.info('[AuthManager] User profile fetched successfully');
       return profile;
     } catch (error) {
-      console.error('[AuthManager] Error fetching user data:', error);
+      log.error('[AuthManager] Error fetching user data:', error);
       
       // If token is invalid, clear it and emit auth error
       if (error instanceof Error && error.message.includes('Invalid token')) {
@@ -428,10 +429,10 @@ class AuthManager extends EventEmitter {
       this.saveAuthToken();
       this.emit('auth-refreshed', this.authToken);
 
-      console.log('[AuthManager] Token refreshed successfully');
+      log.info('[AuthManager] Token refreshed successfully');
       return true;
     } catch (error) {
-      console.error('[AuthManager] Error refreshing token:', error);
+      log.error('[AuthManager] Error refreshing token:', error);
       this.authToken = null;
       this.deleteAuthToken();
       this.emit('auth-error', { error: 'Token refresh failed' });
@@ -451,16 +452,15 @@ class AuthManager extends EventEmitter {
   public async checkExperimentalUser(): Promise<boolean> {
     const token = this.getAuthToken();
     if (!token) {
-      console.log('[AuthManager] Not authenticated, cannot check experimental user status');
+      log.info('[AuthManager] Not authenticated, cannot check experimental user status');
       return false;
     }
 
     try {
       const response = await apiClient.checkExperimentalUser();
-      console.log('[AuthManager] Experimental user status:', response.status);
       return response.status;
     } catch (error) {
-      console.error('[AuthManager] Error checking experimental user status:', error);
+      log.error('[AuthManager] Error checking experimental user status:', error);
       return false;
     }
   }
@@ -476,7 +476,6 @@ export function setupDeepLinkHandling(mainWindow: BrowserWindow) {
   // Handle the protocol on macOS
   app.on('open-url', (event, url) => {
     event.preventDefault();
-    console.log('[DeepLink] Received URL (open-url):', url);
     authManager.handleDeepLink(url);
   });
 
@@ -484,7 +483,7 @@ export function setupDeepLinkHandling(mainWindow: BrowserWindow) {
   const gotTheLock = app.requestSingleInstanceLock();
 
   if (!gotTheLock) {
-    console.log('[DeepLink] Another instance is already running');
+    log.info('[DeepLink] Another instance is already running');
     app.quit();
   } else {
     app.on('second-instance', (event, commandLine, workingDirectory) => {
@@ -497,7 +496,6 @@ export function setupDeepLinkHandling(mainWindow: BrowserWindow) {
       // Check if a deep link was passed
       const url = commandLine.find(arg => arg.startsWith(`${PROTOCOL}://`));
       if (url) {
-        console.log('[DeepLink] Received URL (second-instance):', url);
         authManager.handleDeepLink(url);
       }
     });
@@ -507,7 +505,6 @@ export function setupDeepLinkHandling(mainWindow: BrowserWindow) {
   if (process.platform === 'win32') {
     const url = process.argv.find(arg => arg.startsWith(`${PROTOCOL}://`));
     if (url) {
-      console.log('[DeepLink] Received URL (argv):', url);
       authManager.handleDeepLink(url);
     }
   }
@@ -518,21 +515,22 @@ export function setupDeepLinkHandling(mainWindow: BrowserWindow) {
  */
 export function setupAuthEventListeners(mainWindow: BrowserWindow) {
   authManager.on('auth-started', () => {
-    console.log('[Auth Event] Authentication flow started');
+    log.info('[Auth Event] Authentication flow started');
     mainWindow.webContents.send('auth-status', { status: 'started' });
   });
 
   authManager.on('auth-success', (token: AuthToken) => {
-    console.log('[Auth Event] Authentication successful');
-    mainWindow.webContents.send('auth-status', { 
-      status: 'success', 
+    log.info('[Auth Event] Authentication successful');
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    mainWindow.webContents.send('auth-status', {
+      status: 'success',
       token: token.token,
       deviceId: token.deviceId
     });
   });
 
   authManager.on('auth-error', (error: { error: string }) => {
-    console.log('[Auth Event] Authentication error:', error);
+    log.info('[Auth Event] Authentication error:', error);
     mainWindow.webContents.send('auth-status', { 
       status: 'error', 
       error: error.error 
@@ -540,12 +538,12 @@ export function setupAuthEventListeners(mainWindow: BrowserWindow) {
   });
 
   authManager.on('auth-logout', () => {
-    console.log('[Auth Event] User logged out');
+    log.info('[Auth Event] User logged out');
     mainWindow.webContents.send('auth-status', { status: 'logged-out' });
   });
 
   authManager.on('auth-restored', (token: AuthToken) => {
-    console.log('[Auth Event] Authentication restored from disk');
+    log.info('[Auth Event] Authentication restored from disk');
     mainWindow.webContents.send('auth-status', { 
       status: 'restored', 
       token: token.token,
@@ -554,7 +552,7 @@ export function setupAuthEventListeners(mainWindow: BrowserWindow) {
   });
 
   authManager.on('auth-refreshed', (token: AuthToken) => {
-    console.log('[Auth Event] Token refreshed');
+    log.info('[Auth Event] Token refreshed');
     mainWindow.webContents.send('auth-status', { 
       status: 'refreshed', 
       token: token.token 
@@ -612,7 +610,7 @@ class APIClient {
       ...options.headers
     };
 
-    console.log(`[API] ${options.method || 'GET'} ${endpoint}`);
+    log.info(`[API] ${options.method || 'GET'} ${endpoint}`);
 
     const response = await fetch(url, {
       ...options,

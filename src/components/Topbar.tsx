@@ -60,13 +60,13 @@ export function Topbar({
   };
 
   return (
-    <div className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between h-8 bg-card/80 backdrop-blur-md border-b border-border/40 select-none shadow-sm">
+    <div className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between h-8 bg-slate-800/80 backdrop-blur-lg border-b border-purple-500/30 select-none shadow-lg">
       {/* Draggable area */}
       <div 
         className="flex-1 h-full flex items-center px-4 cursor-move"
         style={{ WebkitAppRegion: 'drag' } as any}
       >
-        <span className="text-sm text-foreground/90">
+        <span className="text-sm text-white/90">
           {title}
         </span>
       </div>
@@ -76,22 +76,18 @@ export function Topbar({
         className="flex items-center h-full"
         style={{ WebkitAppRegion: 'no-drag' } as any}
       >
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-8 w-12 rounded-none hover:bg-accent/60 text-foreground/60 hover:text-foreground transition-colors"
+        <button
+          className="h-8 w-12 flex items-center justify-center hover:bg-slate-700/50 text-gray-300 hover:text-white transition-colors"
           onClick={handleMinimize}
         >
           <Minus className="h-4 w-4" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-8 w-12 rounded-none hover:bg-destructive/90 hover:text-destructive-foreground text-foreground/60 transition-colors"
+        </button>
+        <button
+          className="h-8 w-12 flex items-center justify-center hover:bg-red-500/80 hover:text-white text-gray-300 transition-colors"
           onClick={handleClose}
         >
           <X className="h-4 w-4" />
-        </Button>
+        </button>
       </div>
     </div>
   );

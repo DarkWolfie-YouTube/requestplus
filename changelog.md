@@ -1,27 +1,41 @@
-# 🚀 Request+ v2.0.0
+# Changelog
 
---- 
+All notable changes to Request+ will be documented in this file.
+
+---
+
+## [2.0.0] - 2026-03-04
 
 > [!IMPORTANT]
-> I know that Spotify stuff isn't working, the song data for the queue and chat command stuff will be fixed in the next update which will require you make a oAuth application on the developer website. More info about that in the next update.
+> Spotify queue/chat command integration requires a separate OAuth application setup. Full instructions coming in a future update.
 
+### New Features
+- **Request+ Account System** — New OAuth-based authentication via the Request+ client portal. Log in once and your session persists across restarts.
+- **SoundCloud Support** — Experimental SoundCloud playback integration (requires Experimental User access — join the Discord to request it: https://requestplus.xyz/discord).
+- **Experimental User Program** — Early access features for selected users, detected automatically on login.
+- **Overlay System** — Browser-source overlay for OBS/streaming software with customizable styles.
 
+### Improvements
+- Auth callback now correctly notifies the main window after OAuth login completes.
+- Logger initializes before all other subsystems and is no longer created during auth callback processes.
+- WebSocket no longer attempts to reconnect after an intentional logout.
+- Navigation bar hides the Queue tab when platform is set to YouTube.
 
+### Bug Fixes
+- Fixed Cider (Apple Music) not responding in chat properly.
+- Fixed Twitch auth reporting failure when no Kick account was linked.
+- Fixed crash on startup when the update checker ran before the logger was ready.
+- Fixed auth deep link (`requestplus://`) not notifying the main window after login.
+- Fixed WebSocket reconnect loop after pressing Logout.
+- Fixed Kick authentication token handling.
 
+---
 
-# CIDER ISSUES
-  I seen some concern with Cider not working with requests. I have fixed a bug with the code and it shouldn't error out more explained in the Chnages and Fixes.
+## [1.2.3] - Prior Release
 
+- Experimental SoundCloud support (v1)
+- Various stability and playback fixes for Spotify, Apple Music, and YouTube
 
-# Changes and Fixes
-
-- Fixed a bug where Cider (Apple Music) wouldn't respond in chat properly
-- Fixed the Twitch Auth code stating that it failed when not logged into a Kick account.
-- Added a Experimental Check by UserID. You can request this in the discord! https://requestplus.xyz/discord
-- Added Platform Soundcloud, restricted by Experimental Check.
-- Added the soundcloud plugin source code. soundcloud.js
+---
 
 Thanks for choosing Request+ for your song request needs!
-
-
-

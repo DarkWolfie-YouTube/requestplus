@@ -61,12 +61,17 @@ interface SpotifyAlbum {
     href: string;
     id: string;
     images: Array<{ height: number; width: number; url: string }>;
+    cover_group: NewCoverAPIResponse;
     name: string;
     release_date: string;
     release_date_precision: string;
     restrictions?: { reason: string };
     type: string;
     uri: string;
+}
+
+interface NewCoverAPIResponse {
+    image: Array<{ height: number; width: number; file_id: string }>;
 }
 
 interface ClientInfo {
@@ -273,7 +278,7 @@ class WebSocketServer {
 
                     if (parsed.command === "searchResults") {
                         console.log('Search Results:', parsed.data);
-                        this.SearchResults = parsed.data.tracks.items;
+                        this.SearchResults = parsed.data?.tracks?.items;
                         return;
                     }
                     } else if (client && client.type === 'soundcloud') {
@@ -289,7 +294,6 @@ class WebSocketServer {
                                 isLiked: parsed.isLiked,
                                 id: parsed.id
                             };
-                                console.log('Soundcloud track data received:', data);
                             // Add track ID extraction for auto-queue system
                             if (parsed.data) {
                                 // Extract track ID from URI or use existing ID
@@ -340,7 +344,7 @@ class WebSocketServer {
 
                         if (parsed.command === "searchResults") {
                             console.log('Search Results:', parsed.data);
-                            this.SearchResults = parsed.data.tracks.items;
+                            this.SearchResults = parsed.data?.tracks?.items;
                             return;
                         }
                     }

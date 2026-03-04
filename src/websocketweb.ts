@@ -20,6 +20,7 @@ class WebSocketManager extends EventEmitter {
   private pingInterval: NodeJS.Timeout | null = null;
   private token: string | null = null;
   private deviceId: string | null = null;
+  private intentionalDisconnect: boolean = false;
 
   private constructor() {
     super();
@@ -37,20 +38,21 @@ class WebSocketManager extends EventEmitter {
    */
   public async connect(token: string, deviceId: string): Promise<void> {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      console.log('[WebSocket] Already connected');
+      (global as any).Logger.info('[WebSocket] Already connected');
       return;
     }
 
     this.token = token;
     this.deviceId = deviceId;
+    this.intentionalDisconnect = false;
 
     return new Promise((resolve, reject) => {
-      console.log('[WebSocket] Connecting to:', WS_URL);
+      (global as any).Logger.info('[WebSocket] Connecting to:', WS_URL);
 
       this.ws = new WebSocket(WS_URL);
 
       this.ws.on('open', () => {
-        console.log('[WebSocket] Connected');
+        (global as any).Logger.info('[WebSocket] Connected');
         this.reconnectAttempts = 0;
         this.reconnectDelay = 1000;
         
@@ -68,21 +70,23 @@ class WebSocketManager extends EventEmitter {
       });
 
       this.ws.on('close', (code, reason) => {
-        console.log('[WebSocket] Disconnected:', code, reason.toString());
+        (global as any).Logger.info('[WebSocket] Disconnected:', code, reason.toString());
         this.isAuth = false;
         this.stopPingInterval();
         this.emit('disconnected', { code, reason: reason.toString() });
         
-        // Attempt to reconnect
-        if (this.reconnectAttempts < this.maxReconnectAttempts) {
+        // Attempt to reconnect (skip if intentionally disconnected)
+        if (!this.intentionalDisconnect && this.reconnectAttempts < this.maxReconnectAttempts) {
           this.scheduleReconnect();
+        } else if (!this.intentionalDisconnect) {
+          (global as any).Logger.error('[WebSocket] Max reconnection attempts reached');
+          if (reject) reject(new Error('Max reconnection attempts reached'));
         }
       });
 
       this.ws.on('error', (error) => {
-        console.error('[WebSocket] Error:', error);
+        (global as any).Logger.error('[WebSocket] Error:', error);
         this.emit('error', error);
-        reject(error);
       });
 
       // Timeout if connection takes too long
@@ -104,7 +108,7 @@ class WebSocketManager extends EventEmitter {
       return;
     }
 
-    console.log('[WebSocket] Authenticating with device ID:', this.deviceId);
+    (global as any).Logger.info('[WebSocket] Authenticating with device ID:', this.deviceId);
 
     this.send({
       type: 'auth_desktop',
@@ -121,23 +125,29 @@ class WebSocketManager extends EventEmitter {
     resolve?: () => void,
     reject?: (error: Error) => void
   ) {
-    console.log('[WebSocket] Received message:', message.type);
 
     switch (message.type) {
       case 'connected':
-        console.log('[WebSocket] Server says connected');
+        (global as any).Logger.info('[WebSocket] Server says connected');
         break;
 
       case 'auth_success':
-        console.log('[WebSocket] Authentication successful');
+        (global as any).Logger.info('[WebSocket] Authentication successful');
         this.isAuth = true;
         this.startPingInterval();
         this.emit('authenticated', message);
+        try {
+          this.send({ type: 'chat_listen' });
+          (global as any).Logger.info('[WebSocket] Sent chat_listen request');
+        } catch (error) {
+          (global as any).Logger.error('[WebSocket] Error sending chat_listen:', error);
+        }
+        
         if (resolve) resolve();
         break;
 
       case 'auth_error':
-        console.error('[WebSocket] Authentication failed:', message.error);
+        (global as any).Logger.error('[WebSocket] Authentication failed:', message.error);
         this.isAuth = false;
         this.emit('auth-error', message);
         if (reject) reject(new Error(message.error));
@@ -175,6 +185,10 @@ class WebSocketManager extends EventEmitter {
         this.emit('server-error', message);
         break;
 
+      case 'song_request':
+        this.emit('song-request', message);
+        break;
+
       default:
         console.warn('[WebSocket] Unknown message type:', message.type);
         this.emit('message', message);
@@ -195,7 +209,7 @@ class WebSocketManager extends EventEmitter {
       throw new Error('WebSocket not authenticated');
     }
 
-    console.log('[WebSocket] Sending message:', data.type);
+    (global as any).Logger.info('[WebSocket] Sending message:', data.type);
     this.ws.send(JSON.stringify(data));
   }
 
@@ -223,6 +237,7 @@ class WebSocketManager extends EventEmitter {
    * Disconnect from WebSocket
    */
   public disconnect() {
+    this.intentionalDisconnect = true;
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
@@ -238,7 +253,7 @@ class WebSocketManager extends EventEmitter {
     this.isAuth = false;
     this.token = null;
     this.deviceId = null;
-    console.log('[WebSocket] Disconnected');
+    (global as any).Logger.info('[WebSocket] Disconnected');
   }
 
   /**
@@ -264,14 +279,14 @@ class WebSocketManager extends EventEmitter {
     }
 
     this.reconnectAttempts++;
-    console.log(
+    (global as any).Logger.info(
       `[WebSocket] Reconnecting in ${this.reconnectDelay}ms... (attempt ${this.reconnectAttempts})`
     );
 
     this.reconnectTimer = setTimeout(() => {
       if (this.token && this.deviceId) {
         this.connect(this.token, this.deviceId).catch((error) => {
-          console.error('[WebSocket] Reconnection failed:', error);
+          (global as any).Logger.error('[WebSocket] Reconnection failed:', error);
         });
       }
     }, this.reconnectDelay);

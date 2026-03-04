@@ -31,6 +31,7 @@ interface ElectronAPI {
   twitchLogout: () => Promise<void>;
   authSuccess: (callback: (user: any) => void) => void;
   authCheck: (callback: (isAuthenticated: boolean) => void) => void;
+  authChecker: () => Promise<void>;
 
   fetchUserData: () => Promise<any>;
 
@@ -144,6 +145,7 @@ const electronAPI: ElectronAPI = {
   authCheck: (callback) => {
     ipcRenderer.on('auth-check', (_, data) => callback(data));
   },
+  authChecker: () => ipcRenderer.invoke('auth-checker'),
 
   fetchUserData: () => ipcRenderer.invoke('fetch-user-data'),
 

@@ -16,6 +16,7 @@ interface QueuePageProps {
   onTrackSelect?: (track: QueueItem) => void;
 }
 
+
 export function QueuePage({ 
   queue,
   setQueue,
@@ -94,176 +95,190 @@ export function QueuePage({
   };
 
   const playTrack = (track: QueueItem, index: number) => {
-    const api = (window as any).api;
-    if (api && api.playTrackAtIndex) {
-      try {
-        api.playTrackAtIndex(index);
-        setTimeout(() => api.skip?.(), 300);
-        setTimeout(() => toast.success(`Now playing: ${track.title}`), 300);
-      } catch (error) {
-        console.error('Error playing track:', error);
-        toast.error('Failed to play track');
+    if (onTrackSelect) {
+      onTrackSelect(track);
+      toast.success(`Now playing: ${track.title}`);
+    } else {
+      const api = (window as any).api;
+      if (api && api.playTrackAtIndex) {
+        try {
+          api.playTrackAtIndex(index);
+          toast.success(`Now playing: ${track.title}`);
+        } catch (error) {
+          console.error('Error playing track:', error);
+          toast.error('Failed to play track');
+        }
+      } else if (api && api.playTrack) {
+        try {
+          api.playTrack(track);
+          toast.success(`Now playing: ${track.title}`);
+        } catch (error) {
+          console.error('Error playing track:', error);
+          toast.error('Failed to play track');
+        }
       }
-    } else if (api && api.playTrack) {
-      try {
-        api.playTrack(track);
-        toast.success(`Now playing: ${track.title}`);
-      } catch (error) {
-        console.error('Error playing track:', error);
-        toast.error('Failed to play track');
-      }
-      
     }
   };
 
   return (
-    <div className="h-full bg-background p-9 flex flex-col">
-      <div className="max-w-md mx-auto w-full flex flex-col flex-1 gap-4 animate-scale-in">
-        {/* Header */}
-        <div className="text-center space-y-2">
-          <h1 className="text-2xl font-medium">Queue</h1>
-          <p className="text-muted-foreground">
-            {queue.items.length === 0 ? 'No' : queue.items.length} {queue.items.length === 1 ? 'song' : 'songs'} in queue
-          </p>
-        </div>
+    <div className="relative w-full h-full bg-gradient-to-br from-slate-900 via-purple-900/20 to-slate-900 overflow-hidden">
+      {/* Animated Background Blobs */}
+      <div className="absolute inset-0 opacity-30">
+        <div className="absolute top-0 -left-4 w-72 h-72 bg-purple-500 rounded-full mix-blend-multiply filter blur-xl animate-blob"></div>
+        <div className="absolute top-0 -right-4 w-72 h-72 bg-green-500 rounded-full mix-blend-multiply filter blur-xl animate-blob animation-delay-2000"></div>
+        <div className="absolute -bottom-8 left-20 w-72 h-72 bg-blue-500 rounded-full mix-blend-multiply filter blur-xl animate-blob animation-delay-4000"></div>
+      </div>
 
-        {/* Queue List */}
-        <Card className={`p-4 flex flex-col min-h-0 animate-scale-in `}>
-          {queue.items.length === 0 ? (
-            <div className="text-center py-12 space-y-3">
-              <Music className="h-12 w-12 text-muted-foreground mx-auto" />
+      {/* Content */}
+      <div className="relative h-full px-8 flex flex-col overflow-hidden" style={{ paddingTop: '40px', paddingBottom: '70px' }}>
+        <div className="max-w-md mx-auto w-full flex flex-col flex-1 gap-4">
+          {/* Header */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="bg-gradient-to-r from-purple-500 to-green-500 p-3 rounded-xl">
+                <Music className="size-6 text-white" />
+              </div>
               <div>
-                <h3 className="font-medium">No songs in queue</h3>
-                <p className="text-sm text-muted-foreground">
-                  Songs will appear here when they're requested
+                <h3 className="text-white font-bold text-lg">Queue</h3>
+                <p className="text-purple-300 text-sm">
+                  {queue.items.length === 0 ? 'No' : queue.items.length} {queue.items.length === 1 ? 'song' : 'songs'}
                 </p>
               </div>
             </div>
-          ) : (
-            <ScrollArea className="flex-1">
-              <div className="space-y-2">
-                {queue.items.map((track, index) => (
-                  <div key={track.id}>
-                    <ContextMenu>
-                      <ContextMenuTrigger asChild>
-                        <div 
-                          className={`flex items-center gap-3 p-3 rounded-lg hover:bg-accent/50 cursor-pointer transition-colors ${
-                            track.iscurrentlyPlaying ? 'bg-accent' : ''
-                          }`}
-                          onClick={() => playTrack(track, index)}
-                        >
-                          {/* Album Art */}
-                          <div className="relative">
-                            <ImageWithFallback
-                              src={track.cover}
-                              alt={`${track.title} by ${track.artist}`}
-                              className="w-12 h-12 rounded-md object-cover"
-                            />
-                            {track.iscurrentlyPlaying && (
-                              <div className="absolute inset-0 bg-black/50 rounded-md flex items-center justify-center">
-                                <Play className="h-4 w-4 text-white fill-white" />
-                              </div>
-                            )}
-                          </div>
+          </div>
 
-                          {/* Track Info */}
-                          <div className="flex-1 min-w-0">
-                            <h4 className={`font-medium truncate ${
-                              track.iscurrentlyPlaying ? 'text-primary' : ''
-                            }`}>
-                              {track.title}
-                            </h4>
-                            <p className="text-sm text-muted-foreground truncate">
-                              {track.artist}
-                            </p>
-                            <p className="text-xs text-muted-foreground truncate">
-                              {track.album}
-                            </p>
-                          </div>
-
-                          {/* Duration and Queue Position */}
-                          <div className="text-right">
-                            <p className="text-sm text-muted-foreground">
-                              {formatDuration(track.duration)}
-                            </p>
-                            {track.iscurrentlyPlaying ? (
-                              <p className="text-xs text-primary font-medium">
-                                Now Playing
-                              </p>
-                            ) : track.isQueued ? (
-                              <div className="flex items-center gap-1 justify-end">
-                                <Clock className="h-3 w-3 text-green-500" />
-                                <p className="text-xs text-green-500 font-medium">
-                                  Queued
-                                </p>
-                              </div>
-                            ) : (
-                              <p className="text-xs text-muted-foreground">
-                                #{index + 1}
-                              </p>
-                            )}
-                          </div>
-
-                          {/* More Options */}
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              // This will be handled by the context menu
-                            }}
-                          >
-                            <MoreVertical className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </ContextMenuTrigger>
-                      
-                      <ContextMenuContent>
-                        <ContextMenuItem
-                          onClick={() => playTrack(track, index)}
-                          className="cursor-pointer"
-                        >
-                          <Play className="h-4 w-4 mr-2" />
-                          Play Now
-                        </ContextMenuItem>
-                        <ContextMenuItem
-                          onClick={() => removeFromQueue(track.id)}
-                          className="cursor-pointer text-destructive focus:text-destructive"
-                        >
-                          <Trash2 className="h-4 w-4 mr-2" />
-                          Remove from Queue
-                        </ContextMenuItem>
-                      </ContextMenuContent>
-                    </ContextMenu>
-                    
-                    {index < queue.length - 1 && <Separator className="my-2" />}
-                  </div>
-                ))}
+          {/* Queue List */}
+          <div className="bg-slate-800/40 backdrop-blur-sm border border-purple-500/20 rounded-xl p-4 flex-1 min-h-0 flex flex-col">
+            {queue.items.length === 0 ? (
+              <div className="text-center py-12 space-y-3 flex-1 flex flex-col items-center justify-center">
+                <div className="size-16 bg-gradient-to-br from-purple-500/30 to-green-500/30 rounded-full flex items-center justify-center">
+                  <Music className="h-8 w-8 text-purple-300" />
+                </div>
+                <div>
+                  <h3 className="font-medium text-white">No songs in queue</h3>
+                  <p className="text-sm text-gray-400">
+                    Songs will appear here when they're requested
+                  </p>
+                </div>
               </div>
-            </ScrollArea>
-          )}
-        </Card>
+            ) : (
+              <ScrollArea className="flex-1 -mx-4 px-4">
+                <div className="space-y-2">
+                  {queue.items.map((track, index) => (
+                    <div key={track.id}>
+                      <ContextMenu>
+                        <ContextMenuTrigger asChild>
+                          <div 
+                            className={`flex items-center gap-3 p-3 rounded-lg hover:bg-slate-900/70 cursor-pointer transition-all ${
+                              track.iscurrentlyPlaying ? 'bg-slate-900/50' : 'bg-slate-900/30'
+                            }`}
+                            onClick={() => playTrack(track, index)}
+                          >
+                            {/* Album Art */}
+                            <div className="relative">
+                              <div className="size-12 bg-gradient-to-br from-purple-500/30 to-green-500/30 rounded flex items-center justify-center overflow-hidden">
+                                {track.cover ? (
+                                  <ImageWithFallback
+                                    src={track.cover}
+                                    alt={`${track.title} by ${track.artist}`}
+                                    className="w-full h-full object-cover"
+                                  />
+                                ) : (
+                                  <Music className="size-5 text-purple-300" />
+                                )}
+                              </div>
+                              {track.iscurrentlyPlaying && (
+                                <div className="absolute inset-0 bg-black/50 rounded flex items-center justify-center">
+                                  <Play className="h-4 w-4 text-white fill-white" />
+                                </div>
+                              )}
+                            </div>
 
-        {/* Queue Actions */}
-        {queue.length > 0 && (
-          <Card className="p-4 flex-shrink-0">
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                className="flex-1"
-                onClick={() => {
-                  clearQueue();
-                  toast.success('Queue cleared');
-                }}
-              >
-                <Trash2 className="h-4 w-4 mr-2" />
-                Clear Queue
-              </Button>
-            </div>
-          </Card>
-        )}
+                            {/* Track Info */}
+                            <div className="flex-1 min-w-0">
+                              <h4 className={`font-medium truncate text-sm ${
+                                track.iscurrentlyPlaying ? 'text-purple-300' : 'text-white'
+                              }`}>
+                                {track.title}
+                              </h4>
+                              <p className="text-xs text-gray-400 truncate">
+                                {track.artist}
+                              </p>
+                            </div>
+
+                            {/* Duration and Status */}
+                            <div className="flex items-center gap-2">
+                              {track.iscurrentlyPlaying ? (
+                                <span className="px-2 py-1 rounded text-xs font-medium bg-purple-500/20 text-purple-300">
+                                  Playing
+                                </span>
+                              ) : track.isQueued ? (
+                                <div className="flex items-center gap-1 px-2 py-1 rounded bg-green-500/20">
+                                  <Clock className="h-3 w-3 text-green-400" />
+                                  <span className="text-xs text-green-400 font-medium">
+                                    Queued
+                                  </span>
+                                </div>
+                              ) : null}
+                              <span className="text-gray-400 text-xs">{formatDuration(track.duration)}</span>
+                            </div>
+                          </div>
+                        </ContextMenuTrigger>
+                        
+                        <ContextMenuContent className="bg-slate-800 border-purple-500/30">
+                          <ContextMenuItem
+                            onClick={() => playTrack(track, index)}
+                            className="cursor-pointer text-white hover:bg-purple-500/20"
+                          >
+                            <Play className="h-4 w-4 mr-2" />
+                            Play Now
+                          </ContextMenuItem>
+                          <ContextMenuItem
+                            onClick={() => removeFromQueue(track.id)}
+                            className="cursor-pointer text-red-400 hover:bg-red-500/20 focus:text-red-400"
+                          >
+                            <Trash2 className="h-4 w-4 mr-2" />
+                            Remove from Queue
+                          </ContextMenuItem>
+                        </ContextMenuContent>
+                      </ContextMenu>
+                    </div>
+                  ))}
+                </div>
+              </ScrollArea>
+            )}
+          </div>
+
+          {/* Queue Actions */}
+          {queue.items.length > 0 && (
+            <button
+              onClick={clearQueue}
+              className="bg-slate-700/50 hover:bg-red-500/20 text-red-400 hover:text-red-300 px-4 py-3 rounded-lg transition-all flex items-center justify-center gap-2"
+            >
+              <Trash2 className="h-4 w-4" />
+              Clear Queue
+            </button>
+          )}
+        </div>
       </div>
+
+      <style>{`
+        @keyframes blob {
+          0% { transform: translate(0px, 0px) scale(1); }
+          33% { transform: translate(30px, -50px) scale(1.1); }
+          66% { transform: translate(-20px, 20px) scale(0.9); }
+          100% { transform: translate(0px, 0px) scale(1); }
+        }
+        .animate-blob {
+          animation: blob 7s infinite;
+        }
+        .animation-delay-2000 {
+          animation-delay: 2s;
+        }
+        .animation-delay-4000 {
+          animation-delay: 4s;
+        }
+      `}</style>
     </div>
   );
 }

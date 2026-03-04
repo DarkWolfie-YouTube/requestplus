@@ -138,7 +138,7 @@ class PlaybackHandler {
                 progress: ytSongData.elapsedSeconds * 1000,
                 cover: ytSongData.imageSrc || '',
                 isPlaying: !ytSongData.isPaused,
-                volume: (ytVolume ? ytVolume.state : 0) || 0,
+                volume: (ytVolume ? ytVolume.state / 100 : 0) || 0,
                 shuffle: ytShuffle ?? false,
                 repeat: ytRepeat ? this.convertYouTubeRepeatMode(ytRepeat.mode) : 0,
                 isLiked: ytLiked ?? false
@@ -206,7 +206,6 @@ class PlaybackHandler {
             await new Promise(resolve => setTimeout(resolve, 500));
             
             const spotifyData = this.SpotifyWS.lastSOInfo;
-            console.log('SoundCloud Data:', spotifyData);
             
             if (!spotifyData) {
                 this.logger.warn('No Spotify data available');

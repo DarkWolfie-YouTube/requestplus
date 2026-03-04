@@ -18,7 +18,6 @@ import * as NavigationMenuPrimitive from '@radix-ui/react-navigation-menu';
 import axios, { AxiosInstance } from "axios";
 import QueueHandler, { QueueItem } from "./queueHandler";
 import fetch from "node-fetch";
-import { combineAppliedNumericalValuesIncludingErrorValues } from "recharts/types/state/selectors/axisSelectors";
 
 
 interface AMSongObject {
@@ -122,7 +121,6 @@ interface AMSongAttributePlayParams {
 
 export default class AMHandler {
     private mainWindow: BrowserWindow;
-    private playbackHandler: PlaybackHandler;
     private logger: Logger;
     private settings: Settings;
     private apptoken: string;
@@ -274,28 +272,25 @@ export default class AMHandler {
         this.apptoken = this.settings.appleMusicAppToken;
     }
 
-    public async handleChatRequest(message: string, channel: string, tags: any, client: any, queueHandler: QueueHandler, settings: Settings): Promise<void> {
+    public async handleChatRequest(message: string, queueHandler: QueueHandler, settings: Settings, username: string): Promise<string> {
         //get song requested data
         let songID;
         // if message just = "!sr" then return error
         if (message === "!sr") {
-            client.say(channel, `@${tags.username}, please provide a valid Apple Music song ID or link.`);
-            return;
+            return "ERR_AM_NOLINK";
         } else if (!message.includes("https://music.apple.com/")) {
-            client.say(channel, `@${tags.username}, please provide a valid Apple Music song ID or link.`);
-            return;
+            return "ERR_AM_NOLINK";
         }
-        if (!message.includes("?i=")) {
-            client.say(channel, `@${tags.username}, please provide a valid Apple Music song link that includes the song ID (i=). This is because albums or playlists are not supported for requests.`);
-        }
-        var messageLink = message.match(/https?:\/\/music\.apple\.com\/[a-z]{2}\/album\/[a-z0-9\-\_]+\/[0-9]+\?i=([0-9]+)/);
-        if (messageLink && messageLink[1]) {
-            songID = messageLink[1];
-        } else {
+        var messageLink = message.includes("https://music.apple.com/") ? message.split("?i=")[1] : null;
+        if (messageLink) {
+            songID = messageLink;
+        } else if (message.match('([0-9]+)/')) {
             songID = message;
+        } else {
+            return "ERR_AM_IDENTIFIER_MISSING";
         }
         
-        let songInfo: AMSongObject;
+        let songInfo: AMSongObject | undefined;
         await fetch(`http://localhost:10767/api/v1/amapi/run-v3`, {
             method: 'POST',
             headers: {
@@ -309,30 +304,29 @@ export default class AMHandler {
         })
         .then(response => response.json())
         .then((data: AMAPISongObject) => {
-            songInfo = data.data.data[0];
+            songInfo = data?.data.data[0];
         })
-        console.log(songInfo);
-        console.log(songInfo.attributes);
         if (songInfo) {
-            if (queueHandler) {
+            if (queueHandler && this.settings.autoPlay) {
                 let queueItem: QueueItem = {
-                    id: songID + '-' + tags.username,
+                    id: songID + '-' + username,
                     title: songInfo.attributes.name,
                     artist: songInfo.attributes.artistName,
                     album: songInfo.attributes.albumName,
                     cover: songInfo.attributes.artwork.url.replace('{w}x{h}', `${songInfo.attributes.artwork.width}x${songInfo.attributes.artwork.height}`),
                     duration: songInfo.attributes.durationInMillis,
-                    requestedBy: tags.username,
+                    requestedBy: username,
                     platform: 'apple',
                     iscurrentlyPlaying: false,
                 };
                 await queueHandler.addToQueue(queueItem);
-                client.say(channel, `@${tags.username}, your Apple Music request for "${songInfo.attributes.name}" by ${songInfo.attributes.artistName} has been added to the queue!`);
+                return JSON.stringify({...queueItem, isQueued: true});
             } else {
-                client.say(channel, `@${tags.username}, the request queue is not available at the moment.`);
+                this.queueTrack(songID);
+                return JSON.stringify({ title: songInfo.attributes.name, artist: songInfo.attributes.artistName, isQueued: true });
             }
         } else {
-            client.say(channel, `@${tags.username}, sorry, I couldn't find the requested song on Apple Music.`);
+            return "ERR_AM_SONG_NOT_FOUND";
         }
     }
 

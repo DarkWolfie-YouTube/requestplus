@@ -1,22 +1,22 @@
-import { app, BrowserWindow, ipcMain, dialog, shell, MessageBoxOptions, MessageBoxReturnValue } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, shell, MessageBoxOptions, MessageBoxReturnValue, net, session} from 'electron';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { setTimeout as wait } from 'node:timers/promises';
 import { checkForUpdates } from './updateChecker';
-import QueueHandler, { Queue } from './queueHandler';
+import QueueHandler, { Queue, QueueItem } from './queueHandler';
 import { updateElectronApp } from 'update-electron-app';
-import { 
-  authManager, 
-  setupDeepLinkHandling, 
-  setupAuthEventListeners 
-} from './authmanager';
-import { websocketManager } from './websocketweb';
 
 //Handlers
 import websocket from './websocket';
 import { TrackData } from './websocket';
 
 import logger from './logger';
+import { 
+  authManager, 
+  setupDeepLinkHandling, 
+  setupAuthEventListeners
+} from './authmanager';
+import { websocketManager } from './websocketweb';
 import APIHandler from './apiHandler';
 import SettingsHandler from './settingsHandler';
 import { Settings } from './settingsHandler';
@@ -24,6 +24,7 @@ import { songData, YTManager } from './ytManager';
 import PlaybackHandler, { songInfo } from './playbackHandler';
 import GTSHandler from './gtsHandler';
 import AMHandler from './amhandler';
+import { GalleryThumbnailsIcon } from 'lucide-react';
 
 var handleStartupEvent = function() {
   if (process.platform !== 'win32') {
@@ -55,6 +56,7 @@ var handleStartupEvent = function() {
 
 handleStartupEvent();
 updateElectronApp();
+
 
 // Type definitions
 interface TwitchUser {
@@ -88,17 +90,12 @@ interface UpdateSettings {
     [key: string]: any;
 }
 
-// Constants
-const TWITCH_CLIENT_ID: string = 'if6usvbqj58fwdbycnu6v77jjsluq5';
-const TWITCH_REDIRECT_URI: string = 'http://localhost:444';
-const TWITCH_SCOPES: string[] = ['user:read:email', 'chat:read', 'chat:edit'];
-
 
 // Global variables with proper typing
 let WSServer: websocket;
 let currentSongInformation: songInfo;
 let mainWindow: BrowserWindow | null = null;
-let Logger: logger;
+let Logger: logger = null as any;
 let settings: Settings;
 let overlayPath: string;
 let apiHandler: APIHandler;
@@ -265,6 +262,13 @@ declare const MAIN_WINDOW_VITE_NAME: string;
 
 settingsHandler = new SettingsHandler(app.getPath('userData'));
 
+// Pre-detect auth deep link so ISAUTHING is set before createWindow runs
+if (process.platform === 'win32') {
+    const authArg = process.argv.find(arg => arg.startsWith('requestplus://'));
+    if (authArg) (global as any).ISAUTHING = true;
+}
+
+
 
 
 async function ensureOverlayFile(): Promise<string> {
@@ -303,6 +307,43 @@ async function ensureOverlayFile(): Promise<string> {
 }
 
 async function createWindow(): Promise<void> {
+    
+    const customSession = session.fromPartition('persist:api-session', { cache: false });
+    
+    customSession.setCertificateVerifyProc((request, callback) => {
+        if (request.hostname === 'api.requestplus.xyz') {
+            callback(0); // 0 = success, bypass verification
+        } else {
+            callback(-3); // -3 = use default verification
+        }
+    });
+    const request = net.request({
+        method: 'GET',
+        url: 'https://api.requestplus.xyz/hardware/check?id=' + authManager.getHardwareInfoPublic()?.deviceId,
+        session: customSession
+    });
+
+    request.on('response', (response) => {
+        let body = '';
+        response.on('data', (chunk) => { body += chunk; });
+        response.on('end', () => {
+            try {
+                const data = JSON.parse(body);
+                if (data.banned) app.quit();
+            } catch (e) {
+                if (Logger) Logger.error('Error parsing response:', e);
+                app.quit();
+            }
+        });
+    });
+
+    request.on('error', (error) => {
+        if (Logger) Logger.error('Error checking hardware ban status:', error);
+        app.quit();
+    });
+
+    request.end();
+
     ensureOverlayFile();
 
     mainWindow = new BrowserWindow({
@@ -322,8 +363,8 @@ async function createWindow(): Promise<void> {
         titleBarOverlay: false,
         resizable: false,
         icon: path.join(__dirname, 'assets', 'the_letter.png'),
-   });
-
+    });
+    
     if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
         mainWindow.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL);
         mainWindow.webContents.on('did-finish-load', () => {
@@ -336,18 +377,18 @@ async function createWindow(): Promise<void> {
     //load devtools
     // mainWindow.webContents.openDevTools();
     
-    const userDataPath: string = app.getPath('userData');
-    if (Logger) {
-        Logger.info('Logger initialized');
-    } else {
-        Logger = new logger();
-        Logger.info('Logger initialized');
+    if (!(global as any).ISAUTHING) {
+        await checkForUpdates(mainWindow, Logger);
     }
+
+    // Setup auth event listeners BEFORE deep link handling so events aren't missed
+    setupAuthEventListeners(mainWindow);
+    setupDeepLinkHandling(mainWindow);
     queueHandler = new QueueHandler(Logger, mainWindow, settings);
     settings = await settingsHandler.load();
 
         
-    if (!WSServer) {
+    if (!WSServer && !(global as any).ISAUTHING) {
         WSServer = new websocket(443, mainWindow, Logger);
     }
     
@@ -359,11 +400,6 @@ async function createWindow(): Promise<void> {
         amHandler = new AMHandler(mainWindow, Logger, settings);
     }
 
-    await checkForUpdates(mainWindow, Logger);
-    setupDeepLinkHandling(mainWindow);
-
-    // Setup auth event listeners
-    setupAuthEventListeners(mainWindow);
     
     if (!playbackHandler) {
         playbackHandler = new PlaybackHandler(settings.platform, WSServer, Logger, ytManager, amHandler);
@@ -377,7 +413,7 @@ async function createWindow(): Promise<void> {
       websocketManager.connect(token.token, hardwareInfo.deviceId);
     }
   }
-  if (!apiHandler) {
+  if (!apiHandler && !(global as any).ISAUTHING) {
         apiHandler = new APIHandler(mainWindow, playbackHandler, Logger, settings);
     }
     
@@ -575,7 +611,10 @@ ipcMain.handle('song-repeat', async (): Promise<void> => {
 });
 
 // Twitch Auth Handlers
-
+ipcMain.handle('logout', async (): Promise<void> => {
+    authManager.logout();
+    websocketManager.disconnect();
+})
 
 ipcMain.handle('get-overlay-path', (): string | null => {
     return overlayPath;
@@ -595,7 +634,13 @@ ipcMain.handle('set-pre-release-check', (event: Electron.IpcMainInvokeEvent, ena
     setPreReleaseCheck(enabled);
 });
 
-app.whenReady().then(createWindow);
+app.whenReady().then(async () => {
+    if (!(global as any).ISAUTHING) {
+        Logger = new logger();
+        (global as any).Logger = Logger;
+    }
+    await createWindow();
+});
 
 app.on('window-all-closed', (): void => {
     app.quit();
@@ -647,11 +692,16 @@ ipcMain.handle('auth:getStatus', async () => {
 });
 
 ipcMain.handle('fetch-user-data', async () => {
-    const userData = await authManager.fetchUserData();
-    return {
-        display_name: userData?.user.displayName || null,
-        profile_image_url: userData?.user.photoURL || null,
-        email: userData?.user.email || null
+    if (!authManager.isAuthenticated()) return null;
+    try {
+        const userData = await authManager.fetchUserData();
+        return {
+            display_name: userData?.user.displayName || null,
+            profile_image_url: userData?.user.photoURL || null,
+            email: userData?.user.email || null
+        };
+    } catch {
+        return null;
     }
 });
 
@@ -741,8 +791,7 @@ ipcMain.handle('searchTest', async (): Promise<void> => {
 app.whenReady().then(async () => {
     await wait(4000);
     const isExperimentalUser = await authManager.checkExperimentalUser();
-    global.IsExperimentalUser = isExperimentalUser;
-    console.log('Is experimental user:', global.IsExperimentalUser);
+    (global as any).IsExperimentalUser = isExperimentalUser;
 
     if (isExperimentalUser == true) {
         mainWindow?.webContents.send('experimental-user-status', isExperimentalUser);
@@ -755,14 +804,37 @@ app.whenReady().then(async () => {
 }
 );
 
+ipcMain.handle('auth-checker', async () => {
+    const isAuthenticated = authManager.isAuthenticated();
+    const userData = await authManager.fetchUserData();
+    mainWindow?.webContents.send('auth-success', userData);
+})
 
 
-authManager.on('auth-success', (token) => {
-  console.log('[Main] Auth success, connecting WebSocket...');
+
+authManager.on('auth-success', async (token) => {
+  (global as any).Logger.info('[Main] Auth success, connecting WebSocket...');
   const hardwareInfo = authManager.getHardwareInfoPublic();
   if (hardwareInfo) {
     websocketManager.connect(token.token, hardwareInfo.deviceId);
   }
+  const isExperimentalUser = await authManager.checkExperimentalUser();
+    (global as any).IsExperimentalUser = isExperimentalUser;
+
+    if (isExperimentalUser == true) {
+        mainWindow?.webContents.send('experimental-user-status', isExperimentalUser);
+        mainWindow?.webContents.send('show-toast', {
+            message: 'You are an experimental user! Enjoy early access to new features.',
+            type: 'success',
+            duration: 5000
+        })
+    }
+
+  // Notify renderer — send both signals so either listener catches it
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('auth-check', true);
+  }
+
 });
 
 authManager.on('auth-refreshed', (token) => {
@@ -780,3 +852,73 @@ authManager.on('auth-logout', () => {
 });
 
 
+websocketManager.on('song-request', (message) => {
+    console.log('[Main] Song request:', message)
+  if (settings.platform === 'apple') {
+      amHandler.handleChatRequest(message.message, queueHandler, settings, message.username).then((response) => {
+          if (response === 'ERR_AM_NOLINK') {
+              websocketManager.send({ type: 'song_request_response', message: 'ERR_AM_NOLINK', username: message.username, msgID: message.messageId, platform: message.platform, channel: message.channel });
+          } else if (response === 'ERR_AM_IDENTIFIER_MISSING') {
+              websocketManager.send({ type: 'song_request_response', message: 'ERR_AM_IDENTIFIER_MISSING', username: message.username, msgID: message.messageId, platform: message.platform, channel: message.channel });
+          } else if (response === 'ERR_AM_SONG_NOT_FOUND') { 
+              websocketManager.send({ type: 'song_request_response', message: 'ERR_AM_SONG_NOT_FOUND', username: message.username, msgID: message.messageId, platform: message.platform, channel: message.channel });
+          } else if (JSON.parse(response).isQueued) {
+            const queueObject = JSON.parse(response);
+            console.log(queueObject);
+            websocketManager.send({ type: 'song_request_response', message: 'OKAY_AM_QUEUED', username: message.username, songName: queueObject.title, artist: queueObject.artist, msgID: message.messageId, platform: message.platform, channel: message.channel });
+          }
+      })
+  } else if (settings.platform === 'spotify') {
+    console.log('Handling Spotify song request...');
+    let songID = '';
+    if (message.message.includes('spotify:track:')) {
+        songID = message.message.split('spotify:track:')[1].split(' ')[0];
+    } else if (message.message.includes('open.spotify.com/track/')) {
+        songID = message.message.split('open.spotify.com/track/')[1].split('?')[0].split(' ')[0];
+    } else {
+        websocketManager.send({ type: 'song_request_response', message: 'ERR_SP_IDENTIFIER_MISSING', username: message.username, msgID: message.messageId, platform: message.platform, channel: message.channel });
+        return;
+    }
+    console.log('Extracted song ID:', songID);
+
+    if (settings.autoPlay) {
+        WSServer.WSSendToType({ command: 'getInfo', data: { uri: 'spotify:track:' + songID } } as WSCommand, 'spotify');
+         setTimeout(() => {
+            const songInfo = WSServer.lastReq;
+            if (songInfo) {
+                const queueItem: QueueItem = {
+                    id: songID + '-' + message.username,
+                    title: songInfo.name,
+                    artist: songInfo.artist.map((artist: any) => artist.name).join(', '),
+                    requestedBy: message.username,
+                    album: songInfo.album?.name || 'Unknown Album',
+                    duration: songInfo.duration,
+                    progress: 0,
+                    cover: 'https://i.scdn.co/image/' + (songInfo.album?.cover_group.image[0]?.file_id || ''),
+                    platform: 'spotify',
+                    iscurrentlyPlaying: false,
+                };
+                queueHandler.addToQueue(queueItem);
+                websocketManager.send({ type: 'song_request_response', message: 'OKAY_SP_QUEUED', username: message.username, songName: queueItem.title, artist: queueItem.artist, msgID: message.messageId, platform: message.platform, channel: message.channel });
+            } else {
+                websocketManager.send({ type: 'song_request_response', message: 'ERR_SP_SONG_NOT_FOUND', username: message.username, msgID: message.messageId, platform: message.platform, channel: message.channel });
+                return;
+            }
+        }, 200);
+    } else {
+        WSServer.WSSendToType({ command: 'getInfo', data: { uri: 'spotify:track:' + songID } } as WSCommand, 'spotify');
+         setTimeout(() => {
+            const songInfo = WSServer.lastReq;
+            if (songInfo) {
+                WSServer.WSSendToType({command: 'addTrack', data: { uri: 'spotify:track:' + songID }} as WSCommand, 'spotify');
+                websocketManager.send({ type: 'song_request_response', message: 'OKAY_SP_QUEUED', username: message.username, songName: songInfo.name, artist: songInfo.artist.map((artist: any) => artist.name).join(', '), msgID: message.messageId, platform: message.platform, channel: message.channel });
+            } else {
+                websocketManager.send({ type: 'song_request_response', message: 'ERR_SP_SONG_NOT_FOUND', username: message.username, msgID: message.messageId, platform: message.platform, channel: message.channel });
+                return;
+            }
+        }, 200);
+    }
+  } else if (settings.platform == "youtube"){
+    websocketManager.send({ type: 'song_request_response', message: 'ERR_YT_UNSUPPORTED', username: message.username, msgID: message.messageId, platform: message.platform, channel: message.channel });
+  }
+});

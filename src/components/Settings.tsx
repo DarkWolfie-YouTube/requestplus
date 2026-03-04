@@ -33,6 +33,8 @@ interface SettingsState {
   filterExplicit: boolean;
   telemetryEnabled: boolean;
   gtsEnabled: boolean;
+  subsOnly: boolean;
+  appleMusicAppToken: string;
 }
 
 interface SettingsProps {
@@ -79,7 +81,7 @@ export function Settings({
   ];
   const platformOptions = [
     { value: 'spotify', label: 'Spotify', experimental: false },
-    { value: 'youtube', label: 'YouTube (Pear)', experimental: false },
+    { value: 'youtube', label: 'YouTube (Pear)', experimental: true },
     { value: 'apple', label: 'Apple Music (Cider)', experimental: false },
     { value: 'soundcloud', label: 'SoundCloud (EXPIRMENTAL)', experimental: true }
   ];
@@ -167,225 +169,221 @@ export function Settings({
   };
 
   return (
-    <div className="min-h-screen bg-background p-6">
-      <div className="max-w-md mx-auto space-y-6 animate-fade-in">
-        {/* Header */}
-        <div className="text-center space-y-2 py-4">
-          <h1 className="text-3xl">Settings</h1>
-          <p className="text-muted-foreground text-lg">Configure your Request+ experience</p>
-        </div>
+    <div className="relative w-full h-full bg-gradient-to-br from-slate-900 via-purple-900/20 to-slate-900 overflow-hidden">
+      {/* Animated Background Blobs */}
+      <div className="absolute inset-0 opacity-30">
+        <div className="absolute top-0 -left-4 w-72 h-72 bg-purple-500 rounded-full mix-blend-multiply filter blur-xl animate-blob"></div>
+        <div className="absolute top-0 -right-4 w-72 h-72 bg-green-500 rounded-full mix-blend-multiply filter blur-xl animate-blob animation-delay-2000"></div>
+        <div className="absolute -bottom-8 left-20 w-72 h-72 bg-blue-500 rounded-full mix-blend-multiply filter blur-xl animate-blob animation-delay-4000"></div>
+      </div>
 
-        {/* Twitch Account Section */}
-        <Card className="p-6 space-y-6 shadow-card border-border/50">
-          <div className="space-y-2">
-            <Label className="text-lg">Request+ Account</Label>
-            <p className="text-sm text-muted-foreground/80">
-              Connect your Request+ account to manage requests and overlays
-            </p>
+      {/* Content — pushed down 32px, stops scrolling 61px above the bottom */}
+      <div className="relative h-full overflow-y-auto px-6" style={{ paddingTop: '40px', paddingBottom: '70px' }}>
+        <div className="max-w-md mx-auto space-y-5">
+          {/* Header */}
+          <div className="flex items-center gap-3 mb-2">
+            <div className="bg-gradient-to-r from-purple-500 to-green-500 p-3 rounded-xl">
+              <User className="size-6 text-white" />
+            </div>
+            <div>
+              <h3 className="text-white font-bold text-lg">Settings</h3>
+              <p className="text-purple-300 text-sm">Configure your Request+ experience</p>
+            </div>
           </div>
 
-          {userd ? (
-            <div className="space-y-4">
-              <div className="flex items-center gap-3 p-4 bg-accent/30 rounded-lg">
-                <img 
-                  src={userd.profile_image_url} 
-                  alt="Profile" 
-                  className="w-14 h-14 rounded-full ring-2 ring-primary/50"
-                />
-                <div className="flex-1">
-                  <h4 className="mb-1">{userd.display_name}</h4>
-                  <p className="text-sm text-muted-foreground">{userd.email}</p>
-                  <p className="text-sm text-muted-foreground">Connected</p>
-                </div>
-              </div>
-              <Button variant="outline" onClick={handleTwitchLogout} className="w-full hover-lift">
-                <LogOut className="h-4 w-4 mr-2" />
-                Logout
-              </Button>
-            </div>
-          ) : (
-            <Button onClick={handleTwitchLogin} className="w-full hover-lift">
-              <User className="h-4 w-4 mr-2" />
-              Login
-            </Button>
-          )}
-        </Card>
-
-        {/* OBS Overlay Section */}
-        {overlayPath && (
-          <Card className="p-6 space-y-4 shadow-card border-border/50">
-            <div className="space-y-2">
-              <Label className="text-lg">OBS Overlay URL</Label>
-              <p className="text-sm text-muted-foreground/80">
-                Add this as a Browser Source in OBS
+          {/* Twitch Account Section */}
+          <div className="bg-slate-800/60 backdrop-blur-sm border border-purple-500/30 rounded-xl p-5 space-y-4">
+            <div className="space-y-1">
+              <Label className="text-white">Request+ Account</Label>
+              <p className="text-sm text-gray-400">
+                Connect your Request+ account to manage requests and overlays
               </p>
             </div>
-            
-            <div className="flex gap-2">
-              <Input
-                value={overlayPath}
-                readOnly
-                className="flex-1 bg-input-background border-border/50 font-mono text-sm"
-              />
-              <Button
-                variant="outline"
-                size="icon"
-                onClick={() => copyToClipboard(overlayPath)}
-                className="hover-lift flex-shrink-0"
-              >
-                {copied ? (
-                  <Check className="h-4 w-4 text-green-500" />
-                ) : (
-                  <Copy className="h-4 w-4" />
-                )}
-              </Button>
-            </div>
-          </Card>
-        )}
 
-        {/* Request Management */}
-        <Card className="p-6 space-y-6 shadow-card border-border/50">
-          <div>
-            <h3 className="text-lg">Request Management</h3>
-            <p className="text-sm text-muted-foreground/80">
-              Control how song requests work
-            </p>
-          </div>
-
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="space-y-1">
-                <Label>Enable Requests</Label>
-                <p className="text-sm text-muted-foreground">
-                  Allow viewers to request songs
-                </p>
+            {userd ? (
+              <div className="space-y-3">
+                <div className="flex items-center gap-3 p-3 bg-slate-900/50 rounded-lg">
+                  <img 
+                    src={userd.profile_image_url} 
+                    alt="Profile" 
+                    className="w-12 h-12 rounded-full ring-2 ring-purple-400/50"
+                  />
+                  <div className="flex-1">
+                    <h4 className="text-white font-medium">{userd.display_name}</h4>
+                    <p className="text-sm text-gray-400">{userd.email}</p>
+                    <p className="text-xs text-green-400">Connected</p>
+                  </div>
+                </div>
+                <button onClick={handleTwitchLogout} className="w-full bg-slate-700/50 hover:bg-red-500/20 text-red-400 hover:text-red-300 px-4 py-2 rounded-lg transition-all flex items-center justify-center gap-2">
+                  <LogOut className="h-4 w-4" />
+                  Logout
+                </button>
               </div>
-              <Switch
-                checked={settings.enableRequests}
-                onCheckedChange={(checked) => 
-                  setSettings({...settings, enableRequests: checked})
-                }
-              />
-            </div>
-
-            <Separator />
-
-            <div className="flex items-center justify-between">
-              <div className="space-y-1">
-                <Label>Moderators Only</Label>
-                <p className="text-sm text-muted-foreground">
-                  Only allow mods to request songs
-                </p>
-              </div>
-              <Switch
-                checked={settings.modsOnly}
-                onCheckedChange={(checked) => 
-                  setSettings({...settings, modsOnly: checked})
-                }
-              />
-            </div>
-            
-            <Separator />
-
-            <div className="flex items-center justify-between">
-              <div className="space-y-1">
-                <Label>Subscribers Only</Label>
-                <p className="text-sm text-muted-foreground">
-                  Only allow subscribers and mods to request songs
-                </p>
-              </div>
-              <Switch
-                checked={settings.subsOnly}
-                onCheckedChange={(checked) => 
-                  setSettings({...settings, subsOnly: checked})
-                }
-              />
-            </div>
-
-            <Separator />
-
-            <div className="flex items-center justify-between">
-              <div className="space-y-1">
-                <Label>Guess The song</Label>
-                <p className="text-sm text-muted-foreground">
-                  Allow Chat to earn points based on if they get the song correct before 30 seconds pass.
-                </p>
-              </div>
-              <Switch
-                checked={settings.gtsEnabled}
-                onCheckedChange={(checked) => 
-                  setSettings({...settings, gtsEnabled: checked})
-                }
-              />
-            </div>
-
-            <Separator />
-            { settings.platform !== 'youtube' && (
-            <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="space-y-1">
-                <Label>Moderation Queue</Label>
-                <p className="text-sm text-muted-foreground">
-                  Doesn't auto play the next song as requested songs go to seperate queue, songs stored in this queue are auto played when the current song ends. 
-                </p>
-              </div>
-              <Switch
-                checked={settings.autoPlay || false}
-                onCheckedChange={(checked) => 
-                  setSettings({...settings, autoPlay: checked})
-                }
-              />
-            </div>
-            </div>
+            ) : (
+              <button onClick={handleTwitchLogin} className="w-full bg-gradient-to-r from-purple-600 to-green-600 hover:from-purple-500 hover:to-green-500 text-white px-4 py-2 rounded-lg transition-all flex items-center justify-center gap-2">
+                <User className="h-4 w-4" />
+                Login
+              </button>
             )}
-            <Separator />
-            { settings.platform !== 'youtube' && (
-            <div className="space-y-4">
-            <div className="flex items-center justify-between">
+          </div>
+
+          {/* OBS Overlay Section */}
+          {overlayPath && (
+            <div className="bg-slate-800/60 backdrop-blur-sm border border-purple-500/30 rounded-xl p-5 space-y-3">
               <div className="space-y-1">
-                <Label>Allow Explicit Songs</Label>
-                <p className="text-sm text-muted-foreground">
-                  Allow explicit songs to be played, if this is off explicit songs will be moderated and not added to the queue. (REQUIRES MODERATION QUEUE)
+                <Label className="text-white">OBS Overlay URL</Label>
+                <p className="text-sm text-gray-400">
+                  Add this as a Browser Source in OBS
                 </p>
               </div>
-              <Switch
-                checked={settings.filterExplicit || false}
-                onCheckedChange={(checked) => 
-                  setSettings({...settings, filterExplicit: checked})
-                }
-              />
+              
+              <div className="flex gap-2">
+                <Input
+                  value={overlayPath}
+                  readOnly
+                  className="flex-1 bg-slate-900/50 border-purple-500/30 text-white font-mono text-sm"
+                />
+                <button
+                  onClick={() => copyToClipboard(overlayPath)}
+                  className="bg-slate-700/50 hover:bg-slate-600/50 text-white p-2 rounded-lg transition-all"
+                >
+                  {copied ? (
+                    <Check className="h-4 w-4 text-green-400" />
+                  ) : (
+                    <Copy className="h-4 w-4" />
+                  )}
+                </button>
+              </div>
             </div>
-            
+          )}
+
+          {/* Request Management */}
+          <div className="bg-slate-800/60 backdrop-blur-sm border border-purple-500/30 rounded-xl p-5 space-y-4">
+            <div>
+              <h3 className="text-white font-medium">Request Management</h3>
+              <p className="text-sm text-gray-400">
+                Control how song requests work
+              </p>
             </div>
-            )}
-            
 
-            
+            <div className="space-y-3">
+              <div className="flex items-center justify-between p-3 bg-slate-900/30 rounded-lg">
+                <div className="space-y-0.5">
+                  <Label className="text-white">Enable Requests</Label>
+                  <p className="text-xs text-gray-400">
+                    Allow viewers to request songs
+                  </p>
+                </div>
+                <Switch
+                  checked={settings.enableRequests}
+                  onCheckedChange={(checked) => 
+                    setSettings({...settings, enableRequests: checked})
+                  }
+                />
+              </div>
+
+              <div className="flex items-center justify-between p-3 bg-slate-900/30 rounded-lg">
+                <div className="space-y-0.5">
+                  <Label className="text-white">Moderators Only</Label>
+                  <p className="text-xs text-gray-400">
+                    Only allow mods to request songs
+                  </p>
+                </div>
+                <Switch
+                  checked={settings.modsOnly}
+                  onCheckedChange={(checked) => 
+                    setSettings({...settings, modsOnly: checked})
+                  }
+                />
+              </div>
+              
+              <div className="flex items-center justify-between p-3 bg-slate-900/30 rounded-lg">
+                <div className="space-y-0.5">
+                  <Label className="text-white">Subscribers Only</Label>
+                  <p className="text-xs text-gray-400">
+                    Only allow subscribers and mods to request songs
+                  </p>
+                </div>
+                <Switch
+                  checked={settings.subsOnly}
+                  onCheckedChange={(checked) => 
+                    setSettings({...settings, subsOnly: checked})
+                  }
+                />
+              </div>
+
+              <div className="flex items-center justify-between p-3 bg-slate-900/30 rounded-lg">
+                <div className="space-y-0.5">
+                  <Label className="text-white">Guess The Song</Label>
+                  <p className="text-xs text-gray-400">
+                    Allow Chat to earn points
+                  </p>
+                </div>
+                <Switch
+                  checked={settings.gtsEnabled}
+                  onCheckedChange={(checked) => 
+                    setSettings({...settings, gtsEnabled: checked})
+                  }
+                />
+              </div>
+
+              { settings.platform !== 'youtube' && (
+                <div className="flex items-center justify-between p-3 bg-slate-900/30 rounded-lg">
+                  <div className="space-y-0.5">
+                    <Label className="text-white">Moderation Queue</Label>
+                    <p className="text-xs text-gray-400">
+                      Manual song approval
+                    </p>
+                  </div>
+                  <Switch
+                    checked={settings.autoPlay || false}
+                    onCheckedChange={(checked) => 
+                      setSettings({...settings, autoPlay: checked})
+                    }
+                  />
+                </div>
+              )}
+
+              { settings.platform !== 'youtube' && (
+                <div className="flex items-center justify-between p-3 bg-slate-900/30 rounded-lg">
+                  <div className="space-y-0.5">
+                    <Label className="text-white">Allow Explicit Songs</Label>
+                    <p className="text-xs text-gray-400">
+                      Filter explicit content
+                    </p>
+                  </div>
+                  <Switch
+                    checked={settings.filterExplicit || false}
+                    onCheckedChange={(checked) => 
+                      setSettings({...settings, filterExplicit: checked})
+                    }
+                  />
+                </div>
+              )}
+            </div>
           </div>
-        </Card>
 
-        {/* Overlay Settings */}
-        <Card className="p-6 space-y-6 shadow-card border-border/50">
-          <div>
-            <h3 className="text-lg">Overlay Settings</h3>
-            <p className="text-sm text-muted-foreground/80">
-              Customize the visual appearance
-            </p>
-          </div>
+          {/* Overlay Settings */}
+          <div className="bg-slate-800/60 backdrop-blur-sm border border-purple-500/30 rounded-xl p-5 space-y-4">
+            <div>
+              <h3 className="text-white font-medium">Overlay Settings</h3>
+              <p className="text-sm text-gray-400">
+                Customize the visual appearance
+              </p>
+            </div>
 
-          <div className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="theme">Theme</Label>
+              <Label className="text-white" htmlFor="theme">Theme</Label>
               <Select
                 value={settings.theme}
                 onValueChange={(value) => setSettings({...settings, theme: value})}
               >
-                <SelectTrigger>
+                <SelectTrigger className="bg-slate-900/50 border-purple-500/30 text-white">
                   <SelectValue placeholder="Select a theme" />
                 </SelectTrigger>
-                <SelectContent position="item-center" align="center" sideOffset={4} sticky="always" side="bottom">
+                <SelectContent position="item-center" align="center" sideOffset={4} sticky="always" side="bottom" className="bg-slate-800 border-purple-500/30">
                   {themeOptions.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
+                    <SelectItem key={option.value} value={option.value} className="text-white hover:bg-purple-500/20">
                       {option.label}
                     </SelectItem>
                   ))}
@@ -393,176 +391,190 @@ export function Settings({
               </Select>
             </div>
           </div>
-        </Card>
 
-       {/* Platform Settings */}
-        <Card className="p-6 space-y-6 shadow-card border-border/50">
-          <div>
-            <h3 className="text-lg">Platform Settings</h3>
-            <p className="text-sm text-muted-foreground/80">
-              Customize the platform-specific behavior
-            </p>
-          </div>
+         {/* Platform Settings */}
+          <div className="bg-slate-800/60 backdrop-blur-sm border border-purple-500/30 rounded-xl p-5 space-y-4">
+            <div>
+              <h3 className="text-white font-medium">Platform Settings</h3>
+              <p className="text-sm text-gray-400">
+                Customize the platform-specific behavior
+              </p>
+            </div>
 
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="platform">Main Platform</Label>
-              <Select
-                value={settings.platform}
-                onValueChange={(value) => setSettings({...settings, platform: value})}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select a platform" />
-                </SelectTrigger>
-                <SelectContent position="item-center">
-                  {expermintalFeatureEnabled ? (
-                    platformOptions.map((option) => (
-                      <SelectItem key={option.value} value={option.value}>
-                        {option.label}
-                      </SelectItem>
-                    ))
-                  ) : (
-                    platformOptions
-                      .filter((option) => option.experimental === false)
-                      .map((option) => (
-                        <SelectItem key={option.value} value={option.value}>
+            <div className="space-y-3">
+              <div className="space-y-2">
+                <Label className="text-white" htmlFor="platform">Main Platform</Label>
+                <Select
+                  value={settings.platform}
+                  onValueChange={(value) => setSettings({...settings, platform: value})}
+                >
+                  <SelectTrigger className="bg-slate-900/50 border-purple-500/30 text-white">
+                    <SelectValue placeholder="Select a platform" />
+                  </SelectTrigger>
+                  <SelectContent position="item-center" className="bg-slate-800 border-purple-500/30">
+                    {expermintalFeatureEnabled ? (
+                      platformOptions.map((option) => (
+                        <SelectItem key={option.value} value={option.value} className="text-white hover:bg-purple-500/20">
                           {option.label}
                         </SelectItem>
                       ))
-                  )}
-                </SelectContent>
-              </Select>
+                    ) : (
+                      platformOptions
+                        .filter((option) => option.experimental === false)
+                        .map((option) => (
+                          <SelectItem key={option.value} value={option.value} className="text-white hover:bg-purple-500/20">
+                            {option.label}
+                          </SelectItem>
+                        ))
+                    )}
+                  </SelectContent>
+                </Select>
               </div>
-            <div className="space-y-2">
-              <Separator />
-            </div>
               { settings.platform === 'apple' && (
                 <div className="space-y-2">
-                <Label htmlFor="appleMusicToken">Cider API Token</Label>
-                <Input
-                  id="appleMusicToken"
-                  type="text"
-                  placeholder="Enter your Apple Music API Token"
-                  value={settings.appleMusicAppToken || ''}
-                  onChange={(e) => 
-                    setSettings({...settings, appleMusicAppToken: e.target.value})
-                  }
-                />
+                  <Label className="text-white" htmlFor="appleMusicToken">Cider API Token</Label>
+                  <Input
+                    id="appleMusicToken"
+                    type="text"
+                    placeholder="Enter your Apple Music API Token"
+                    value={settings.appleMusicAppToken || ''}
+                    onChange={(e) => 
+                      setSettings({...settings, appleMusicAppToken: e.target.value})
+                    }
+                    className="bg-slate-900/50 border-purple-500/30 text-white placeholder:text-gray-500"
+                  />
                 </div>
               )}
-          </div>
-        </Card>
-
-        {/* Notification Settings */}
-        <Card className="p-6 space-y-6 shadow-card border-border/50">
-          <div>
-            <h3 className="text-lg">Notifications</h3>
-            <p className="text-sm text-muted-foreground/80">
-              Manage how you receive updates
-            </p>
+            </div>
           </div>
 
-          <div className="flex items-center justify-between">
-            <div className="space-y-1">
-              <Label>New request notifications</Label>
-              <p className="text-sm text-muted-foreground">
-                Get notified when someone requests a song via a toast.
+          {/* Notification Settings */}
+          <div className="bg-slate-800/60 backdrop-blur-sm border border-purple-500/30 rounded-xl p-5 space-y-4">
+            <div>
+              <h3 className="text-white font-medium">Notifications</h3>
+              <p className="text-sm text-gray-400">
+                Manage how you receive updates
               </p>
             </div>
-            <Switch
-              checked={settings.showNotifications}
-              onCheckedChange={(checked) => 
-                setSettings({...settings, showNotifications: checked})
-              }
-            />
-          </div>
-        </Card>
 
-        {/* Privacy Settings */}
-        <Card className="p-6 space-y-6 shadow-card border-border/50">
-          <div>
-            <h3 className="text-lg">Privacy</h3>
-            <p className="text-sm text-muted-foreground/80">
-              Control what data is shared
-            </p>
-          </div>
-
-          <div className="flex items-center justify-between">
-            <div className="space-y-1">
-              <Label>Telemetry Data</Label>
-              <p className="text-sm text-muted-foreground">
-                Help improve Request+ by sharing anonymous usage data | Requires a restart to take effect.
-              </p>
-            </div>
-            <Switch
-              checked={settings.telemetryEnabled || false}
-              onCheckedChange={(checked) => 
-                setSettings({...settings, telemetryEnabled: checked})
-              }
-            />
-          </div>
-        </Card>
-
-        {/* Updates Section */}
-        <Card className="p-6 space-y-6 shadow-card border-border/50">
-          <div>
-            <h3 className="text-lg">Updates</h3>
-            <p className="text-sm text-muted-foreground/80">
-              Manage application updates
-            </p>
-          </div>
-
-          <div className="space-y-4">
-            <div className="flex items-center space-x-2">
-              <Checkbox
-                id="preReleases"
-                checked={updateSettings.checkPreReleases}
-                onCheckedChange={handlePreReleaseChange}
-              />
-              <div className="grid gap-1.5 leading-none">
-                <Label htmlFor="preReleases" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
-                  Include pre-release versions
-                </Label>
-                <p className="text-xs text-muted-foreground">
-                  Pre-releases may contain experimental features and bugs
+            <div className="flex items-center justify-between p-3 bg-slate-900/30 rounded-lg">
+              <div className="space-y-0.5">
+                <Label className="text-white">New request notifications</Label>
+                <p className="text-xs text-gray-400">
+                  Get notified when someone requests a song
                 </p>
               </div>
+              <Switch
+                checked={settings.showNotifications}
+                onCheckedChange={(checked) => 
+                  setSettings({...settings, showNotifications: checked})
+                }
+              />
+            </div>
+          </div>
+
+          {/* Privacy Settings */}
+          <div className="bg-slate-800/60 backdrop-blur-sm border border-purple-500/30 rounded-xl p-5 space-y-4">
+            <div>
+              <h3 className="text-white font-medium">Privacy</h3>
+              <p className="text-sm text-gray-400">
+                Control what data is shared
+              </p>
             </div>
 
-            <Button onClick={checkForUpdates} variant="outline" className="w-full hover-lift">
-              <RefreshCw className="h-4 w-4 mr-2" />
-              Check for Updates
-            </Button>
+            <div className="flex items-center justify-between p-3 bg-slate-900/30 rounded-lg">
+              <div className="space-y-0.5">
+                <Label className="text-white">Telemetry Data</Label>
+                <p className="text-xs text-gray-400">
+                  Help improve Request+
+                </p>
+              </div>
+              <Switch
+                checked={settings.telemetryEnabled || false}
+                onCheckedChange={(checked) => 
+                  setSettings({...settings, telemetryEnabled: checked})
+                }
+              />
+            </div>
           </div>
-        </Card>
 
-        {/* Save Settings Button */}
-        <Card className="p-6 shadow-card border-border/50">
-          <Button onClick={saveSettings} className="w-full hover-lift shadow-lg hover-glow">
+          {/* Updates Section */}
+          <div className="bg-slate-800/60 backdrop-blur-sm border border-purple-500/30 rounded-xl p-5 space-y-4">
+            <div>
+              <h3 className="text-white font-medium">Updates</h3>
+              <p className="text-sm text-gray-400">
+                Manage application updates
+              </p>
+            </div>
+
+            <div className="space-y-3">
+              <div className="flex items-center space-x-2 p-3 bg-slate-900/30 rounded-lg">
+                <Checkbox
+                  id="preReleases"
+                  checked={updateSettings.checkPreReleases}
+                  onCheckedChange={handlePreReleaseChange}
+                />
+                <div className="grid gap-0.5 leading-none">
+                  <Label htmlFor="preReleases" className="text-sm text-white">
+                    Include pre-release versions
+                  </Label>
+                  <p className="text-xs text-gray-400">
+                    Pre-releases may contain experimental features
+                  </p>
+                </div>
+              </div>
+
+              <button onClick={checkForUpdates} className="w-full bg-slate-700/50 hover:bg-slate-600/50 text-white px-4 py-2 rounded-lg transition-all flex items-center justify-center gap-2">
+                <RefreshCw className="h-4 w-4" />
+                Check for Updates
+              </button>
+            </div>
+          </div>
+
+          {/* Save Settings Button */}
+          <button onClick={saveSettings} className="w-full bg-gradient-to-r from-purple-600 to-green-600 hover:from-purple-500 hover:to-green-500 text-white px-4 py-3 rounded-lg transition-all shadow-lg font-medium">
             Save Settings
-          </Button>
+          </button>
           {settingsSaved && (
-            <p className="text-sm text-green-500 text-center mt-3 animate-fade-in">
+            <p className="text-sm text-green-400 text-center animate-fade-in">
               ✓ Settings saved successfully!
             </p>
           )}
-        </Card>
 
-        {/* About Section */}
-        <Card className="p-6 space-y-4 shadow-card border-border/50">
-          <div>
-            <h3 className="text-lg">About Request+</h3>
-            <p className="text-sm text-muted-foreground/80">
-              Version 2.0.0 • Built for streamers by streamers
-            </p>
+          {/* About Section */}
+          <div className="bg-slate-800/60 backdrop-blur-sm border border-purple-500/30 rounded-xl p-5 space-y-3">
+            <div>
+              <h3 className="text-white font-medium">About Request+</h3>
+              <p className="text-sm text-gray-400">
+                Version 2.0.0 • Built for streamers by streamers
+              </p>
+            </div>
+
+            <button onClick={() => window.open('https://requestplus.xyz', '_blank')} className="w-full bg-slate-700/50 hover:bg-slate-600/50 text-white px-4 py-2 rounded-lg transition-all flex items-center justify-center gap-2">
+              <ExternalLink className="h-4 w-4" />
+              Visit requestplus.xyz
+            </button>
           </div>
-
-          <Button variant="outline" className="w-full hover-lift" onClick={() => window.open('https://requestplus.xyz', '_blank')}>
-            <ExternalLink className="h-4 w-4 mr-2" />
-            Visit requestplus.xyz
-          </Button>
-        </Card>
+        </div>
       </div>
+
+      <style>{`
+        @keyframes blob {
+          0% { transform: translate(0px, 0px) scale(1); }
+          33% { transform: translate(30px, -50px) scale(1.1); }
+          66% { transform: translate(-20px, 20px) scale(0.9); }
+          100% { transform: translate(0px, 0px) scale(1); }
+        }
+        .animate-blob {
+          animation: blob 7s infinite;
+        }
+        .animation-delay-2000 {
+          animation-delay: 2s;
+        }
+        .animation-delay-4000 {
+          animation-delay: 4s;
+        }
+      `}</style>
     </div>
   );
 }

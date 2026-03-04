@@ -6,7 +6,7 @@ module.exports = {
   packagerConfig: {
     asar: true,
     appBundleId: 'com.darkwolfie.requestplus',
-    name: 'requestplus',
+    name: 'Request+',
     icon: 'build/icon', // Electron Forge will automatically append the correct extension (.ico, .icns, etc.)
     // Code signing configuration (Windows)
     ...(process.env.APPX_CERT_PASSWORD && {
