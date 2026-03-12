@@ -1,23 +1,21 @@
 /**
  * @file amhandler.ts
- * @copyright 2025 Quil DayTrack 
- * 
+ * @copyright 2026 Quil DayTrack
+ *
  * @license GPL-v3.0
- * @version 2.0.0
+ * @version 2.0.2
  *
  * @description
  * An Apple Music Handler for Cider enchancing playback and song information retrieval.
- */
-
-import { App } from "electron";
+ * Uses Cider's Socket.io RPC for real-time playback state instead of HTTP polling.
+ */;
 import { Settings } from "./settingsHandler";
 import { BrowserWindow } from "electron";
-import PlaybackHandler, {songInfo} from "./playbackHandler";
 import Logger from "./logger";
-import * as NavigationMenuPrimitive from '@radix-ui/react-navigation-menu';
 import axios, { AxiosInstance } from "axios";
 import QueueHandler, { QueueItem } from "./queueHandler";
 import fetch from "node-fetch";
+import { io, Socket } from "socket.io-client";
 
 
 interface AMSongObject {
@@ -125,6 +123,11 @@ export default class AMHandler {
     private settings: Settings;
     private apptoken: string;
     private axiosInstance: AxiosInstance;
+    private socket: Socket | null = null;
+    private cachedSongInfo: AMCurrentSongObject | null = null;
+    private cachedIsPlaying: boolean = false;
+    private cachedVolume: number = 0;
+    private slowPollInterval: NodeJS.Timeout | null = null;
 
     constructor(mainWindow: BrowserWindow, logger: Logger, settings: Settings) {
         this.mainWindow = mainWindow;
@@ -136,7 +139,137 @@ export default class AMHandler {
             timeout: 10000,
             headers: {
                 'apptoken': this.apptoken,
-                'User-Agent': 'Request+/2.0.0 Release'
+                'User-Agent': 'Request+/2.0.1 Release'
+            }
+        });
+        this.connectWebSocket();
+        this.startSlowPoll();
+    }
+
+    // Fetches slow-changing values (volume, shuffle, repeat) via HTTP every 2500ms
+    private startSlowPoll(): void {
+        if (this.slowPollInterval) clearInterval(this.slowPollInterval);
+        this.slowPollInterval = setInterval(async () => {
+            try {
+                const [volRes, shuffleRes, repeatRes] = await Promise.all([
+                    this.axiosInstance.get<AMVolumeResponse>('/playback/volume'),
+                    this.axiosInstance.get<{ status: string; value: number }>('/playback/shuffle-mode'),
+                    this.axiosInstance.get<{ status: string; value: number }>('/playback/repeat-mode'),
+                ]);
+                this.cachedVolume = volRes.data.volume ?? 0;
+                if (this.cachedSongInfo) {
+                    this.cachedSongInfo.shuffleMode = shuffleRes.data.value ?? 0;
+                    this.cachedSongInfo.repeatMode = repeatRes.data.value ?? 0;
+                }
+            } catch {
+                // Cider not running — silently ignore
+            }
+        }, 2500);
+    }
+
+    private connectWebSocket(): void {
+        if (this.socket) {
+            this.socket.disconnect();
+            this.socket = null;
+        }
+
+        this.socket = io("http://localhost:10767/", {
+            transports: ['websocket']
+        });
+
+        this.socket.on("connect", () => {
+            this.logger.info('[AMHandler] Connected to Cider WebSocket RPC');
+        });
+
+        this.socket.on("disconnect", () => {
+            this.logger.info('[AMHandler] Disconnected from Cider WebSocket, retrying in 5s...');
+            this.cachedIsPlaying = false;
+            setTimeout(() => this.connectWebSocket(), 5000);
+        });
+
+        this.socket.on("API:Playback", ({ data, type }: { data: any; type: string }) => {
+            switch (type) {
+                // Song changed — update full cached song info
+                case "playbackStatus.nowPlayingItemDidChange":
+                    if (data) {
+                        // Preserve playback-state fields not included in this event
+                        const prev = this.cachedSongInfo;
+                        this.cachedSongInfo = {
+                            albumName: data.albumName || '',
+                            artistName: data.artistName || '',
+                            artwork: data.artwork || { url: '', width: 0, height: 0 },
+                            contentRating: data.contentRating || '',
+                            discNumber: data.discNumber || 0,
+                            durationInMillis: data.durationInMillis || 0,
+                            genreNames: data.genreNames || [],
+                            hasLyrics: data.hasLyrics || false,
+                            name: data.name || '',
+                            playParams: data.playParams || { id: '', kind: '' },
+                            releaseDate: data.releaseDate || '',
+                            trackNumber: data.trackNumber || 0,
+                            composerName: data.composerName || '',
+                            isrc: data.isrc || '',
+                            previews: data.previews || [],
+                            currentPlaybackTime: data.currentPlaybackTime ?? 0,
+                            remainingTime: data.remainingTime ?? 0,
+                            // These fields are not emitted in this event — preserve previous values
+                            inFavorites: prev?.inFavorites ?? false,
+                            inLibrary: prev?.inLibrary ?? false,
+                            shuffleMode: prev?.shuffleMode ?? 0,
+                            repeatMode: prev?.repeatMode ?? 0,
+                        };
+                    }
+                    break;
+
+                // Progress tick — update playback time on cached info
+                case "playbackStatus.playbackTimeDidChange":
+                    if (this.cachedSongInfo && data) {
+                        this.cachedSongInfo.currentPlaybackTime = data.currentPlaybackTime ?? this.cachedSongInfo.currentPlaybackTime;
+                        this.cachedSongInfo.remainingTime = data.currentPlaybackTimeRemaining ?? this.cachedSongInfo.remainingTime;
+                        if (data.isPlaying !== undefined) {
+                            this.cachedIsPlaying = data.isPlaying;
+                        }
+                    }
+                    break;
+
+                // Play/pause state changed
+                case "playbackStatus.playbackStateDidChange":
+                    if (data !== null && data !== undefined) {
+                        this.cachedIsPlaying = data.state === 'playing';
+                        // Use attributes as a fallback to seed cachedSongInfo if nowPlayingItemDidChange
+                        // hasn't fired yet (e.g. app just launched while a song is already playing)
+                        const attr = data.attributes;
+                        if (attr && !this.cachedSongInfo) {
+                            this.cachedSongInfo = {
+                                albumName: attr.albumName || '',
+                                artistName: attr.artistName || '',
+                                artwork: attr.artwork || { url: '', width: 0, height: 0 },
+                                contentRating: attr.contentRating || '',
+                                discNumber: attr.discNumber || 0,
+                                durationInMillis: attr.durationInMillis || 0,
+                                genreNames: attr.genreNames || [],
+                                hasLyrics: attr.hasLyrics || false,
+                                name: attr.name || '',
+                                playParams: attr.playParams || { id: '', kind: '' },
+                                releaseDate: attr.releaseDate || '',
+                                trackNumber: attr.trackNumber || 0,
+                                composerName: attr.composerName || '',
+                                isrc: attr.isrc || '',
+                                previews: attr.previews || [],
+                                currentPlaybackTime: attr.currentPlaybackTime ?? 0,
+                                remainingTime: attr.remainingTime ?? 0,
+                                inFavorites: false,
+                                inLibrary: false,
+                                shuffleMode: 0,
+                                repeatMode: 0,
+                            };
+                        } else if (attr && this.cachedSongInfo) {
+                            // Keep time in sync from this event too
+                            this.cachedSongInfo.currentPlaybackTime = attr.currentPlaybackTime ?? this.cachedSongInfo.currentPlaybackTime;
+                            this.cachedSongInfo.remainingTime = attr.remainingTime ?? this.cachedSongInfo.remainingTime;
+                        }
+                    }
+                    break;
             }
         });
     }
@@ -145,7 +278,7 @@ export default class AMHandler {
     //Basic Playback Functions
 
     public async playPause(): Promise<void> {
-        try{ 
+        try{
             await this.axiosInstance.post('/playback/playpause', {}).then(response => {
                 this.logger.info('Toggled play/pause on Apple Music');
             });
@@ -155,11 +288,14 @@ export default class AMHandler {
     }
 
     /**
-     * Retrieves the current song information from Apple Music.
-     * @returns A Promise of an AMSongObject containing the current song information.
-     * @throws An error if the request fails.
+     * Returns the cached song info from the Cider WebSocket RPC.
+     * Falls back to HTTP if no cached data is available yet.
      */
     public async getCurrentSong(): Promise<AMCurrentSongResponse> {
+        if (this.cachedSongInfo) {
+            return { status: 'ok', info: this.cachedSongInfo };
+        }
+        // Fallback to HTTP on first call before WS data arrives
         try {
             const response = await this.axiosInstance.get<AMCurrentSongResponse>('/playback/now-playing');
             return response.data;
@@ -169,28 +305,15 @@ export default class AMHandler {
         }
     }
 
+    /**
+     * Returns the cached playback state from the Cider WebSocket RPC.
+     */
     public async getIsPlayingState(): Promise<AMISPlayingResponse> {
-        try {
-            const response = await this.axiosInstance.get<AMISPlayingResponse>('/playback/is-playing');
-            return response.data;
-        } catch (error) {
-            this.logger.error('Error fetching Apple Music isPlaying state: ' + error);
-            throw error;
-        }       
+        return { status: 'ok', is_playing: this.cachedIsPlaying };
     }
 
     public async getVolume(): Promise<number> {
-        try {
-            const response = await this.axiosInstance.get<AMVolumeResponse>('/playback/volume');
-            if (response.data.volume == 0) {
-                return 0; 
-            }
-
-            return response.data.volume || 0;
-        } catch (error) {
-            this.logger.error('Error fetching Apple Music volume: ' + error);
-            throw error;
-        }
+        return this.cachedVolume;
     }
     public async setVolume(volume: number): Promise<void> {
         try {
@@ -203,10 +326,10 @@ export default class AMHandler {
     }
 
     public async likeSong(): Promise<void> {
-        try{ 
+        try{
             await this.axiosInstance.post('/playback/add-to-library', {}).then(response => {
                 this.logger.info('Liked Apple Music song');
-                if (response.data.status !== 'success') {
+                if (response.data.status !== 'ok') {
                     this.logger.error('Failed to like the song on Apple Music');
                 }
             });
@@ -216,7 +339,7 @@ export default class AMHandler {
     }
 
     public async seekTo(positionMillis: number): Promise<void> {
-        try{ 
+        try{
             await this.axiosInstance.post('/playback/seek', { position: positionMillis }).then(response => {
                 this.logger.info('Seeked Apple Music song to ' + positionMillis + ' milliseconds');
             });
@@ -226,7 +349,7 @@ export default class AMHandler {
     }
 
     public async nextTrack(): Promise<void> {
-        try{ 
+        try{
             await this.axiosInstance.post('/playback/next', {}).then(response => {
                 this.logger.info('Skipped to next Apple Music track');
             });
@@ -236,7 +359,7 @@ export default class AMHandler {
     }
 
     public async previousTrack(): Promise<void> {
-        try{ 
+        try{
             await this.axiosInstance.post('/playback/previous', {}).then(response => {
                 this.logger.info('Skipped to previous Apple Music track');
             });
@@ -246,7 +369,7 @@ export default class AMHandler {
     }
 
     public async setRepeat(): Promise<void> {
-        try{ 
+        try{
             await this.axiosInstance.post('/playback/toggle-repeat', {}).then(response => {
                 this.logger.info('Toggled repeat on Apple Music');
             });
@@ -257,7 +380,7 @@ export default class AMHandler {
 
 
     public async setShuffle(): Promise<void> {
-        try{ 
+        try{
             await this.axiosInstance.post('/playback/toggle-shuffle', {}).then(response => {
                 this.logger.info('Toggled shuffle on Apple Music');
             });
@@ -274,37 +397,58 @@ export default class AMHandler {
 
     public async handleChatRequest(message: string, queueHandler: QueueHandler, settings: Settings, username: string): Promise<string> {
         //get song requested data
-        let songID;
+        let songID: string | undefined = undefined;
         // if message just = "!sr" then return error
         if (message === "!sr") {
             return "ERR_AM_NOLINK";
-        } else if (!message.includes("https://music.apple.com/")) {
+        }
+
+        // Try ?i= param first (album link with embedded song ID)
+        if (message.includes("https://music.apple.com/") && message.includes("?i=")) {
+            const iParam = message.split("?i=")[1]?.split("&")[0]?.split(" ")[0];
+            if (iParam && /^[0-9]+$/.test(iParam)) {
+                songID = iParam;
+            }
+        }
+
+        // Try combined album/song URL regex
+        if (!songID) {
+            const amMatch = message.match(/https?:\/\/music\.apple\.com\/[a-z]{2}\/(?:album|song)\/[a-z0-9\-\_]+\/([0-9]+)/i);
+            if (amMatch) {
+                songID = amMatch[1];
+            }
+        }
+
+        // Try song.link short URL
+        if (!songID) {
+            const songLinkMatch = message.match(/https?:\/\/song\.link\/i\/([0-9]+)/);
+            if (songLinkMatch) {
+                songID = songLinkMatch[1];
+            }
+        }
+
+        if (!songID) {
             return "ERR_AM_NOLINK";
         }
-        var messageLink = message.includes("https://music.apple.com/") ? message.split("?i=")[1] : null;
-        if (messageLink) {
-            songID = messageLink;
-        } else if (message.match('([0-9]+)/')) {
-            songID = message;
-        } else {
-            return "ERR_AM_IDENTIFIER_MISSING";
-        }
-        
+
+
         let songInfo: AMSongObject | undefined;
         await fetch(`http://localhost:10767/api/v1/amapi/run-v3`, {
             method: 'POST',
             headers: {
                 'apptoken': this.apptoken,
                 'Content-Type': 'application/json',
-                'User-Agent': 'Request+/2.0.0 Release'
+                'User-Agent': 'Request+/2.0.1 Release'
             },
             body: JSON.stringify({
                 "path": "/v1/catalog/us/songs/" + songID,
             })
         })
         .then(response => response.json())
-        .then((data: AMAPISongObject) => {
-            songInfo = data?.data.data[0];
+        .then((data: unknown) => {
+            if ((data as AMAPISongObject)?.data?.data?.[0]) {
+                songInfo = (data as AMAPISongObject).data.data[0];
+            }
         })
         if (songInfo) {
             if (queueHandler && this.settings.autoPlay) {
@@ -328,17 +472,18 @@ export default class AMHandler {
         } else {
             return "ERR_AM_SONG_NOT_FOUND";
         }
+
     }
 
     public async queueTrack(songID: string): Promise<void> {
-        try{ 
+        try{
             console.log(`Queueing Apple Music track with ID: ${songID}`);
             await fetch(`http://localhost:10767/api/v1/playback/play-next`, {
                 method: 'POST',
                 headers: {
                     'apptoken': this.apptoken,
                     'Content-Type': 'application/json',
-                    'User-Agent': 'Request+/2.0.0 Release'
+                    'User-Agent': 'Request+/2.0.1 Release'
                 },
                 body: JSON.stringify({
                     "type": "songs",

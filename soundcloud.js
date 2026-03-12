@@ -213,7 +213,7 @@
             ws.send(JSON.stringify({ 
               command: "identify", 
               type: "soundcloud", 
-              version: "2.0.0" 
+              version: "2.0.1" 
             }));
             console.log("RequestPlus|Identified to server");
             return; // Don't process as a command

@@ -81,8 +81,8 @@ export function Settings({
   ];
   const platformOptions = [
     { value: 'spotify', label: 'Spotify', experimental: false },
-    { value: 'youtube', label: 'YouTube (Pear)', experimental: true },
     { value: 'apple', label: 'Apple Music (Cider)', experimental: false },
+    { value: 'youtube', label: 'YouTube (Pear)', experimental: true },
     { value: 'soundcloud', label: 'SoundCloud (EXPIRMENTAL)', experimental: true }
   ];
 
@@ -312,7 +312,7 @@ export function Settings({
                 />
               </div>
 
-              <div className="flex items-center justify-between p-3 bg-slate-900/30 rounded-lg">
+              {/* <div className="flex items-center justify-between p-3 bg-slate-900/30 rounded-lg">
                 <div className="space-y-0.5">
                   <Label className="text-white">Guess The Song</Label>
                   <p className="text-xs text-gray-400">
@@ -325,7 +325,7 @@ export function Settings({
                     setSettings({...settings, gtsEnabled: checked})
                   }
                 />
-              </div>
+              </div> */}
 
               { settings.platform !== 'youtube' && (
                 <div className="flex items-center justify-between p-3 bg-slate-900/30 rounded-lg">
@@ -344,7 +344,7 @@ export function Settings({
                 </div>
               )}
 
-              { settings.platform !== 'youtube' && (
+              {/* { settings.platform !== 'youtube' && (
                 <div className="flex items-center justify-between p-3 bg-slate-900/30 rounded-lg">
                   <div className="space-y-0.5">
                     <Label className="text-white">Allow Explicit Songs</Label>
@@ -359,7 +359,7 @@ export function Settings({
                     }
                   />
                 </div>
-              )}
+              )} */}
             </div>
           </div>
 
@@ -448,31 +448,6 @@ export function Settings({
             </div>
           </div>
 
-          {/* Notification Settings */}
-          <div className="bg-slate-800/60 backdrop-blur-sm border border-purple-500/30 rounded-xl p-5 space-y-4">
-            <div>
-              <h3 className="text-white font-medium">Notifications</h3>
-              <p className="text-sm text-gray-400">
-                Manage how you receive updates
-              </p>
-            </div>
-
-            <div className="flex items-center justify-between p-3 bg-slate-900/30 rounded-lg">
-              <div className="space-y-0.5">
-                <Label className="text-white">New request notifications</Label>
-                <p className="text-xs text-gray-400">
-                  Get notified when someone requests a song
-                </p>
-              </div>
-              <Switch
-                checked={settings.showNotifications}
-                onCheckedChange={(checked) => 
-                  setSettings({...settings, showNotifications: checked})
-                }
-              />
-            </div>
-          </div>
-
           {/* Privacy Settings */}
           <div className="bg-slate-800/60 backdrop-blur-sm border border-purple-500/30 rounded-xl p-5 space-y-4">
             <div>
@@ -546,7 +521,7 @@ export function Settings({
             <div>
               <h3 className="text-white font-medium">About Request+</h3>
               <p className="text-sm text-gray-400">
-                Version 2.0.0 • Built for streamers by streamers
+                Version 2.0.1 • Built for streamers by streamers
               </p>
             </div>
 

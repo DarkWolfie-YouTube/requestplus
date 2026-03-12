@@ -75,6 +75,7 @@ export function MusicPlayer({ currentTrack, setCurrentTrack, queue, settings }: 
   };
 
   const handleNext = async () => {
+    console.log(queue)
     const api = (window as any).api;
     if (!api) return;
     if (queue.items.length === 0) {
@@ -88,10 +89,12 @@ export function MusicPlayer({ currentTrack, setCurrentTrack, queue, settings }: 
     }
 
     api.playTrackAtIndex?.(queue.currentlyPlayingIndex + 1);
+    console.log("triggering")
+    console.log("settings:", settings)
     if (settings.platform === 'apple') {
-      await setTimeout(api.skip(), 1300);
+      setTimeout(() => api.skip?.(), 300);
     } else {
-      await setTimeout(api.skip?.(), 300);
+      setTimeout(() => api.skip?.(), 50);
     }
 
   };

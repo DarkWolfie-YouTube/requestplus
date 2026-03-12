@@ -765,15 +765,9 @@ function updateIntervalForSongInfo(): void {
     if (songIntervalID) {
         clearInterval(songIntervalID);
     }
-    if (settings.platform === 'apple') {
-    songIntervalID = setInterval(() => {
-        requestTrackInfo();
-    }, 2000);}
-    else {
     songIntervalID = setInterval(() => {
         requestTrackInfo();
     }, 500);
- }
 }
 
 
@@ -852,8 +846,46 @@ authManager.on('auth-logout', () => {
 });
 
 
+websocketManager.on('notification', (message) => {
+    dialog.showMessageBox({
+        type: 'info',
+        buttons: ['OK'],
+        defaultId: 0,
+        cancelId: 0,
+        title: 'Notification',
+        message: message.message || 'You have a new notification.',
+    });
+});
+
 websocketManager.on('song-request', (message) => {
-    console.log('[Main] Song request:', message)
+
+    if (settings.modsOnly) {
+        if (!message.tags) {
+            websocketManager.send({ type: 'song_request_response', message: 'ERR_MODS_ONLY', username: message.username, msgID: message.messageId, platform: message.platform, channel: message.channel });
+            return;
+        }
+        if (message.tags.mod == false) {
+            websocketManager.send({ type: 'song_request_response', message: 'ERR_MODS_ONLY', username: message.username, msgID: message.messageId, platform: message.platform, channel: message.channel });
+            return;
+        }
+
+    }
+
+    if (settings.subsOnly){
+        if (!message.tags) {
+            websocketManager.send({ type: 'song_request_response', message: 'ERR_SUBS_ONLY', username: message.username, msgID: message.messageId, platform: message.platform, channel: message.channel });
+            return;
+        } else if (message.tags.subscriber == false && !message.tags.mod) {
+            websocketManager.send({ type: 'song_request_response', message: 'ERR_SUBS_ONLY', username: message.username, msgID: message.messageId, platform: message.platform, channel: message.channel });
+            return;
+        }
+    }
+
+
+
+
+
+
   if (settings.platform === 'apple') {
       amHandler.handleChatRequest(message.message, queueHandler, settings, message.username).then((response) => {
           if (response === 'ERR_AM_NOLINK') {
@@ -873,8 +905,9 @@ websocketManager.on('song-request', (message) => {
     let songID = '';
     if (message.message.includes('spotify:track:')) {
         songID = message.message.split('spotify:track:')[1].split(' ')[0];
-    } else if (message.message.includes('open.spotify.com/track/')) {
-        songID = message.message.split('open.spotify.com/track/')[1].split('?')[0].split(' ')[0];
+    } else if (message.message.includes('open.spotify.com/')) {
+        const spotifyTrackMatch = message.message.match(/open\.spotify\.com\/(?:[^/]+\/)*track\/([A-Za-z0-9]+)/);
+        if (spotifyTrackMatch) songID = spotifyTrackMatch[1];
     } else {
         websocketManager.send({ type: 'song_request_response', message: 'ERR_SP_IDENTIFIER_MISSING', username: message.username, msgID: message.messageId, platform: message.platform, channel: message.channel });
         return;

@@ -147,7 +147,7 @@ class APIHandler {
                             if (accessToken) {
                                 fetch('/auth/token', {
                                     method: 'POST',
-                                    headers: { 'Content-Type': 'application/json', 'User-Agent': 'Request+/2.0.0 (https://github.com/DarkWolfie-YouTube/requestplus) darkwolfiefiver@gmail.com'},
+                                    headers: { 'Content-Type': 'application/json', 'User-Agent': 'Request+/2.0.1 (https://github.com/DarkWolfie-YouTube/requestplus) darkwolfiefiver@gmail.com'},
                                     body: JSON.stringify({
                                         access_token: accessToken,
                                         token_type: tokenType,

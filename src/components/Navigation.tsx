@@ -39,7 +39,7 @@ export function Navigation({ currentView, onViewChange, settings}: NavigationPro
             Player
           </button>
           
-          { settings.platform !== 'youtube' && (
+          { settings.platform !== 'youtube' && settings.autoPlay !== false && (
             <button
               onClick={() => onViewChange('queue')}
               className={`flex-1 flex items-center justify-center gap-2 h-11 rounded-lg transition-all font-medium ${

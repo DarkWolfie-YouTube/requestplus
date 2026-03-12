@@ -139,7 +139,7 @@ export function QueuePage({
                 <Music className="size-6 text-white" />
               </div>
               <div>
-                <h3 className="text-white font-bold text-lg">Queue</h3>
+                <h3 className="text-white font-bold text-lg">Moderation Queue</h3>
                 <p className="text-purple-300 text-sm">
                   {queue.items.length === 0 ? 'No' : queue.items.length} {queue.items.length === 1 ? 'song' : 'songs'}
                 </p>
@@ -172,7 +172,6 @@ export function QueuePage({
                             className={`flex items-center gap-3 p-3 rounded-lg hover:bg-slate-900/70 cursor-pointer transition-all ${
                               track.iscurrentlyPlaying ? 'bg-slate-900/50' : 'bg-slate-900/30'
                             }`}
-                            onClick={() => playTrack(track, index)}
                           >
                             {/* Album Art */}
                             <div className="relative">
@@ -226,13 +225,6 @@ export function QueuePage({
                         </ContextMenuTrigger>
                         
                         <ContextMenuContent className="bg-slate-800 border-purple-500/30">
-                          <ContextMenuItem
-                            onClick={() => playTrack(track, index)}
-                            className="cursor-pointer text-white hover:bg-purple-500/20"
-                          >
-                            <Play className="h-4 w-4 mr-2" />
-                            Play Now
-                          </ContextMenuItem>
                           <ContextMenuItem
                             onClick={() => removeFromQueue(track.id)}
                             className="cursor-pointer text-red-400 hover:bg-red-500/20 focus:text-red-400"
