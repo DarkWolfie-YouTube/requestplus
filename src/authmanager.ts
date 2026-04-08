@@ -11,7 +11,8 @@ import { EventEmitter } from 'events';
  */
 
 const PROTOCOL = 'requestplus';
-const AUTH_API_URL = process.env.AUTH_API_URL || 'https://api.requestplus.xyz';
+const AUTH_API_URL = process.env.AUTH_API_URL || 'https://testapi.requestplus.xyz';
+const WEBSITE_URL = process.env.WEBSITE_URL || 'https://testdev.requestplus.xyz';
 let initialized = false;
 
 // Safe logger helpers — no-ops if Logger isn't initialized yet (e.g. during auth callback process)
@@ -317,7 +318,7 @@ class AuthManager extends EventEmitter {
    */
   public async startAuthFlow() {
     const deviceId = this.hardwareInfo!.deviceId;
-    const authUrl = `${AUTH_API_URL}/desktop/auth/initiate?device_id=${encodeURIComponent(deviceId)}`;
+    const authUrl = `${WEBSITE_URL}/desktop-auth?device_id=${encodeURIComponent(deviceId)}`;
     
     // Open in default browser
     await shell.openExternal(authUrl);
@@ -462,6 +463,17 @@ class AuthManager extends EventEmitter {
     } catch (error) {
       log.error('[AuthManager] Error checking experimental user status:', error);
       return false;
+    }
+  }
+
+  public async fetchLocale(): Promise<string> {
+    const token = this.getAuthToken();
+    if (!token) return 'en';
+    try {
+      apiClient.setCredentials(token.token, this.hardwareInfo!.deviceId);
+      return await apiClient.fetchLocale();
+    } catch {
+      return 'en';
     }
   }
 }
@@ -674,6 +686,15 @@ class APIClient {
 
   public async checkExperimentalUser(): Promise<{ status: boolean }> {
     return this.request<{ status: boolean }>('/experimental-user');
+  }
+
+  public async fetchLocale(): Promise<string> {
+    try {
+      const response = await this.request<{ locale: string }>('/user/locale');
+      return response.locale ?? 'en';
+    } catch {
+      return 'en';
+    }
   }
 }
 

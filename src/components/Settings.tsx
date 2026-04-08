@@ -1,5 +1,6 @@
 import * as React from 'react';
 import { useState } from 'react';
+import { t } from '../i18n';
 import { Button } from './ui/button';
 import { Card } from './ui/card';
 import { Input } from './ui/input';
@@ -47,18 +48,20 @@ interface SettingsProps {
   setSettings: (settings: SettingsState) => void;
   expermintalFeatureEnabled: boolean;
   setExperimentalFeatureEnabled: (enabled: boolean) => void;
+  locale?: string;
 }
 
-export function Settings({ 
-  userd, 
+export function Settings({
+  userd,
   setUserd,
-  overlayPath, 
-  updateSettings, 
-  setUpdateSettings, 
-  settings, 
+  overlayPath,
+  updateSettings,
+  setUpdateSettings,
+  settings,
   setSettings,
   expermintalFeatureEnabled,
-  setExperimentalFeatureEnabled 
+  setExperimentalFeatureEnabled,
+  locale = 'en'
 }: SettingsProps) {
   const [copied, setCopied] = useState(false);
   const [settingsSaved, setSettingsSaved] = useState(false);
@@ -144,7 +147,7 @@ export function Settings({
 
     if (success) {
       setSettingsSaved(true);
-      toast.success('Settings saved successfully!');
+      toast.success(t('COMMON_SAVED', locale));
       setTimeout(() => setSettingsSaved(false), 3000);
     } else {
       toast.error('Failed to save settings');
@@ -186,17 +189,17 @@ export function Settings({
               <User className="size-6 text-white" />
             </div>
             <div>
-              <h3 className="text-white font-bold text-lg">Settings</h3>
-              <p className="text-purple-300 text-sm">Configure your Request+ experience</p>
+              <h3 className="text-white font-bold text-lg">{t('SETTINGS_TITLE', locale)}</h3>
+              <p className="text-purple-300 text-sm">{t('CLIENT_SETTINGS_SUBTITLE', locale)}</p>
             </div>
           </div>
 
           {/* Twitch Account Section */}
           <div className="bg-slate-800/60 backdrop-blur-sm border border-purple-500/30 rounded-xl p-5 space-y-4">
             <div className="space-y-1">
-              <Label className="text-white">Request+ Account</Label>
+              <Label className="text-white">{t('CLIENT_ACCOUNT_TITLE', locale)}</Label>
               <p className="text-sm text-gray-400">
-                Connect your Request+ account to manage requests and overlays
+                {t('CLIENT_ACCOUNT_DESC', locale)}
               </p>
             </div>
 
@@ -211,18 +214,18 @@ export function Settings({
                   <div className="flex-1">
                     <h4 className="text-white font-medium">{userd.display_name}</h4>
                     <p className="text-sm text-gray-400">{userd.email}</p>
-                    <p className="text-xs text-green-400">Connected</p>
+                    <p className="text-xs text-green-400">{t('CLIENT_CONNECTED', locale)}</p>
                   </div>
                 </div>
                 <button onClick={handleTwitchLogout} className="w-full bg-slate-700/50 hover:bg-red-500/20 text-red-400 hover:text-red-300 px-4 py-2 rounded-lg transition-all flex items-center justify-center gap-2">
                   <LogOut className="h-4 w-4" />
-                  Logout
+                  {t('COMMON_LOG_OUT', locale)}
                 </button>
               </div>
             ) : (
               <button onClick={handleTwitchLogin} className="w-full bg-gradient-to-r from-purple-600 to-green-600 hover:from-purple-500 hover:to-green-500 text-white px-4 py-2 rounded-lg transition-all flex items-center justify-center gap-2">
                 <User className="h-4 w-4" />
-                Login
+                {t('COMMON_LOG_IN', locale)}
               </button>
             )}
           </div>
@@ -231,9 +234,9 @@ export function Settings({
           {overlayPath && (
             <div className="bg-slate-800/60 backdrop-blur-sm border border-purple-500/30 rounded-xl p-5 space-y-3">
               <div className="space-y-1">
-                <Label className="text-white">OBS Overlay URL</Label>
+                <Label className="text-white">{t('CLIENT_OVERLAY_URL_TITLE', locale)}</Label>
                 <p className="text-sm text-gray-400">
-                  Add this as a Browser Source in OBS
+                  {t('CLIENT_OVERLAY_URL_DESC', locale)}
                 </p>
               </div>
               
@@ -260,23 +263,23 @@ export function Settings({
           {/* Request Management */}
           <div className="bg-slate-800/60 backdrop-blur-sm border border-purple-500/30 rounded-xl p-5 space-y-4">
             <div>
-              <h3 className="text-white font-medium">Request Management</h3>
+              <h3 className="text-white font-medium">{t('CLIENT_REQUEST_MGMT_TITLE', locale)}</h3>
               <p className="text-sm text-gray-400">
-                Control how song requests work
+                {t('CLIENT_REQUEST_MGMT_DESC', locale)}
               </p>
             </div>
 
             <div className="space-y-3">
               <div className="flex items-center justify-between p-3 bg-slate-900/30 rounded-lg">
                 <div className="space-y-0.5">
-                  <Label className="text-white">Enable Requests</Label>
+                  <Label className="text-white">{t('CLIENT_ENABLE_REQUESTS', locale)}</Label>
                   <p className="text-xs text-gray-400">
-                    Allow viewers to request songs
+                    {t('CLIENT_ENABLE_REQUESTS_DESC', locale)}
                   </p>
                 </div>
                 <Switch
                   checked={settings.enableRequests}
-                  onCheckedChange={(checked) => 
+                  onCheckedChange={(checked) =>
                     setSettings({...settings, enableRequests: checked})
                   }
                 />
@@ -284,96 +287,108 @@ export function Settings({
 
               <div className="flex items-center justify-between p-3 bg-slate-900/30 rounded-lg">
                 <div className="space-y-0.5">
-                  <Label className="text-white">Moderators Only</Label>
+                  <Label className="text-white">{t('CLIENT_MODS_ONLY', locale)}</Label>
                   <p className="text-xs text-gray-400">
-                    Only allow mods to request songs
+                    {t('CLIENT_MODS_ONLY_DESC', locale)}
                   </p>
                 </div>
                 <Switch
                   checked={settings.modsOnly}
-                  onCheckedChange={(checked) => 
+                  onCheckedChange={(checked) =>
                     setSettings({...settings, modsOnly: checked})
                   }
                 />
               </div>
-              
+
               <div className="flex items-center justify-between p-3 bg-slate-900/30 rounded-lg">
                 <div className="space-y-0.5">
-                  <Label className="text-white">Subscribers Only</Label>
+                  <Label className="text-white">{t('CLIENT_SUBS_ONLY', locale)}</Label>
                   <p className="text-xs text-gray-400">
-                    Only allow subscribers and mods to request songs
+                    {t('CLIENT_SUBS_ONLY_DESC', locale)}
                   </p>
                 </div>
                 <Switch
                   checked={settings.subsOnly}
-                  onCheckedChange={(checked) => 
+                  onCheckedChange={(checked) =>
                     setSettings({...settings, subsOnly: checked})
                   }
                 />
               </div>
+            </div>
+          </div>
 
-              {/* <div className="flex items-center justify-between p-3 bg-slate-900/30 rounded-lg">
+          {/* Modules */}
+          <div className="bg-slate-800/60 backdrop-blur-sm border border-purple-500/30 rounded-xl p-5 space-y-4">
+            <div>
+              <h3 className="text-white font-medium">{t('CLIENT_MODULES_TITLE', locale)}</h3>
+              <p className="text-sm text-gray-400">
+                {t('CLIENT_MODULES_DESC', locale)}
+              </p>
+            </div>
+
+            <div className="space-y-3">
+              <div className="flex items-center justify-between p-3 bg-slate-900/30 rounded-lg">
                 <div className="space-y-0.5">
-                  <Label className="text-white">Guess The Song</Label>
+                  <Label className="text-white">{t('CLIENT_GTS_TITLE', locale)}</Label>
                   <p className="text-xs text-gray-400">
-                    Allow Chat to earn points
+                    {t('CLIENT_GTS_DESC', locale)}
                   </p>
                 </div>
                 <Switch
                   checked={settings.gtsEnabled}
-                  onCheckedChange={(checked) => 
+                  onCheckedChange={(checked) =>
                     setSettings({...settings, gtsEnabled: checked})
                   }
                 />
-              </div> */}
+              </div>
 
-              { settings.platform !== 'youtube' && (
+              
                 <div className="flex items-center justify-between p-3 bg-slate-900/30 rounded-lg">
                   <div className="space-y-0.5">
-                    <Label className="text-white">Moderation Queue</Label>
+                    <Label className="text-white">{t('CLIENT_MOD_QUEUE_TITLE', locale)}</Label>
                     <p className="text-xs text-gray-400">
-                      Manual song approval
+                      {t('CLIENT_MOD_QUEUE_DESC', locale)}
                     </p>
                   </div>
                   <Switch
                     checked={settings.autoPlay || false}
-                    onCheckedChange={(checked) => 
+                    onCheckedChange={(checked) =>
                       setSettings({...settings, autoPlay: checked})
                     }
                   />
                 </div>
-              )}
+              
 
-              {/* { settings.platform !== 'youtube' && (
+              {settings.platform !== 'youtube' && (
                 <div className="flex items-center justify-between p-3 bg-slate-900/30 rounded-lg">
                   <div className="space-y-0.5">
-                    <Label className="text-white">Allow Explicit Songs</Label>
+                    <Label className="text-white">{t('CLIENT_FILTER_EXPLICIT', locale)}</Label>
                     <p className="text-xs text-gray-400">
-                      Filter explicit content
+                      {t('CLIENT_FILTER_EXPLICIT_DESC', locale)}
                     </p>
                   </div>
                   <Switch
                     checked={settings.filterExplicit || false}
-                    onCheckedChange={(checked) => 
+                    onCheckedChange={(checked) =>
                       setSettings({...settings, filterExplicit: checked})
                     }
                   />
                 </div>
-              )} */}
+              )}
             </div>
           </div>
 
           {/* Overlay Settings */}
           <div className="bg-slate-800/60 backdrop-blur-sm border border-purple-500/30 rounded-xl p-5 space-y-4">
             <div>
-              <h3 className="text-white font-medium">Overlay Settings</h3>
+              <h3 className="text-white font-medium">{t('CLIENT_OVERLAY_SETTINGS_TITLE', locale)}</h3>
               <p className="text-sm text-gray-400">
-                Customize the visual appearance
+                {t('CLIENT_OVERLAY_SETTINGS_DESC', locale)}
               </p>
             </div>
 
             <div className="space-y-2">
-              <Label className="text-white" htmlFor="theme">Theme</Label>
+              <Label className="text-white" htmlFor="theme">{t('CLIENT_THEME', locale)}</Label>
               <Select
                 value={settings.theme}
                 onValueChange={(value) => setSettings({...settings, theme: value})}
@@ -395,15 +410,15 @@ export function Settings({
          {/* Platform Settings */}
           <div className="bg-slate-800/60 backdrop-blur-sm border border-purple-500/30 rounded-xl p-5 space-y-4">
             <div>
-              <h3 className="text-white font-medium">Platform Settings</h3>
+              <h3 className="text-white font-medium">{t('CLIENT_PLATFORM_TITLE', locale)}</h3>
               <p className="text-sm text-gray-400">
-                Customize the platform-specific behavior
+                {t('CLIENT_PLATFORM_DESC', locale)}
               </p>
             </div>
 
             <div className="space-y-3">
               <div className="space-y-2">
-                <Label className="text-white" htmlFor="platform">Main Platform</Label>
+                <Label className="text-white" htmlFor="platform">{t('CLIENT_MAIN_PLATFORM', locale)}</Label>
                 <Select
                   value={settings.platform}
                   onValueChange={(value) => setSettings({...settings, platform: value})}
@@ -432,11 +447,11 @@ export function Settings({
               </div>
               { settings.platform === 'apple' && (
                 <div className="space-y-2">
-                  <Label className="text-white" htmlFor="appleMusicToken">Cider API Token</Label>
+                  <Label className="text-white" htmlFor="appleMusicToken">{t('CLIENT_CIDER_TOKEN', locale)}</Label>
                   <Input
                     id="appleMusicToken"
                     type="text"
-                    placeholder="Enter your Apple Music API Token"
+                    placeholder={t('CLIENT_CIDER_TOKEN_PLACEHOLDER', locale)}
                     value={settings.appleMusicAppToken || ''}
                     onChange={(e) => 
                       setSettings({...settings, appleMusicAppToken: e.target.value})
@@ -451,17 +466,17 @@ export function Settings({
           {/* Privacy Settings */}
           <div className="bg-slate-800/60 backdrop-blur-sm border border-purple-500/30 rounded-xl p-5 space-y-4">
             <div>
-              <h3 className="text-white font-medium">Privacy</h3>
+              <h3 className="text-white font-medium">{t('CLIENT_PRIVACY_TITLE', locale)}</h3>
               <p className="text-sm text-gray-400">
-                Control what data is shared
+                {t('CLIENT_PRIVACY_DESC', locale)}
               </p>
             </div>
 
             <div className="flex items-center justify-between p-3 bg-slate-900/30 rounded-lg">
               <div className="space-y-0.5">
-                <Label className="text-white">Telemetry Data</Label>
+                <Label className="text-white">{t('CLIENT_TELEMETRY', locale)}</Label>
                 <p className="text-xs text-gray-400">
-                  Help improve Request+
+                  {t('CLIENT_TELEMETRY_DESC', locale)}
                 </p>
               </div>
               <Switch
@@ -476,9 +491,9 @@ export function Settings({
           {/* Updates Section */}
           <div className="bg-slate-800/60 backdrop-blur-sm border border-purple-500/30 rounded-xl p-5 space-y-4">
             <div>
-              <h3 className="text-white font-medium">Updates</h3>
+              <h3 className="text-white font-medium">{t('CLIENT_UPDATES_TITLE', locale)}</h3>
               <p className="text-sm text-gray-400">
-                Manage application updates
+                {t('CLIENT_UPDATES_DESC', locale)}
               </p>
             </div>
 
@@ -491,43 +506,43 @@ export function Settings({
                 />
                 <div className="grid gap-0.5 leading-none">
                   <Label htmlFor="preReleases" className="text-sm text-white">
-                    Include pre-release versions
+                    {t('CLIENT_PRERELEASE', locale)}
                   </Label>
                   <p className="text-xs text-gray-400">
-                    Pre-releases may contain experimental features
+                    {t('CLIENT_PRERELEASE_DESC', locale)}
                   </p>
                 </div>
               </div>
 
               <button onClick={checkForUpdates} className="w-full bg-slate-700/50 hover:bg-slate-600/50 text-white px-4 py-2 rounded-lg transition-all flex items-center justify-center gap-2">
                 <RefreshCw className="h-4 w-4" />
-                Check for Updates
+                {t('CLIENT_CHECK_UPDATES', locale)}
               </button>
             </div>
           </div>
 
           {/* Save Settings Button */}
           <button onClick={saveSettings} className="w-full bg-gradient-to-r from-purple-600 to-green-600 hover:from-purple-500 hover:to-green-500 text-white px-4 py-3 rounded-lg transition-all shadow-lg font-medium">
-            Save Settings
+            {t('COMMON_SAVE', locale)}
           </button>
           {settingsSaved && (
             <p className="text-sm text-green-400 text-center animate-fade-in">
-              ✓ Settings saved successfully!
+              ✓ {t('COMMON_SAVED', locale)}
             </p>
           )}
 
           {/* About Section */}
           <div className="bg-slate-800/60 backdrop-blur-sm border border-purple-500/30 rounded-xl p-5 space-y-3">
             <div>
-              <h3 className="text-white font-medium">About Request+</h3>
+              <h3 className="text-white font-medium">{t('CLIENT_ABOUT_TITLE', locale)}</h3>
               <p className="text-sm text-gray-400">
-                Version 2.0.1 • Built for streamers by streamers
+                Version 2.1.0 • Built for streamers by streamers
               </p>
             </div>
 
             <button onClick={() => window.open('https://requestplus.xyz', '_blank')} className="w-full bg-slate-700/50 hover:bg-slate-600/50 text-white px-4 py-2 rounded-lg transition-all flex items-center justify-center gap-2">
               <ExternalLink className="h-4 w-4" />
-              Visit requestplus.xyz
+              {t('CLIENT_VISIT_WEBSITE', locale)}
             </button>
           </div>
         </div>

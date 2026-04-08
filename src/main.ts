@@ -2,7 +2,7 @@ import { app, BrowserWindow, ipcMain, dialog, shell, MessageBoxOptions, MessageB
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { setTimeout as wait } from 'node:timers/promises';
-import { checkForUpdates } from './updateChecker';
+import { checkForUpdates, resolveModal } from './updateChecker';
 import QueueHandler, { Queue, QueueItem } from './queueHandler';
 import { updateElectronApp } from 'update-electron-app';
 
@@ -175,7 +175,7 @@ async function autoQueueNextTrack(): Promise<void> {
     }
 
     const nextTrack = queue.items[0];
-    
+
     try {
         if (settings.platform === 'spotify') {
             if (nextTrack.platform === 'spotify') {
@@ -183,10 +183,16 @@ async function autoQueueNextTrack(): Promise<void> {
                     command: 'addTrack',
                     data: { uri: `spotify:track:${nextTrack.id.split('-')[0]}` }
                 }, 'spotify');
-            } 
+            }
         } else if (settings.platform === 'apple') {
             if (nextTrack.platform === 'apple') {
                 amHandler.queueTrack(nextTrack.id.split('-')[0]);
+            }
+        } else if (settings.platform === 'youtube' && ytManager) {
+            if (nextTrack.platform === 'youtube') {
+                // YouTube video IDs are always 11 chars — slice is safer than split('-')
+                const videoId = nextTrack.id.substring(0, 11);
+                await ytManager.addItemToQueueById(videoId);
             }
         }
 
@@ -311,7 +317,7 @@ async function createWindow(): Promise<void> {
     const customSession = session.fromPartition('persist:api-session', { cache: false });
     
     customSession.setCertificateVerifyProc((request, callback) => {
-        if (request.hostname === 'api.requestplus.xyz') {
+        if (request.hostname === 'testapi.requestplus.xyz') {
             callback(0); // 0 = success, bypass verification
         } else {
             callback(-3); // -3 = use default verification
@@ -319,7 +325,7 @@ async function createWindow(): Promise<void> {
     });
     const request = net.request({
         method: 'GET',
-        url: 'https://api.requestplus.xyz/hardware/check?id=' + authManager.getHardwareInfoPublic()?.deviceId,
+        url: 'https://testapi.requestplus.xyz/hardware/check?id=' + authManager.getHardwareInfoPublic()?.deviceId,
         session: customSession
     });
 
@@ -394,6 +400,13 @@ async function createWindow(): Promise<void> {
     
     if (!ytManager) {
         ytManager = new YTManager(Logger);
+
+        // Push song info to renderer immediately on every WebSocket state update
+        ytManager.on('state-update', () => {
+            if (settings.platform === 'youtube') {
+                requestTrackInfo();
+            }
+        });
     }
 
     if (!amHandler) {
@@ -518,6 +531,15 @@ ipcMain.handle('song-skip', async (): Promise<void> => {
     if (platform === 'spotify' && WSServer) {
         WSServer.WSSendToType({ command: 'Next' } as WSCommand, 'spotify');
     } else if (platform === 'youtube' && ytManager) {
+        // Push the next queued request into Pear before skipping so it plays immediately
+        if (queueHandler) {
+            const nextTrack = queueHandler.getQueue().items.find(item => !item.isQueued);
+            if (nextTrack) {
+                const videoId = nextTrack.id.substring(0, 11);
+                await ytManager.addItemToQueueById(videoId);
+                await queueHandler.setTrackAsQueued(queueHandler.getQueue().items.indexOf(nextTrack));
+            }
+        }
         await ytManager.next();
     } else if (platform === 'apple' && amHandler) {
         await amHandler.nextTrack();
@@ -624,6 +646,10 @@ ipcMain.handle('check-for-updates', (): void => {
     checkForUpdates(mainWindow, Logger);
 });
 
+ipcMain.on('modal-response', (_event, id: string, response: number) => {
+    resolveModal(id, response);
+});
+
 ipcMain.handle('get-update-settings', (): UpdateSettings => {
     const { getSettings } = require('./updateChecker.js');
     return getSettings();
@@ -711,6 +737,10 @@ ipcMain.handle('auth:getHardwareInfo', async () => {
   return authManager.getHardwareInfoPublic();
 });
 
+ipcMain.handle('get-locale', async () => {
+  return await authManager.fetchLocale();
+});
+
 /**
  * Logout
  */
@@ -736,11 +766,9 @@ async function requestTrackInfo(): Promise<void> {
     if (!info) return;
     const currentSongInformation: songInfo = { ...info };
     mainWindow?.webContents.send('song-info', currentSongInformation);
-    if (settings.platform !== 'youtube') {
-        monitorTrackProgress(currentSongInformation);
-        await wait(2000);
-        checkCurrentlyPlayingTrack(currentSongInformation);
-    }
+    monitorTrackProgress(currentSongInformation);
+    await wait(2000);
+    checkCurrentlyPlayingTrack(currentSongInformation);
 }
 
 function sendToast(message: string, type: 'info' | 'success' | 'error' | 'warning' = 'info', duration: number = 5000): void {
@@ -829,6 +857,11 @@ authManager.on('auth-success', async (token) => {
     mainWindow.webContents.send('auth-check', true);
   }
 
+  // Push locale to renderer
+  authManager.fetchLocale().then(locale => {
+    mainWindow?.webContents.send('locale-update', locale);
+  });
+
 });
 
 authManager.on('auth-refreshed', (token) => {
@@ -857,7 +890,7 @@ websocketManager.on('notification', (message) => {
     });
 });
 
-websocketManager.on('song-request', (message) => {
+websocketManager.on('song-request', async (message) => {
 
     if (settings.modsOnly) {
         if (!message.tags) {
@@ -951,7 +984,43 @@ websocketManager.on('song-request', (message) => {
             }
         }, 200);
     }
-  } else if (settings.platform == "youtube"){
-    websocketManager.send({ type: 'song_request_response', message: 'ERR_YT_UNSUPPORTED', username: message.username, msgID: message.messageId, platform: message.platform, channel: message.channel });
+  } else if (settings.platform === 'youtube') {
+    const videoId = YTManager.extractVideoId(message.message);
+
+    if (!videoId) {
+        websocketManager.send({ type: 'song_request_response', message: 'ERR_YT_IDENTIFIER_MISSING', username: message.username, msgID: message.messageId, platform: message.platform, channel: message.channel });
+        return;
+    }
+
+    const songInfo = await ytManager.getSongTitle(videoId);
+    const songName = songInfo?.title ?? videoId;
+    const artist   = songInfo?.author ?? 'YouTube Music';
+    const cover    = `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
+
+    if (settings.autoPlay) {
+        // Moderation queue — hold for manual approval
+        const queueItem: QueueItem = {
+            id: videoId + '-' + message.username,
+            title: songName,
+            artist,
+            requestedBy: message.username,
+            album: 'YouTube Music',
+            duration: 0,
+            progress: 0,
+            cover,
+            platform: 'youtube',
+            iscurrentlyPlaying: false,
+        };
+        queueHandler.addToQueue(queueItem);
+        websocketManager.send({ type: 'song_request_response', message: 'OKAY_YT_QUEUED', username: message.username, songName, artist, msgID: message.messageId, platform: message.platform, channel: message.channel });
+    } else {
+        // Add directly to Pear's playback queue
+        const ok = await ytManager.addItemToQueueById(videoId);
+        if (ok) {
+            websocketManager.send({ type: 'song_request_response', message: 'OKAY_YT_QUEUED', username: message.username, songName, artist, msgID: message.messageId, platform: message.platform, channel: message.channel });
+        } else {
+            websocketManager.send({ type: 'song_request_response', message: 'ERR_YT_QUEUE_FAILED', username: message.username, msgID: message.messageId, platform: message.platform, channel: message.channel });
+        }
+    }
   }
 });

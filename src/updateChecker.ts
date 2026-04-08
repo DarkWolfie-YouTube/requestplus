@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, shell } from 'electron';
+import { app, BrowserWindow, shell } from 'electron';
 import fetch from 'node-fetch';
 import { version as currentVersion } from '../package.json';
 import * as fs from 'fs';
@@ -41,6 +41,62 @@ interface VersionParsed {
 let settings: UpdateSettings = {
     checkPreReleases: false
 };
+
+// ── Web-UI modal helpers ────────────────────────────────────────────────────
+
+const pendingModals = new Map<string, (response: number) => void>();
+
+/** Send a modal to the renderer and resolve with the index of the button clicked. */
+function sendModal(window: BrowserWindow | null, title: string, message: string, buttons: string[]): Promise<number> {
+    return new Promise((resolve) => {
+        if (!window || window.isDestroyed()) {
+            resolve(0);
+            return;
+        }
+        const id = Math.random().toString(36).substring(2);
+        pendingModals.set(id, resolve);
+        window.webContents.send('show-modal', { id, title, message, buttons });
+    });
+}
+
+/** Called from main.ts when the renderer sends back a modal-response event. */
+export function resolveModal(id: string, response: number): void {
+    const resolver = pendingModals.get(id);
+    if (resolver) {
+        resolver(response);
+        pendingModals.delete(id);
+    }
+}
+
+/** Shared terms-of-service modal flow used for both first-run and updates. */
+async function showTermsFlow(window: BrowserWindow | null, termsUrl: string, termsVersion: string): Promise<void> {
+    const result = await sendModal(
+        window,
+        'Terms of Service Update',
+        'The Terms of Service have been updated. Please review and accept the new terms to continue using the application.',
+        ['Accept', 'View Terms', 'Decline']
+    );
+    if (result === 0) {
+        fs.writeFileSync(path.join(app.getPath('userData'), 'terms-version.txt'), termsVersion, 'utf8');
+        await sendToastWithDelay(window, 'Terms accepted. Thank you!', 'success', 5000, 100);
+    } else if (result === 1) {
+        await shell.openExternal(termsUrl);
+        const acceptResult = await sendModal(
+            window,
+            'Terms of Service Update',
+            'Have you accepted the updated Terms of Service?',
+            ['Accept', 'Decline']
+        );
+        if (acceptResult === 0) {
+            fs.writeFileSync(path.join(app.getPath('userData'), 'terms-version.txt'), termsVersion, 'utf8');
+            await sendToastWithDelay(window, 'Terms accepted. Thank you!', 'success', 5000, 100);
+        } else {
+            app.quit();
+        }
+    } else {
+        app.quit();
+    }
+}
 
 // Load settings
 function loadSettings(): void {
@@ -198,7 +254,7 @@ async function checkForUpdates(window: BrowserWindow | null, logger: Logger): Pr
             );
         }
 
-        const endpoint2 = "https://api.requestplus.xyz/termsUpdate";
+        const endpoint2 = "https://testapi.requestplus.xyz/termsUpdate";
         var response2 = await fetch(endpoint2, {
             headers: {
                 'User-Agent': 'RequestPlus-UpdateChecker'
@@ -221,133 +277,38 @@ async function checkForUpdates(window: BrowserWindow | null, logger: Logger): Pr
         const dialogVersion = data2.dialogVersion;
 
         if (showDialog) {
-            if (fs.existsSync(path.join(app.getPath('userData'), 'dialog-version.txt'))) {
-                if (fs.readFileSync(path.join(app.getPath('userData'), 'dialog-version.txt'), 'utf8') !== dialogVersion){
-                dialog.showMessageBox({
-                    type: 'info',
-                    buttons: ['OK'],
-                    defaultId: 0,
-                    cancelId: 0,
-                    title: dialogTitle,
-                    message: dialogMessage
-                }).then(async (result) => {
-                    if (result.response === 0) {
-                        fs.writeFileSync(path.join(app.getPath('userData'), 'dialog-version.txt'), dialogVersion, 'utf8');
-                    }
-                })
-            } 
-        } else { 
-            dialog.showMessageBox({
-                    type: 'info',
-                    buttons: ['OK'],
-                    defaultId: 0,
-                    cancelId: 0,
-                    title: dialogTitle,
-                    message: dialogMessage
-                }).then(async (result) => {
-                    if (result.response === 0) {
-                        fs.writeFileSync(path.join(app.getPath('userData'), 'dialog-version.txt'), dialogVersion, 'utf8');
-                    }
-                })
+            const dialogVersionPath = path.join(app.getPath('userData'), 'dialog-version.txt');
+            const seenVersion = fs.existsSync(dialogVersionPath)
+                ? fs.readFileSync(dialogVersionPath, 'utf8')
+                : null;
+
+            if (seenVersion !== dialogVersion) {
+                const result = await sendModal(window, dialogTitle, dialogMessage, ['OK']);
+                if (result === 0) {
+                    fs.writeFileSync(dialogVersionPath, dialogVersion, 'utf8');
+                }
+            }
         }
-    }
 
         if (mstesting && currentVersion === mstestingversion) {
             logger.info('MS Testing mode enabled');
-            dialog.showMessageBox({
-                type: 'info',
-                buttons: ['OK'],
-                defaultId: 0,
-                cancelId: 0,
-                title: 'Hello! :wave:',
-                message: 'Hello Tester! Thanks for opening Request+! To test full functionality you will need to open the docs page and do the setup guide or youtube tutorial! If you need any help as to why the program name is different, I can\'t reserve the name Request+ because of a old project I deleted to favor this one to upload the MSIX/APPX bundles... It doesn\'t misrepresent anything, it\'s just a naming issue with Microsoft Store policies (3 MONTH WAIT). Thanks for testing! - Quil\n\nThis message will be disabled in the future using an API call.',
-            });
+            await sendModal(
+                window,
+                'Hello! 👋',
+                "Hello Tester! Thanks for opening Request+! To test full functionality you will need to open the docs page and do the setup guide or youtube tutorial! If you need any help as to why the program name is different, I can't reserve the name Request+ because of a old project I deleted to favor this one to upload the MSIX/APPX bundles... It doesn't misrepresent anything, it's just a naming issue with Microsoft Store policies (3 MONTH WAIT). Thanks for testing! - Quil\n\nThis message will be disabled in the future using an API call.",
+                ['OK']
+            );
         }
 
-        if (fs.existsSync(path.join(app.getPath('userData'), 'terms-version.txt'))) {
-            const localTermsVersion = fs.readFileSync(path.join(app.getPath('userData'), 'terms-version.txt'), 'utf8').trim();
+        const termsVersionPath = path.join(app.getPath('userData'), 'terms-version.txt');
+        if (fs.existsSync(termsVersionPath)) {
+            const localTermsVersion = fs.readFileSync(termsVersionPath, 'utf8').trim();
             if (localTermsVersion !== latestTermsVersion) {
-                await sendToastWithDelay(
-                    window, 
-                    `New Terms of Service available.`, 
-                    'info', 
-                    10000,
-                    500
-                );
-
-                dialog.showMessageBox({
-                    type: 'info',
-                    buttons: ['Accept', 'View Terms', 'Decline'],
-                    defaultId: 1,
-                    cancelId: 2,
-                    title: 'Terms of Service Update',
-                    message: 'The Terms of Service have been updated. Please review and accept the new terms to continue using the application.',
-                }).then(async (result) => {
-                    if (result.response === 0) {
-                        // Accept
-                        fs.writeFileSync(path.join(app.getPath('userData'), 'terms-version.txt'), latestTermsVersion, 'utf8');
-                        await sendToastWithDelay(window, 'Terms accepted. Thank you!', 'success', 5000, 100);
-                    } else if (result.response === 1) {
-                        // View Terms
-                        await shell.openExternal(termsUrl);
-                        // After viewing, prompt to accept again
-                        const acceptResult = await dialog.showMessageBox({
-                            type: 'question',
-                            buttons: ['Accept', 'Decline'],
-                            defaultId: 0,
-                            cancelId: 1,
-                            title: 'Terms of Service Update',
-                            message: 'Have you accepted the updated Terms of Service?',
-                        });
-                        if (acceptResult.response === 0) {
-                            fs.writeFileSync(path.join(app.getPath('userData'), 'terms-version.txt'), latestTermsVersion, 'utf8');
-                            await sendToastWithDelay(window, 'Terms accepted. Thank you!', 'success', 5000, 100);
-                        } else {
-                            app.quit();
-                        }
-                    } else if (result.response === 2) {
-                        // Decline
-                        app.quit();
-                    }
-                });
+                await sendToastWithDelay(window, 'New Terms of Service available.', 'info', 10000, 500);
+                await showTermsFlow(window, termsUrl, latestTermsVersion);
             }
         } else {
-            // No local terms version file, create one with the latest version after accept terms
-            dialog.showMessageBox({
-                type: 'info',
-                buttons: ['Accept', 'View Terms', 'Decline'],
-                defaultId: 1,
-                cancelId: 2,
-                title: 'Terms of Service Update',
-                message: 'The Terms of Service have been updated. Please review and accept the new terms to continue using the application.',
-            }).then(async (result) => {
-                if (result.response === 0) {
-                    // Accept
-                    fs.writeFileSync(path.join(app.getPath('userData'), 'terms-version.txt'), latestTermsVersion, 'utf8');
-                    await sendToastWithDelay(window, 'Terms accepted. Thank you!', 'success', 5000, 100);
-                } else if (result.response === 1) {
-                    // View Terms
-                    await shell.openExternal(termsUrl);
-                    // After viewing, prompt to accept again
-                    const acceptResult = await dialog.showMessageBox({
-                        type: 'question',
-                        buttons: ['Accept', 'Decline'],
-                        defaultId: 0,
-                        cancelId: 1,
-                        title: 'Terms of Service Update',
-                        message: 'Have you accepted the updated Terms of Service?',
-                    });
-                    if (acceptResult.response === 0) {
-                        fs.writeFileSync(path.join(app.getPath('userData'), 'terms-version.txt'), latestTermsVersion, 'utf8');
-                        await sendToastWithDelay(window, 'Terms accepted. Thank you!', 'success', 5000, 100);
-                    } else {
-                        app.quit();
-                    }
-                } else if (result.response === 2) {
-                    // Decline
-                    app.quit();
-                }
-            })
+            await showTermsFlow(window, termsUrl, latestTermsVersion);
         }
 
     } catch (error) {

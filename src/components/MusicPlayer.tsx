@@ -1,5 +1,6 @@
 import * as React from 'react';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { t } from '../i18n';
 import { Button } from './ui/button';
 import { Card } from './ui/card';
 
@@ -28,20 +29,25 @@ interface MusicPlayerProps {
   setCurrentTrack: (track: Track) => void;
   queue: Queue;
   settings: Settings;
+  locale?: string;
 }
 
-export function MusicPlayer({ currentTrack, setCurrentTrack, queue, settings }: MusicPlayerProps) {
+export function MusicPlayer({ currentTrack, setCurrentTrack, queue, settings, locale = 'en' }: MusicPlayerProps) {
   const [volume, setVolume] = useState([Math.floor(currentTrack.volume * 100)]);
   const [isLiked, setIsLiked] = useState(currentTrack.isLiked);
 
-  
-
+  // Prevents incoming track-info pushes from overriding the slider
+  // while the user is actively adjusting volume
+  const isAdjustingVolume = useRef(false);
+  const volumeAdjustTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Update local state when currentTrack changes
   useEffect(() => {
-    setVolume([Math.floor(currentTrack.volume * 100)]);
+    if (!isAdjustingVolume.current) {
+      setVolume([Math.floor(currentTrack.volume * 100)]);
+    }
     setIsLiked(currentTrack.isLiked);
-  }, [currentTrack.volume, currentTrack.isLiked,]);
+  }, [currentTrack.volume, currentTrack.isLiked]);
 
 /**
  * Format a given time in milliseconds to a string in the format
@@ -93,6 +99,8 @@ export function MusicPlayer({ currentTrack, setCurrentTrack, queue, settings }: 
     console.log("settings:", settings)
     if (settings.platform === 'apple') {
       setTimeout(() => api.skip?.(), 300);
+    } else if (settings.platform === 'youtube') {
+      setTimeout(() => api.skip?.(), 1000);
     } else {
       setTimeout(() => api.skip?.(), 50);
     }
@@ -136,13 +144,16 @@ export function MusicPlayer({ currentTrack, setCurrentTrack, queue, settings }: 
   const handleVolumeChange = (value: number[]) => {
     const newVolume = value[0];
     setVolume([newVolume]);
-    
-    // Update the track state as well
-    setCurrentTrack({
-      ...currentTrack,
-      volume: newVolume / 100
-    });
-    
+
+    // Block incoming song-info from snapping the slider back for 2s
+    isAdjustingVolume.current = true;
+    if (volumeAdjustTimer.current) clearTimeout(volumeAdjustTimer.current);
+    volumeAdjustTimer.current = setTimeout(() => {
+      isAdjustingVolume.current = false;
+    }, 2000);
+
+    setCurrentTrack({ ...currentTrack, volume: newVolume / 100 });
+
     const api = (window as any).api;
     api.volume?.(newVolume / 100);
   };
@@ -180,7 +191,7 @@ export function MusicPlayer({ currentTrack, setCurrentTrack, queue, settings }: 
                 <Music className="size-6 text-white" />
               </div>
               <div>
-                <h3 className="text-white font-bold text-lg">Now Playing</h3>
+                <h3 className="text-white font-bold text-lg">{t('CLIENT_NOW_PLAYING', locale)}</h3>
                 <p className="text-purple-300 text-sm">Request+</p>
               </div>
             </div>

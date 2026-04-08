@@ -1,4 +1,6 @@
 import axios, { AxiosError, AxiosInstance } from 'axios';
+import WebSocket from 'ws';
+import { EventEmitter } from 'events';
 import fs from 'node:fs';
 import path from 'node:path';
 import { app } from 'electron';
@@ -40,16 +42,27 @@ interface likeState {
     state: string;
 }
 
-class YTManager {
+class YTManager extends EventEmitter {
     private apiBaseUrl: string;
+    private wsBaseUrl: string;
     private instance: AxiosInstance;
     private token: string;
     private tokenPath: string;
     private logger: Logger;
     private timesTried: number;
 
+    // WebSocket state
+    private ws: WebSocket | null = null;
+    private wsConnected: boolean = false;
+    private wsReconnectTimer: NodeJS.Timeout | null = null;
+    private cachedSong: songData | null = null;
+    private cachedRepeat: 'NONE' | 'ALL' | 'ONE' | null = null;
+    private cachedShuffle: boolean | null = null;
+
     constructor(Logger: Logger) {
+        super();
         this.apiBaseUrl = 'http://localhost:26538/api/v1';
+        this.wsBaseUrl  = 'ws://localhost:26538/api/v1/ws';
         this.tokenPath = path.join(app.getPath('userData'), 'ytmanager.token');
         this.logger = Logger
         this.timesTried = 0;
@@ -79,6 +92,8 @@ class YTManager {
                 
                 if (response.status !== 200 && response.status !== 204) {
                     await this.newToken();
+                } else {
+                    this.connectWebSocket();
                 }
             } catch (error) {
                 this.logger.error('[YTManager] Error validating existing token:', (error as AxiosError).message);
@@ -111,6 +126,7 @@ class YTManager {
             if (response.status === 200 && response.data.accessToken) {
                 this.token = response.data.accessToken;
                 fs.writeFileSync(this.tokenPath, this.token, 'utf-8');
+                this.connectWebSocket();
             } else {
                 throw new Error("Invalid token response");
             }
@@ -155,6 +171,121 @@ class YTManager {
         }
     }
 
+    // ── WebSocket ─────────────────────────────────────────────────────────────
+
+    public connectWebSocket(): void {
+        if (this.ws) {
+            this.ws.terminate();
+            this.ws = null;
+        }
+
+        try {
+            this.ws = new WebSocket(this.wsBaseUrl, {
+                headers: { 'Authorization': `Bearer ${this.token}` }
+            });
+
+            this.ws.on('open', () => {
+                this.wsConnected = true;
+                this.logger.info('[YTManager] WebSocket connected');
+                if (this.wsReconnectTimer) {
+                    clearTimeout(this.wsReconnectTimer);
+                    this.wsReconnectTimer = null;
+                }
+            });
+
+            this.ws.on('message', (data: WebSocket.Data) => {
+                try {
+                    const msg = JSON.parse(data.toString()) as { type: string; [key: string]: any };
+                    console.log('[YTManager] WS message received:', msg);
+
+                    switch (msg.type) {
+                        case 'VIDEO_CHANGED':
+                            // Full song object provided — replace cache entirely
+                            this.cachedSong = { ...msg.song, elapsedSeconds: msg.position ?? 0 };
+                            this.emit('state-update', this.cachedSong);
+                            break;
+
+                        case 'POSITION_CHANGED':
+                            // Elapsed position tick — update progress only
+                            if (this.cachedSong) {
+                                this.cachedSong = { ...this.cachedSong, elapsedSeconds: msg.position };
+                                this.emit('state-update', this.cachedSong);
+                            }
+                            break;
+
+                        case 'PLAYER_STATE_CHANGED':
+                            // Play/pause toggle — update cache immediately if available
+                            if (this.cachedSong) {
+                                this.cachedSong = {
+                                    ...this.cachedSong,
+                                    isPaused: !msg.isPlaying,
+                                    elapsedSeconds: msg.position ?? this.cachedSong.elapsedSeconds
+                                };
+                                this.emit('state-update', this.cachedSong);
+                            }
+                            // Always refresh from REST API to ensure accuracy
+                            // (handles null cachedSong and stale WS state)
+                            this.getCurrentSong().then(song => {
+                                if (song) {
+                                    this.cachedSong = song;
+                                    this.emit('state-update', this.cachedSong);
+                                }
+                            }).catch(() => {});
+                            break;
+
+                        case 'REPEAT_CHANGED':
+                            this.cachedRepeat = msg.repeat ?? 'NONE';
+                            this.emit('state-update', this.cachedSong);
+                            break;
+
+                        case 'SHUFFLE_CHANGED':
+                            this.cachedShuffle = msg.shuffle ?? false;
+                            this.emit('state-update', this.cachedSong);
+                            break;
+
+                        default:
+                            this.logger.info(`[YTManager] Unknown WS event: ${msg.type}`);
+                    }
+                } catch {
+                    // ignore non-JSON frames
+                }
+            });
+
+            this.ws.on('close', () => {
+                this.wsConnected = false;
+                this.logger.warn('[YTManager] WebSocket disconnected, reconnecting in 5s');
+                this.scheduleWSReconnect();
+            });
+
+            this.ws.on('error', (err: Error) => {
+                this.logger.error('[YTManager] WebSocket error:', err.message);
+                this.wsConnected = false;
+            });
+        } catch (err) {
+            this.logger.error('[YTManager] Failed to open WebSocket:', (err as Error).message);
+            this.scheduleWSReconnect();
+        }
+    }
+
+    private scheduleWSReconnect(): void {
+        if (this.wsReconnectTimer) return;
+        this.wsReconnectTimer = setTimeout(() => {
+            this.wsReconnectTimer = null;
+            if (this.token) this.connectWebSocket();
+        }, 5000);
+    }
+
+    /** Latest state pushed by the WebSocket — null if WS not yet connected. */
+    public getCachedSong(): songData | null {
+        return this.cachedSong;
+    }
+
+    public isWSConnected(): boolean {
+        return this.wsConnected;
+    }
+
+    // ── REST fallbacks ────────────────────────────────────────────────────────
+
     async getCurrentSong(): Promise<songData | null> {
         return this.makeAuthenticatedRequest<songData>(() =>
             this.instance.get('/song', {
@@ -172,6 +303,9 @@ class YTManager {
     }
 
     async getRepeatMode(): Promise<repeatMode | null> {
+        if (this.cachedRepeat !== null) {
+            return { mode: this.cachedRepeat };
+        }
         return this.makeAuthenticatedRequest<repeatMode>(() =>
             this.instance.get('/repeat-mode', {
                 headers: { 'Authorization': `Bearer ${this.token}` }
@@ -180,6 +314,9 @@ class YTManager {
     }
 
     async getShuffleMode(): Promise<boolean | null> {
+        if (this.cachedShuffle !== null) {
+            return this.cachedShuffle;
+        }
         const response = await this.makeAuthenticatedRequest<shuffleState>(() =>
             this.instance.get('/shuffle', {
                 headers: { 'Authorization': `Bearer ${this.token}` }
@@ -204,6 +341,15 @@ class YTManager {
                 headers: { 'Authorization': `Bearer ${this.token}` }
             }), '/toggle-play'
         );
+        // Fallback: refresh state in case PLAYER_STATE_CHANGED doesn't fire
+        setTimeout(() => {
+            this.getCurrentSong().then(song => {
+                if (song) {
+                    this.cachedSong = song;
+                    this.emit('state-update', this.cachedSong);
+                }
+            }).catch(() => {});
+        }, 800);
     }
 
     async next(): Promise<void> {
@@ -274,12 +420,39 @@ class YTManager {
             }), '/switch-repeat'
         );
     }
-    async addItemToQueueById(videoId: string): Promise<songData | null> {
-        return this.makeAuthenticatedRequest<songData>(() =>
-            this.instance.post(`/queue`, JSON.stringify({ videoId: videoId, insertPosition: "INSERT_AFTER_CURRENT_VIDEO" }), {
-                headers: { 'Authorization': `Bearer ${this.token}`, 'Content-Type': 'application/json' }
-            }), `/queue/${videoId}`
-        );
+    async addItemToQueueById(videoId: string): Promise<boolean> {
+        try {
+            await this.makeAuthenticatedRequest<songData>(() =>
+                this.instance.post(`/queue`, JSON.stringify({ videoId: videoId, insertPosition: "INSERT_AFTER_CURRENT_VIDEO" }), {
+                    headers: { 'Authorization': `Bearer ${this.token}`, 'Content-Type': 'application/json' }
+                }), `/queue/${videoId}`
+            );
+            return true;
+        } catch {
+            return false;
+        }
+    }
+
+    /** Fetch title + author for a video ID via YouTube's public oEmbed API (no auth needed). */
+    async getSongTitle(videoId: string): Promise<{ title: string; author: string } | null> {
+        try {
+            const url = `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`;
+            const response = await axios.get(url, { timeout: 5000 });
+            if (response.status === 200 && response.data?.title) {
+                return { title: response.data.title, author: response.data.author_name ?? 'YouTube Music' };
+            }
+        } catch {
+            // private/unavailable video — fall through
+        }
+        return null;
+    }
+
+    /** Extract an 11-character YouTube video ID from a URL or bare ID string. */
+    static extractVideoId(text: string): string | null {
+        const urlMatch = text.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|music\.youtube\.com\/watch\?v=)([A-Za-z0-9_-]{11})/);
+        if (urlMatch) return urlMatch[1];
+        if (/^[A-Za-z0-9_-]{11}$/.test(text.trim())) return text.trim();
+        return null;
     }
 }
 

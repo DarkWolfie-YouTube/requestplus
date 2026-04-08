@@ -2,7 +2,7 @@
 import WebSocket from 'ws';
 import { EventEmitter } from 'events';
 
-const WS_URL = 'wss://api.requestplus.xyz';
+const WS_URL = 'wss://testapi.requestplus.xyz';
 
 export interface WebSocketMessage {
   type: string;
@@ -179,6 +179,17 @@ class WebSocketManager extends EventEmitter {
       case 'unsubscribed':
         this.emit('channel-unsubscribed', message);
         break;
+
+      case 'restarting': {
+        const delaySec = message.reconnectInSec ?? 10;
+        (global as any).Logger.info(`[WebSocket] Server restarting — reconnecting in ${delaySec}s`);
+        // Reset reconnect state so we get a fresh run of attempts starting at the server-specified delay
+        this.reconnectAttempts = 0;
+        this.reconnectDelay = delaySec * 1000;
+        this.intentionalDisconnect = false;
+        this.emit('restarting', { reconnectInSec: delaySec });
+        break;
+      }
 
       case 'error':
         console.error('[WebSocket] Server error:', message.error);

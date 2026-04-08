@@ -58,6 +58,14 @@ interface ElectronAPI {
   onToast: (callback: (event: any, toastData: any) => void) => void;
   removeToastListener: () => void;
 
+  // Web-UI modals
+  onModal: (callback: (data: { id: string; title: string; message: string; buttons: string[] }) => void) => void;
+  respondToModal: (id: string, response: number) => void;
+
+  // Locale
+  getLocale: () => Promise<string>;
+  onLocaleUpdate: (callback: (locale: string) => void) => void;
+
   // Debug function
   debugAddQueueItem?: () => Promise<void>;
 
@@ -181,6 +189,20 @@ const electronAPI: ElectronAPI = {
   
   removeToastListener: () => {
     ipcRenderer.removeAllListeners('show-toast');
+  },
+
+  onModal: (callback) => {
+    ipcRenderer.on('show-modal', (_event, data) => callback(data));
+  },
+
+  respondToModal: (id, response) => {
+    ipcRenderer.send('modal-response', id, response);
+  },
+
+  getLocale: () => ipcRenderer.invoke('get-locale'),
+
+  onLocaleUpdate: (callback) => {
+    ipcRenderer.on('locale-update', (_event, locale) => callback(locale));
   },
 
   // Debug function (optional - for testing)

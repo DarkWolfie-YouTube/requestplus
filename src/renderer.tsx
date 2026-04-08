@@ -1,5 +1,6 @@
 import { createRoot } from 'react-dom/client';
 import { useState, useEffect } from 'react';
+import { t } from './i18n';
 import { MusicPlayer } from './components/MusicPlayer';
 import { Settings } from './components/Settings';
 import { Navigation } from './components/Navigation';
@@ -79,6 +80,8 @@ const App = () => {
   });
   const [queue, setQueue] = useState<Queue>([]);
   const [experimentalFeatureEnabled, setExperimentalFeatureEnabled] = useState<boolean>(false);
+  const [locale, setLocale] = useState<string>('en');
+  const [modal, setModal] = useState<{ id: string; title: string; message: string; buttons: string[] } | null>(null);
 
   
 
@@ -172,6 +175,10 @@ const App = () => {
       setOverlayPath(path);
     });
 
+    // Load locale
+    api.getLocale?.().then((l: string) => { if (l) setLocale(l); });
+    api.onLocaleUpdate?.((l: string) => { if (l) setLocale(l); });
+
     // Get update settings
     api.getUpdateSettings?.().then((updateSettings: UpdateSettings) => {
       setUpdateSettings(updateSettings);
@@ -260,6 +267,11 @@ const App = () => {
       // Alternative approach if using different IPC setup
       (window as any).electronAPI.onToast?.(handleToast);
     }
+
+    // Modal listener
+    api.onModal?.((data) => {
+      setModal(data);
+    });
 // Queue handling - fetch initial data
   const handleQueueUpdate = (updatedQueue: Queue) => {
     console.log('Queue update received in renderer:', updatedQueue);
@@ -286,9 +298,6 @@ const App = () => {
   
 
 // Then set up listener with the defined callback
-  api.updateQueuePage(handleQueueUpdate);
-  api.updateQueuePage(handleQueueUpdate);
-  api.updateQueuePage(handleQueueUpdate);
   api.updateQueuePage(handleQueueUpdate);
   api.experimentalFeatureEnabled(async (isEnabled: boolean) => {
     setExperimentalFeatureEnabled(isEnabled);
@@ -333,24 +342,26 @@ const handleTrackSelect = (track: QueueItem) => {
     switch (currentView) {
       case 'player':
         return (
-          <MusicPlayer 
-            currentTrack={currentTrack} 
+          <MusicPlayer
+            currentTrack={currentTrack}
             setCurrentTrack={setCurrentTrack}
             queue={queue}
             settings={settings}
+            locale={locale}
           />
         );
       case 'queue':
         return (
-          <QueuePage 
+          <QueuePage
             queue={queue}
             setQueue={setQueue}
             onTrackSelect={handleTrackSelect}
+            locale={locale}
           />
         );
       case 'settings':
         return (
-          <Settings 
+          <Settings
             userd={userd}
             setUserd={setUserd}
             overlayPath={overlayPath}
@@ -360,10 +371,11 @@ const handleTrackSelect = (track: QueueItem) => {
             setSettings={setSettings}
             expermintalFeatureEnabled={experimentalFeatureEnabled}
             setExperimentalFeatureEnabled={setExperimentalFeatureEnabled}
+            locale={locale}
           />
         );
       default:
-        return <MusicPlayer currentTrack={currentTrack} setCurrentTrack={setCurrentTrack} queue={queue} settings={settings} />;
+        return <MusicPlayer currentTrack={currentTrack} setCurrentTrack={setCurrentTrack} queue={queue} settings={settings} locale={locale} />;
     }
   };
 
@@ -377,10 +389,45 @@ const handleTrackSelect = (track: QueueItem) => {
       </div>
 
       {/* Navigation */}
-      <Navigation currentView={currentView} onViewChange={setCurrentView} settings={settings} />
+      <Navigation currentView={currentView} onViewChange={setCurrentView} settings={settings} locale={locale} />
 
       {/* Toast Notifications */}
       <Toaster position="top-right" richColors />
+
+      {/* Web-UI Modal */}
+      {modal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="bg-slate-800 border border-purple-500/30 rounded-xl p-6 max-w-md w-full mx-4 shadow-2xl">
+            <h2 className="text-white font-bold text-lg mb-3">{modal.title}</h2>
+            <p className="text-gray-300 text-sm whitespace-pre-wrap mb-6">{modal.message}</p>
+            <div className="flex gap-2 justify-end flex-wrap">
+              {modal.buttons.map((btn, i) => {
+                const isDecline = btn.toLowerCase() === 'decline';
+                const isPrimary = i === 0;
+                return (
+                  <button
+                    key={i}
+                    onClick={() => {
+                      const id = modal.id;
+                      setModal(null);
+                      (window as any).api?.respondToModal(id, i);
+                    }}
+                    className={
+                      isDecline
+                        ? 'px-4 py-2 rounded-lg text-sm font-medium bg-red-500/20 hover:bg-red-500/30 text-red-400 transition-colors'
+                        : isPrimary
+                        ? 'px-4 py-2 rounded-lg text-sm font-medium bg-gradient-to-r from-purple-600 to-green-600 hover:from-purple-500 hover:to-green-500 text-white transition-all'
+                        : 'px-4 py-2 rounded-lg text-sm font-medium bg-slate-700/50 hover:bg-slate-600/50 text-white transition-colors'
+                    }
+                  >
+                    {btn}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

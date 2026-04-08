@@ -1,5 +1,6 @@
 import * as React from 'react';
 import { useState, useEffect } from 'react';
+import { t } from '../i18n';
 import { Card } from './ui/card';
 import { Button } from './ui/button';
 import { ContextMenu, ContextMenuContent, ContextMenuTrigger, ContextMenuItem } from './ui/context-menu';
@@ -14,13 +15,15 @@ interface QueuePageProps {
   queue: Queue;
   setQueue: (queue: Queue) => void;
   onTrackSelect?: (track: QueueItem) => void;
+  locale?: string;
 }
 
 
-export function QueuePage({ 
+export function QueuePage({
   queue,
   setQueue,
-  onTrackSelect 
+  onTrackSelect,
+  locale = 'en'
 }: QueuePageProps) {
 
   const [currentTrack, setCurrentTrack] = useState<QueueItem | null>(null);
@@ -66,7 +69,7 @@ export function QueuePage({
     }
   };
 
-  const clearQueue = () => {
+  const clearQueue = async () => {
     const api = (window as any).api;
     if (!api) {
       toast.error('API not available');
@@ -74,9 +77,9 @@ export function QueuePage({
     }
 
     try {
-      const cleared = api.clearQueue?.();
+      const cleared = await api.clearQueue?.();
       if (cleared !== false) {
-        setQueue([]);
+        setQueue({ items: [], currentCount: 0, currentlyPlayingIndex: -1 });
         toast.success('Queue cleared');
       } else {
         toast.error('Failed to clear queue');
@@ -139,7 +142,7 @@ export function QueuePage({
                 <Music className="size-6 text-white" />
               </div>
               <div>
-                <h3 className="text-white font-bold text-lg">Moderation Queue</h3>
+                <h3 className="text-white font-bold text-lg">{t('CLIENT_MOD_QUEUE_TITLE', locale)}</h3>
                 <p className="text-purple-300 text-sm">
                   {queue.items.length === 0 ? 'No' : queue.items.length} {queue.items.length === 1 ? 'song' : 'songs'}
                 </p>
@@ -155,9 +158,9 @@ export function QueuePage({
                   <Music className="h-8 w-8 text-purple-300" />
                 </div>
                 <div>
-                  <h3 className="font-medium text-white">No songs in queue</h3>
+                  <h3 className="font-medium text-white">{t('CLIENT_QUEUE_EMPTY', locale)}</h3>
                   <p className="text-sm text-gray-400">
-                    Songs will appear here when they're requested
+                    {t('CLIENT_QUEUE_EMPTY_DESC', locale)}
                   </p>
                 </div>
               </div>
@@ -209,13 +212,13 @@ export function QueuePage({
                             <div className="flex items-center gap-2">
                               {track.iscurrentlyPlaying ? (
                                 <span className="px-2 py-1 rounded text-xs font-medium bg-purple-500/20 text-purple-300">
-                                  Playing
+                                  {t('CLIENT_PLAYING', locale)}
                                 </span>
                               ) : track.isQueued ? (
                                 <div className="flex items-center gap-1 px-2 py-1 rounded bg-green-500/20">
                                   <Clock className="h-3 w-3 text-green-400" />
                                   <span className="text-xs text-green-400 font-medium">
-                                    Queued
+                                    {t('CLIENT_QUEUED', locale)}
                                   </span>
                                 </div>
                               ) : null}
@@ -230,7 +233,7 @@ export function QueuePage({
                             className="cursor-pointer text-red-400 hover:bg-red-500/20 focus:text-red-400"
                           >
                             <Trash2 className="h-4 w-4 mr-2" />
-                            Remove from Queue
+                            {t('CLIENT_REMOVE_FROM_QUEUE', locale)}
                           </ContextMenuItem>
                         </ContextMenuContent>
                       </ContextMenu>
@@ -248,7 +251,7 @@ export function QueuePage({
               className="bg-slate-700/50 hover:bg-red-500/20 text-red-400 hover:text-red-300 px-4 py-3 rounded-lg transition-all flex items-center justify-center gap-2"
             >
               <Trash2 className="h-4 w-4" />
-              Clear Queue
+              {t('CLIENT_CLEAR_QUEUE', locale)}
             </button>
           )}
         </div>

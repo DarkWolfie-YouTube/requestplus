@@ -106,9 +106,11 @@ class PlaybackHandler {
 
     private async getYouTubeSong(): Promise<songInfo | null> {
         try {
-            // Fetch all YouTube data in parallel
-            const [ytSongData, ytVolume, ytRepeat, ytShuffle, ytLiked] = await Promise.all([
-                this.YTManager.getCurrentSong(),
+            // Prefer the cached WebSocket state; fall back to REST only if WS hasn't fired yet
+            const ytSongData = this.YTManager.getCachedSong() ?? await this.YTManager.getCurrentSong();
+
+            // Fetch ancillary state that isn't included in the WS message
+            const [ytVolume, ytRepeat, ytShuffle, ytLiked] = await Promise.all([
                 this.YTManager.getVolume(),
                 this.YTManager.getRepeatMode(),
                 this.YTManager.getShuffleMode(),
