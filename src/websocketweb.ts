@@ -55,7 +55,7 @@ class WebSocketManager extends EventEmitter {
         (global as any).Logger.info('[WebSocket] Connected');
         this.reconnectAttempts = 0;
         this.reconnectDelay = 1000;
-        
+
         // Authenticate immediately after connection
         this.authenticate();
       });
@@ -69,12 +69,17 @@ class WebSocketManager extends EventEmitter {
         }
       });
 
+      // Explicitly respond to server's protocol-level ping frames
+      this.ws.on('ping', () => {
+        this.ws?.pong();
+      });
+
       this.ws.on('close', (code, reason) => {
         (global as any).Logger.info('[WebSocket] Disconnected:', code, reason.toString());
         this.isAuth = false;
         this.stopPingInterval();
         this.emit('disconnected', { code, reason: reason.toString() });
-        
+
         // Attempt to reconnect (skip if intentionally disconnected)
         if (!this.intentionalDisconnect && this.reconnectAttempts < this.maxReconnectAttempts) {
           this.scheduleReconnect();
@@ -142,7 +147,7 @@ class WebSocketManager extends EventEmitter {
         } catch (error) {
           (global as any).Logger.error('[WebSocket] Error sending chat_listen:', error);
         }
-        
+
         if (resolve) resolve();
         break;
 
@@ -199,7 +204,7 @@ class WebSocketManager extends EventEmitter {
       case 'song_request':
         this.emit('song-request', message);
         break;
-      
+
       case 'song_search_request':
         this.emit('song-search-request', message);
         break;
@@ -324,7 +329,7 @@ class WebSocketManager extends EventEmitter {
           console.error('[WebSocket] Error sending ping:', error);
         }
       }
-    }, 30000); // Send ping every 30 seconds
+    }, 20000); // Every 20s — under the server's 30s heartbeat check
   }
 
   /**

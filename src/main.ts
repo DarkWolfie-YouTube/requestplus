@@ -116,6 +116,20 @@ let amHandler: AMHandler;
 let lastRequestQueueName: string;
 let songIntervalID: NodeJS.Timeout;
 let tray: Tray | null = null;
+let isQuitting: boolean = false;
+let tokenRefreshTimer: NodeJS.Timeout | null = null;
+
+function scheduleTokenRefresh(expiresAt: number): void {
+  if (tokenRefreshTimer) clearTimeout(tokenRefreshTimer);
+  // Refresh 5 minutes before expiry
+  const msUntilRefresh = expiresAt - Date.now() - 5 * 60 * 1000;
+  if (msUntilRefresh <= 0) {
+    authManager.refreshAuthToken();
+    return;
+  }
+  (global as any).Logger?.info(`[Main] Token refresh scheduled in ${Math.round(msUntilRefresh / 1000)}s`);
+  tokenRefreshTimer = setTimeout(() => authManager.refreshAuthToken(), msUntilRefresh);
+}
 
 // Auto-queue monitor function
 async function monitorTrackProgress(trackData: songInfo): Promise<void> {
@@ -457,6 +471,7 @@ async function createWindow(): Promise<void> {
         {
             label: 'Quit',
             click: () => {
+                isQuitting = true;
                 app.quit();
             }
         }
@@ -476,8 +491,10 @@ async function createWindow(): Promise<void> {
 
 
     mainWindow.on('close', (event) => {
-        event.preventDefault();
-        mainWindow?.hide();
+        if (!isQuitting) {
+            event.preventDefault();
+            mainWindow?.hide();
+        }
     });
 }
 
@@ -710,6 +727,7 @@ app.on('window-all-closed', (): void => {
 });
 
 app.on('before-quit', () => {
+    isQuitting = true;
     tray?.destroy();
 });
 
@@ -881,6 +899,7 @@ authManager.on('auth-success', async (token) => {
   if (hardwareInfo) {
     websocketManager.connect(token.token, hardwareInfo.deviceId);
   }
+  scheduleTokenRefresh(token.expiresAt);
   const isExperimentalUser = await authManager.checkExperimentalUser();
     (global as any).IsExperimentalUser = isExperimentalUser;
 
@@ -912,6 +931,7 @@ authManager.on('auth-refreshed', (token) => {
     websocketManager.disconnect();
     websocketManager.connect(token.token, hardwareInfo.deviceId);
   }
+  scheduleTokenRefresh(token.expiresAt);
 });
 
 authManager.on('auth-logout', () => {
