@@ -2,7 +2,7 @@
 import WebSocket from 'ws';
 import { EventEmitter } from 'events';
 
-const WS_URL = 'wss://testapi.requestplus.xyz';
+const WS_URL = 'wss://api.requestplus.xyz';
 
 export interface WebSocketMessage {
   type: string;

@@ -540,7 +540,7 @@ class APIHandler {
 
                     function retryConnection() {
                         var state = getQueryParam('state');
-                        window.location.href = 'https://testapi.requestplus.xyz/kcallback?state=' + state;
+                        window.location.href = 'https://api.requestplus.xyz/kcallback?state=' + state;
                     }
                     initializePage();
                 </script>

@@ -318,7 +318,7 @@ async function createWindow(): Promise<void> {
     const customSession = session.fromPartition('persist:api-session', { cache: false });
     
     customSession.setCertificateVerifyProc((request, callback) => {
-        if (request.hostname === 'testapi.requestplus.xyz') {
+        if (request.hostname === 'api.requestplus.xyz') {
             callback(0); // 0 = success, bypass verification
         } else {
             callback(-3); // -3 = use default verification
@@ -326,7 +326,7 @@ async function createWindow(): Promise<void> {
     });
     const request = net.request({
         method: 'GET',
-        url: 'https://testapi.requestplus.xyz/hardware/check?id=' + authManager.getHardwareInfoPublic()?.deviceId,
+        url: 'https://api.requestplus.xyz/hardware/check?id=' + authManager.getHardwareInfoPublic()?.deviceId,
         session: customSession
     });
 
@@ -442,7 +442,7 @@ async function createWindow(): Promise<void> {
     }
 
     // Create tray icon
-    const iconPath = path.join(__dirname, 'assets', 'the_letter.png');
+    const iconPath = path.join(__dirname, 'assets', 'tray.png');
     tray = new Tray(iconPath);
 
     const contextMenu = Menu.buildFromTemplate([

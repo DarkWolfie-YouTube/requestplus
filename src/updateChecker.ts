@@ -254,7 +254,7 @@ async function checkForUpdates(window: BrowserWindow | null, logger: Logger): Pr
             );
         }
 
-        const endpoint2 = "https://testapi.requestplus.xyz/termsUpdate";
+        const endpoint2 = "https://api.requestplus.xyz/termsUpdate";
         var response2 = await fetch(endpoint2, {
             headers: {
                 'User-Agent': 'RequestPlus-UpdateChecker'

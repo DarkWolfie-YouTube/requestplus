@@ -11,8 +11,8 @@ import { EventEmitter } from 'events';
  */
 
 const PROTOCOL = 'requestplus';
-const AUTH_API_URL = process.env.AUTH_API_URL || 'https://testapi.requestplus.xyz';
-const WEBSITE_URL = process.env.WEBSITE_URL || 'https://testdev.requestplus.xyz';
+const AUTH_API_URL = process.env.AUTH_API_URL || 'https://api.requestplus.xyz';
+const WEBSITE_URL = process.env.WEBSITE_URL || 'https://requestplus.xyz';
 let initialized = false;
 
 // Safe logger helpers — no-ops if Logger isn't initialized yet (e.g. during auth callback process)

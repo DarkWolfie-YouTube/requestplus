@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { t } from '../i18n';
 import { Button } from './ui/button';
 import { Card } from './ui/card';
@@ -65,6 +65,7 @@ export function Settings({
 }: SettingsProps) {
   const [copied, setCopied] = useState(false);
   const [settingsSaved, setSettingsSaved] = useState(false);
+  const renderCount = useRef(0);
 
   const themeOptions = [
     { value: 'default', label: 'Default' },
@@ -172,7 +173,9 @@ export function Settings({
   };
 
   useEffect(() => {
-    //Save Settings Automadically when they change
+    renderCount.current += 1;
+    if (renderCount.current <= 1) return;
+    //Save Settings Automatically when they change
     saveSettings();
   }, [settings]);
 
