@@ -6,11 +6,11 @@ All notable changes to Request+ will be documented in this file.
 
 ## [2.1.1] - 2026-04-09
 
-## Bug Fixes
+### Bug Fixes
 - **YouTube Music Toggle** - This toggle to switch the platform was left under the experminetal tag. This was not meant to be. Updating this as a hotfix.
 
 
-## API Changes, YouTube Chat Support.
+### API Changes, YouTube Chat Support.
 
 - **YouTube Chat Support** - THIS IS A PAID FEAUTRE, This is the only paid feature you will encounter. YouTube API will charge me money for how many requests we use. I can't pay this cost out of pocket.
 
