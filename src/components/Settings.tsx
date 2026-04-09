@@ -85,8 +85,8 @@ export function Settings({
   ];
   const platformOptions = [
     { value: 'spotify', label: 'Spotify', experimental: false },
+    { value: 'youtube', label: 'YouTube (Pear)', experimental: false },
     { value: 'apple', label: 'Apple Music (Cider)', experimental: false },
-    { value: 'youtube', label: 'YouTube (Pear)', experimental: true },
     { value: 'soundcloud', label: 'SoundCloud (EXPIRMENTAL)', experimental: true }
   ];
 
