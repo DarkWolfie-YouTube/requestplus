@@ -14,7 +14,6 @@ class WebSocketManager extends EventEmitter {
   private ws: WebSocket | null = null;
   private isAuth: boolean = false;
   private reconnectAttempts: number = 0;
-  private maxReconnectAttempts: number = 5;
   private reconnectDelay: number = 1000;
   private reconnectTimer: NodeJS.Timeout | null = null;
   private pingInterval: NodeJS.Timeout | null = null;
@@ -80,12 +79,9 @@ class WebSocketManager extends EventEmitter {
         this.stopPingInterval();
         this.emit('disconnected', { code, reason: reason.toString() });
 
-        // Attempt to reconnect (skip if intentionally disconnected)
-        if (!this.intentionalDisconnect && this.reconnectAttempts < this.maxReconnectAttempts) {
+        // Keep retrying indefinitely as long as we haven't intentionally disconnected
+        if (!this.intentionalDisconnect) {
           this.scheduleReconnect();
-        } else if (!this.intentionalDisconnect) {
-          (global as any).Logger.error('[WebSocket] Max reconnection attempts reached');
-          if (reject) reject(new Error('Max reconnection attempts reached'));
         }
       });
 
@@ -96,7 +92,7 @@ class WebSocketManager extends EventEmitter {
 
       // Timeout if connection takes too long
       setTimeout(() => {
-        if (!this.isAuth) {
+        if (!this.isAuth && !this.intentionalDisconnect) {
           reject(new Error('Connection timeout'));
           this.scheduleReconnect();
         }
