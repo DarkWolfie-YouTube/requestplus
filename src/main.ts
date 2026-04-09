@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, shell, MessageBoxOptions, MessageBoxReturnValue, net, session} from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, shell, MessageBoxOptions, MessageBoxReturnValue, net, session, Tray, Menu} from 'electron';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { setTimeout as wait } from 'node:timers/promises';
@@ -115,6 +115,7 @@ let gtsHandler: GTSHandler;
 let amHandler: AMHandler;
 let lastRequestQueueName: string;
 let songIntervalID: NodeJS.Timeout;
+let tray: Tray | null = null;
 
 // Auto-queue monitor function
 async function monitorTrackProgress(trackData: songInfo): Promise<void> {
@@ -439,8 +440,44 @@ async function createWindow(): Promise<void> {
     if (authManager.isAuthenticated()) {
         mainWindow.webContents.send('auth-check', true);
     }
-    mainWindow.on('closed', () => {
-        mainWindow = null;
+
+    // Create tray icon
+    const iconPath = path.join(__dirname, 'assets', 'the_letter.png');
+    tray = new Tray(iconPath);
+
+    const contextMenu = Menu.buildFromTemplate([
+        {
+            label: 'Show Request+',
+            click: () => {
+                mainWindow?.show();
+                mainWindow?.focus();
+            }
+        },
+        { type: 'separator' },
+        {
+            label: 'Quit',
+            click: () => {
+                app.quit();
+            }
+        }
+    ]);
+
+    tray.setToolTip('Request+');
+    tray.setContextMenu(contextMenu);
+
+    // Single click on tray icon shows/focuses the window
+    tray.on('click', () => {
+        if (mainWindow?.isVisible()) {
+            mainWindow.focus();
+        } else {
+            mainWindow?.show();
+        }
+    });
+
+
+    mainWindow.on('close', (event) => {
+        event.preventDefault();
+        mainWindow?.hide();
     });
 }
 
@@ -495,7 +532,7 @@ ipcMain.handle('window-minimize', (): void => {
 
 ipcMain.handle('window-close', async (): Promise<void> => {
     if (mainWindow) {
-        await mainWindow.close();
+        await mainWindow.hide();
     }
 });
 
@@ -669,7 +706,11 @@ app.whenReady().then(async () => {
 });
 
 app.on('window-all-closed', (): void => {
-    app.quit();
+    // app.quit();
+});
+
+app.on('before-quit', () => {
+    tray?.destroy();
 });
 
 app.on('activate', (): void => {
@@ -1023,4 +1064,32 @@ websocketManager.on('song-request', async (message) => {
         }
     }
   }
+});
+
+
+websocketManager.on('song-search-request', async (message) => {
+    console.log('Received song search request:', message);
+    var newQuery = message.query
+    if (settings.platform === 'spotify') { 
+        websocketManager.send({ type: 'song_search_response', message: 'ERR_SP_SEARCH_NOT_ALLOWED',username: message.username, msgID: message.messageId, channel: message.channel });
+    } else if (settings.platform === 'apple') {
+        newQuery = newQuery.replace(' ', '+').trim();
+        console.log('Performing Apple Music search with query:', newQuery);
+        try {
+            await amHandler.onSearchRequest(newQuery).then((response) => {
+                console.log('Received response from Apple Music search:', response);
+                if (response) {
+                    const songName = response.songs.data[0]?.attributes?.name || 'Unknown Title';
+                    const artist = response.songs.data[0]?.attributes?.artistName || 'Unknown Artist';
+                    websocketManager.send({ type: 'song_search_response', message: 'OKAY_AM_SEARCH', username: message.username, songName, artist, msgID: message.messageId, platform: message.platform, channel: message.channel, songLink: response.songs.data[0]?.attributes?.url || '' });
+                } else {
+                    websocketManager.send({ type: 'song_search_response', message: 'ERR_AM_SEARCH_FAILED', username: message.username, msgID: message.messageId, platform: message.platform, channel: message.channel });
+                }
+            })}catch (error) {
+                websocketManager.send({ type: 'song_search_response', message: 'ERR_AM_SEARCH_FAILED', username: message.username, msgID: message.messageId, platform: message.platform, channel: message.channel });
+            }
+    } else {
+        websocketManager.send({ type: 'song_search_response', message: 'ERR_SEARCH_PLATFORM_NOT_SUPPORTED', username: message.username, msgID: message.messageId, platform: message.platform, channel: message.channel });
+    }
+
 });

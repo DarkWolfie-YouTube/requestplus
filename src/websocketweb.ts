@@ -199,6 +199,10 @@ class WebSocketManager extends EventEmitter {
       case 'song_request':
         this.emit('song-request', message);
         break;
+      
+      case 'song_search_request':
+        this.emit('song-search-request', message);
+        break;
 
       default:
         console.warn('[WebSocket] Unknown message type:', message.type);

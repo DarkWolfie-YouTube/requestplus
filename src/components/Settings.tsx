@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { t } from '../i18n';
 import { Button } from './ui/button';
 import { Card } from './ui/card';
@@ -170,6 +170,11 @@ export function Settings({
       toast.error('Update check not available in web mode');
     }
   };
+
+  useEffect(() => {
+    //Save Settings Automadically when they change
+    saveSettings();
+  }, [settings]);
 
   return (
     <div className="relative w-full h-full bg-gradient-to-br from-slate-900 via-purple-900/20 to-slate-900 overflow-hidden">
@@ -521,7 +526,9 @@ export function Settings({
             </div>
           </div>
 
-          {/* Save Settings Button */}
+          {/* 
+            REDACTED DUE TO AUTO SAVE FUNCTIONALITY -
+          Save Settings Button
           <button onClick={saveSettings} className="w-full bg-gradient-to-r from-purple-600 to-green-600 hover:from-purple-500 hover:to-green-500 text-white px-4 py-3 rounded-lg transition-all shadow-lg font-medium">
             {t('COMMON_SAVE', locale)}
           </button>
@@ -529,7 +536,7 @@ export function Settings({
             <p className="text-sm text-green-400 text-center animate-fade-in">
               ✓ {t('COMMON_SAVED', locale)}
             </p>
-          )}
+          )} */}
 
           {/* About Section */}
           <div className="bg-slate-800/60 backdrop-blur-sm border border-purple-500/30 rounded-xl p-5 space-y-3">

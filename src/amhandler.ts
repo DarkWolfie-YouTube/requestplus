@@ -26,6 +26,23 @@ interface AMSongObject {
     relationships: Object;
 }
 
+interface AMSearchObject {
+    songs: AMSearchSongObject;
+}
+
+interface AMSearchSongObject {
+    href: string;
+    next: string;
+    data: AMSearchSongDataObject[];
+}
+
+interface AMSearchSongDataObject {
+    id: string;
+    type: string;
+    href: string;
+    attributes: AMSongAttributes;
+}
+
 interface AMAPISongObject {
     data: {
         data: AMSongObject[];
@@ -285,6 +302,31 @@ export default class AMHandler {
         } catch (error) {
             this.logger.error(error);
         }
+    }
+
+    public async onSearchRequest(query: string): Promise<AMSearchObject> {
+        try {
+            const response = await fetch(`http://localhost:10767/api/v1/amapi/run-v3`, {
+                method: 'POST',
+                headers: {
+                    'apptoken': this.apptoken,
+                    'Content-Type': 'application/json',
+                    'User-Agent': 'Request+/2.1.0 Release'
+                },
+                body: JSON.stringify({
+                    "path": "/v1/catalog/us/search?types=songs&term=" + query,
+                })
+            });
+            const data = await response.json() as any;
+            if ((data.data.results as AMSearchObject).songs !== undefined) {
+                return data.data.results as AMSearchObject;
+            }
+            throw new Error('No search results found');
+        } catch (error) {
+            this.logger.error('Error searching Apple Music: ' + error);
+            throw error;
+        }
+
     }
 
     /**
