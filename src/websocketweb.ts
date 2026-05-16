@@ -1,8 +1,7 @@
 // websocket-manager.ts
 import WebSocket from 'ws';
 import { EventEmitter } from 'events';
-
-const WS_URL = 'wss://api.requestplus.xyz';
+import { WS_URL } from './config';
 
 export interface WebSocketMessage {
   type: string;

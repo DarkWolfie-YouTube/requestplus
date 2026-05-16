@@ -10,6 +10,12 @@ import { QueuePage } from './components/Queue';
 import { Queue, QueueItem } from './queueHandler';
 import { toast } from 'sonner';
 
+const emptyQueue: Queue = {
+  items: [],
+  currentCount: 0,
+  currentlyPlayingIndex: -1
+};
+
 interface Track {
   title: string;
   artist: string;
@@ -78,7 +84,7 @@ const App = () => {
     requestLimit: 10,
     telemetryEnabled: true
   });
-  const [queue, setQueue] = useState<Queue>([]);
+  const [queue, setQueue] = useState<Queue>(emptyQueue);
   const [experimentalFeatureEnabled, setExperimentalFeatureEnabled] = useState<boolean>(false);
   const [locale, setLocale] = useState<string>('en');
   const [modal, setModal] = useState<{ id: string; title: string; message: string; buttons: string[] } | null>(null);
@@ -89,22 +95,11 @@ const App = () => {
   // Initialize all API connections once at app level
   useEffect(() => {
     const api = (window as any).api;
-    console.log('API available:', !!api);
     if (!api) {
-      console.log('No API found - running in web mode');
-      // Initialize empty queue for web mode
-      setQueue({
-        items: [],
-        currentCount: 0,
-        currentlyPlayingIndex: -1
-      });
+      setQueue(emptyQueue);
       return;
     }
-    setQueue({
-        items: [],
-        currentCount: 0,
-        currentlyPlayingIndex: -1
-      });
+    setQueue(emptyQueue);
 
     // Track info handler
     const handleTrackInfo = (info: songInfo) => {
@@ -143,7 +138,6 @@ const App = () => {
 
     // Set up track info listener
     if (api.getInfo && typeof api.getInfo === 'function') {
-      console.log('Setting up getInfo listener');
       api.getInfo(handleTrackInfo);
     }
 
@@ -151,7 +145,6 @@ const App = () => {
     if (api.loadSettings) {
       api.loadSettings().then((loadedSettings: any) => {
         if (loadedSettings) {
-          console.log('Loaded settings from Electron:', loadedSettings);
           setSettings(prev => ({ ...prev, ...loadedSettings }));
         }
       }).catch((err: any) => {
@@ -186,7 +179,6 @@ const App = () => {
 
     // Listen for auth success
     api.authSuccess?.((response: any) => {
-      console.log('Received auth success response:', response);
       if (response.status === 'started') {
         toast.info('Authentication flow started. Please complete the process in your browser.');
         return
@@ -202,7 +194,6 @@ const App = () => {
     });
 
     api.authCheck((isAuthenticated: boolean) => {
-      console.log('Received auth check:', isAuthenticated);
       if (isAuthenticated) {
         api.fetchUserData().then((userData: User) => {
           setUserd(userData);
@@ -215,15 +206,12 @@ const App = () => {
 
     // Call preload if available
     if (api.preload && typeof api.preload === 'function') {
-      console.log('Calling api.preload');
       api.preload();
     }
 
     // toast notification listener
     // Toast notification listener
     const handleToast = (event: any, toastData: any) => {
-      console.log('Received toast:', toastData);
-      
       // Handle different toast data formats for backward compatibility
       let message, type, duration;
       
@@ -274,13 +262,11 @@ const App = () => {
     });
 // Queue handling - fetch initial data
   const handleQueueUpdate = (updatedQueue: Queue) => {
-    console.log('Queue update received in renderer:', updatedQueue);
     setQueue(updatedQueue);
   };
   const fetchInitialQueue = async () => {
     try {
       const queueData = await api.getQueue();
-      console.log('Initial queue fetch:', queueData);
       if (queueData) {
         setQueue(queueData);
       }
@@ -310,7 +296,6 @@ const App = () => {
 
   // Cleanup function
   return () => {
-    console.log('Cleaning up main useEffect');
     api.removeToastListener?.();
     api.removeQueueListener?.();
   };
@@ -329,7 +314,7 @@ const handleTrackSelect = (track: QueueItem) => {
     // Update queue to reflect the currently playing song
     const updatedQueueItems: QueueItem[] = queue.items.map((track: QueueItem) => ({
       ...track,
-      isCurrentlyPlaying: track.id === track.id
+      iscurrentlyPlaying: track.id === updatedTrack.id
     }));
     const updatedQueue = {
       ...queue,

@@ -1,10 +1,10 @@
 import express, { Express, Request, Response } from 'express';
 import cors from 'cors';
-import bodyParser from 'body-parser';
 import { Settings } from './settingsHandler';
 import * as path from 'path';
 import { BrowserWindow } from 'electron';
 import PlaybackHandler from './playbackHandler';
+import type { Server } from 'node:http';
 
 // Type definitions
 interface TwitchUser {
@@ -62,6 +62,7 @@ class APIHandler {
     private theme: string;
     private refresh: boolean;
     private callback: any;
+    private server: Server | null = null;
     public hideSongFromView: boolean = false;
 
     constructor(
@@ -83,8 +84,8 @@ class APIHandler {
     }
 
     private setupMiddleware(): void {
-        this.app.use(bodyParser.json());
-        this.app.use(bodyParser.urlencoded({ extended: true }));
+        this.app.use(express.json());
+        this.app.use(express.urlencoded({ extended: true }));
         this.app.use(cors({
             origin: '*',
             methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
@@ -552,7 +553,9 @@ class APIHandler {
     }
 
     private startServer(): void {
-        this.app.listen(444, () => {
+        if (this.server) return;
+
+        this.server = this.app.listen(444, () => {
             this.logger.info('API server listening on port 444');
         });
     }

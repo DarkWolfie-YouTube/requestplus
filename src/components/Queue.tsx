@@ -1,13 +1,9 @@
 import * as React from 'react';
-import { useState, useEffect } from 'react';
 import { t } from '../i18n';
-import { Card } from './ui/card';
-import { Button } from './ui/button';
 import { ContextMenu, ContextMenuContent, ContextMenuTrigger, ContextMenuItem } from './ui/context-menu';
-import { Separator } from './ui/separator';
 import { ScrollArea } from './ui/scroll-area';
 import { ImageWithFallback } from './figma/ImageWithFallback';
-import { Music, Play, MoreVertical, Trash2, Clock } from 'lucide-react';
+import { Music, Play, Trash2, Clock } from 'lucide-react';
 import { toast } from 'sonner';
 import { Queue, QueueItem } from '../queueHandler';
 
@@ -25,19 +21,6 @@ export function QueuePage({
   onTrackSelect,
   locale = 'en'
 }: QueuePageProps) {
-
-  const [currentTrack, setCurrentTrack] = useState<QueueItem | null>(null);
-
-  useEffect(() => {
-    if (queue.items.length > 0) {
-      setCurrentTrack(queue.items[0]);
-    } else {
-      setCurrentTrack(null);
-    }
-  }, [queue]);
-
-
-
   const removeFromQueue = (trackId: string) => {
     const api = (window as any).api;
     if (!api) {

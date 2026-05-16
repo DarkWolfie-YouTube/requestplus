@@ -36,6 +36,7 @@ interface SettingsState {
   gtsEnabled: boolean;
   subsOnly: boolean;
   appleMusicAppToken: string;
+  primarySearchPlatform: string;
 }
 
 interface SettingsProps {
@@ -87,8 +88,19 @@ export function Settings({
     { value: 'spotify', label: 'Spotify', experimental: false },
     { value: 'youtube', label: 'YouTube (Pear)', experimental: false },
     { value: 'apple', label: 'Apple Music (Cider)', experimental: false },
-    { value: 'soundcloud', label: 'SoundCloud (EXPIRMENTAL)', experimental: true }
+    { value: 'soundcloud', label: 'SoundCloud (EXPIRMENTAL)', experimental: true },
+    { value: 'spotube', label: 'Spotify and YouTube (EXPIRMENTAL)', experimental: true }
   ];
+
+  // Which individual platforms are active for each multi-platform option
+  const multiPlatformMembers: Record<string, { value: string; label: string }[]> = {
+    spotube: [
+      { value: 'spotify', label: 'Spotify' },
+      { value: 'youtube', label: 'YouTube (Pear)' },
+    ],
+  };
+
+  const isMultiPlatform = settings.platform in multiPlatformMembers;
 
   const copyToClipboard = async (text: string) => {
     try {
@@ -404,7 +416,7 @@ export function Settings({
                 <SelectTrigger className="bg-slate-900/50 border-purple-500/30 text-white">
                   <SelectValue placeholder="Select a theme" />
                 </SelectTrigger>
-                <SelectContent position="item-center" align="center" sideOffset={4} sticky="always" side="bottom" className="bg-slate-800 border-purple-500/30">
+                <SelectContent position="item-aligned" align="center" sideOffset={4} sticky="always" side="bottom" className="bg-slate-800 border-purple-500/30">
                   {themeOptions.map((option) => (
                     <SelectItem key={option.value} value={option.value} className="text-white hover:bg-purple-500/20">
                       {option.label}
@@ -434,7 +446,7 @@ export function Settings({
                   <SelectTrigger className="bg-slate-900/50 border-purple-500/30 text-white">
                     <SelectValue placeholder="Select a platform" />
                   </SelectTrigger>
-                  <SelectContent position="item-center" className="bg-slate-800 border-purple-500/30">
+                  <SelectContent position="item-aligned" className="bg-slate-800 border-purple-500/30">
                     {expermintalFeatureEnabled ? (
                       platformOptions.map((option) => (
                         <SelectItem key={option.value} value={option.value} className="text-white hover:bg-purple-500/20">
@@ -461,11 +473,35 @@ export function Settings({
                     type="text"
                     placeholder={t('CLIENT_CIDER_TOKEN_PLACEHOLDER', locale)}
                     value={settings.appleMusicAppToken || ''}
-                    onChange={(e) => 
+                    onChange={(e) =>
                       setSettings({...settings, appleMusicAppToken: e.target.value})
                     }
                     className="bg-slate-900/50 border-purple-500/30 text-white placeholder:text-gray-500"
                   />
+                </div>
+              )}
+
+              {isMultiPlatform && (
+                <div className="space-y-2">
+                  <Label className="text-white" htmlFor="primarySearchPlatform">Primary Search Platform</Label>
+                  <p className="text-xs text-gray-400">
+                    When a song request has no URL, searches will go to this platform.
+                  </p>
+                  <Select
+                    value={settings.primarySearchPlatform || multiPlatformMembers[settings.platform][0].value}
+                    onValueChange={(value) => setSettings({...settings, primarySearchPlatform: value})}
+                  >
+                    <SelectTrigger className="bg-slate-900/50 border-purple-500/30 text-white">
+                      <SelectValue placeholder="Select search platform" />
+                    </SelectTrigger>
+                    <SelectContent position="item-aligned" className="bg-slate-800 border-purple-500/30">
+                      {multiPlatformMembers[settings.platform].map((option) => (
+                        <SelectItem key={option.value} value={option.value} className="text-white hover:bg-purple-500/20">
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
               )}
             </div>
@@ -546,7 +582,7 @@ export function Settings({
             <div>
               <h3 className="text-white font-medium">{t('CLIENT_ABOUT_TITLE', locale)}</h3>
               <p className="text-sm text-gray-400">
-                Version 2.1.0 • Built for streamers by streamers
+                Version 2.2.0 • Built for streamers by streamers
               </p>
             </div>
 

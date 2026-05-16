@@ -24,7 +24,6 @@ import { songData, YTManager } from './ytManager';
 import PlaybackHandler, { songInfo } from './playbackHandler';
 import GTSHandler from './gtsHandler';
 import AMHandler from './amhandler';
-import { GalleryThumbnailsIcon } from 'lucide-react';
 
 var handleStartupEvent = function() {
   if (process.platform !== 'win32') {
@@ -146,7 +145,7 @@ async function monitorTrackProgress(trackData: songInfo): Promise<void> {
     const TEN_SECONDS = 10000;
     const THIRTY_SECONDS = 30000;
 
-    if (gtsHandler.hasGuessed = false && timeElapsed >= THIRTY_SECONDS) {
+    if (!gtsHandler.hasGuessed && timeElapsed >= THIRTY_SECONDS) {
         gtsHandler.failedToGuess();
     }
 
@@ -301,12 +300,9 @@ async function ensureOverlayFile(): Promise<string> {
         fs.mkdirSync(overlayDir, { recursive: true });
     }
 
-    if (fs.existsSync(targetPath)) {
-        fs.unlinkSync(targetPath);
-    }
-
     const sourceFile: string = path.join(__dirname, 'views', 'overlay.html');
-    if (!fs.existsSync(targetPath) || !app.isPackaged) {
+    const shouldCopyOverlay = !fs.existsSync(targetPath) || !fs.readFileSync(sourceFile).equals(fs.readFileSync(targetPath));
+    if (shouldCopyOverlay) {
         fs.copyFileSync(sourceFile, targetPath);
     }
 
@@ -321,7 +317,10 @@ async function ensureOverlayFile(): Promise<string> {
     styles.forEach((style: string) => {
         const sourceStyle: string = path.join(stylesDir, style);
         const targetStyle: string = path.join(targetStylesDir, style);
-        fs.copyFileSync(sourceStyle, targetStyle);
+        const shouldCopyStyle = !fs.existsSync(targetStyle) || !fs.readFileSync(sourceStyle).equals(fs.readFileSync(targetStyle));
+        if (shouldCopyStyle) {
+            fs.copyFileSync(sourceStyle, targetStyle);
+        }
     });
 
     return targetPath;
@@ -365,7 +364,7 @@ async function createWindow(): Promise<void> {
 
     request.end();
 
-    ensureOverlayFile();
+    await ensureOverlayFile();
 
     mainWindow = new BrowserWindow({
         width: 600,
@@ -405,8 +404,8 @@ async function createWindow(): Promise<void> {
     // Setup auth event listeners BEFORE deep link handling so events aren't missed
     setupAuthEventListeners(mainWindow);
     setupDeepLinkHandling(mainWindow);
-    queueHandler = new QueueHandler(Logger, mainWindow, settings);
     settings = await settingsHandler.load();
+    queueHandler = new QueueHandler(Logger, mainWindow, settings);
 
         
     if (!WSServer && !(global as any).ISAUTHING) {
@@ -532,14 +531,14 @@ ipcMain.handle('save-settings', (event: Electron.IpcMainInvokeEvent, settinga: S
     });
 });
 
-ipcMain.on('settings-updated', (event: Electron.IpcMainEvent, settings: Settings): void => {
-    console.log('Settings updated:', settings);
-    settings = settings;
-    settingsHandler.save(settings);
-    playbackHandler.updateSettings(settings.platform);
-    apiHandler.updateSettings(settings);
-    gtsHandler.updateSettings(settings);
-    amHandler.updateSettings(settings);
+ipcMain.on('settings-updated', (event: Electron.IpcMainEvent, updatedSettings: Settings): void => {
+    Logger?.info('Settings updated');
+    settings = updatedSettings;
+    settingsHandler.save(updatedSettings);
+    playbackHandler.updateSettings(updatedSettings.platform);
+    apiHandler.updateSettings(updatedSettings);
+    gtsHandler.updateSettings(updatedSettings);
+    amHandler.updateSettings(updatedSettings);
     updateIntervalForSongInfo();
 });
 
@@ -826,7 +825,6 @@ async function requestTrackInfo(): Promise<void> {
     const currentSongInformation: songInfo = { ...info };
     mainWindow?.webContents.send('song-info', currentSongInformation);
     monitorTrackProgress(currentSongInformation);
-    await wait(2000);
     checkCurrentlyPlayingTrack(currentSongInformation);
 }
 
@@ -854,7 +852,7 @@ function updateIntervalForSongInfo(): void {
     }
     songIntervalID = setInterval(() => {
         requestTrackInfo();
-    }, 500);
+    }, 1000);
 }
 
 

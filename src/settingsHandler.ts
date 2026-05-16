@@ -13,6 +13,12 @@ interface Settings {
     platform: string;
     telemetryEnabled: boolean;
     gtsEnabled: boolean;
+    /** Enable multi-platform mode */
+    multiPlatform: boolean;
+    /** Platforms active in multi-platform mode */
+    platforms: string[];
+    /** Which platform to search on when a request has no URL (multi-platform mode) */
+    primarySearchPlatform: string;
     [key: string]: any; // Allow additional properties
 }
 
@@ -35,7 +41,10 @@ class SettingsHandler {
                 filterExplicit: false,
                 platform: 'spotify',
                 telemetryEnabled: true,
-                gtsEnabled: false
+                gtsEnabled: false,
+                multiPlatform: false,
+                platforms: ['spotify'],
+                primarySearchPlatform: 'spotify',
             };
         }
         try {
@@ -53,7 +62,10 @@ class SettingsHandler {
                 filterExplicit: false,
                 platform: 'spotify',
                 telemetryEnabled: true,
-                gtsEnabled: false
+                gtsEnabled: false,
+                multiPlatform: false,
+                platforms: ['spotify'],
+                primarySearchPlatform: 'spotify',
             };
         }
     }

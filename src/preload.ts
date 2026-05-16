@@ -122,25 +122,21 @@ const electronAPI: ElectronAPI = {
   
   // Queue update listener - this is the key fix
   updateQueuePage: (callback) => {
-    console.log('Setting up queue update listener in preload');
-    
     if (typeof callback !== 'function') {
       console.error('Queue update callback is not a function');
       return;
     }
-    // Set up the new listener
+    ipcRenderer.removeAllListeners('update-queue');
     ipcRenderer.on('update-queue', (event, queue) => {
-      console.log('Queue update received in preload:', queue);
       if (typeof callback !== 'function') {
         console.error('Queue update callback is not a function');
         return;
       }
-      callback(queue); // Call the renderer callback with just the queue data
+      callback(queue);
     });
   },
   
   removeQueueListener: () => {
-    console.log('Removing queue update listener');
     ipcRenderer.removeAllListeners('update-queue');
   },
 
@@ -180,9 +176,8 @@ const electronAPI: ElectronAPI = {
 
   // Toast handling
   onToast: (callback) => {
-    console.log('Setting up toast listener in preload');
+    ipcRenderer.removeAllListeners('show-toast');
     ipcRenderer.on('show-toast', (event, toastData) => {
-      console.log('Toast received in preload:', toastData);
       callback(event, toastData);
     });
   },

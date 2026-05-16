@@ -1,10 +1,6 @@
 import * as React from 'react';
 import { useState, useEffect, useRef } from 'react';
 import { t } from '../i18n';
-import { Button } from './ui/button';
-import { Card } from './ui/card';
-
-import { Slider } from './ui/slider';
 import { Volume2, Heart, SkipBack, Play, Pause, SkipForward, Repeat, Shuffle, Repeat1, Music } from 'lucide-react';
 import { ImageWithFallback } from './figma/ImageWithFallback';
 import { Queue } from 'src/queueHandler';
@@ -68,10 +64,8 @@ export function MusicPlayer({ currentTrack, setCurrentTrack, queue, settings, lo
 
     if (currentTrack.isPlaying) {
       api.playPause?.();
-      console.log('Music paused');
     } else {
       api.playPause?.();
-      console.log('Music playing');
     }
   };
 
@@ -81,7 +75,6 @@ export function MusicPlayer({ currentTrack, setCurrentTrack, queue, settings, lo
   };
 
   const handleNext = async () => {
-    console.log(queue)
     const api = (window as any).api;
     if (!api) return;
     if (queue.items.length === 0) {
@@ -95,8 +88,6 @@ export function MusicPlayer({ currentTrack, setCurrentTrack, queue, settings, lo
     }
 
     api.playTrackAtIndex?.(queue.currentlyPlayingIndex + 1);
-    console.log("triggering")
-    console.log("settings:", settings)
     if (settings.platform === 'apple') {
       setTimeout(() => api.skip?.(), 300);
     } else if (settings.platform === 'youtube') {
@@ -119,7 +110,6 @@ export function MusicPlayer({ currentTrack, setCurrentTrack, queue, settings, lo
 
     // You might want to add a seek API call here
     seek(newTime);
-    console.log('Seek to:', newTime);
   };
 
   const seek = (newTime: number) => {

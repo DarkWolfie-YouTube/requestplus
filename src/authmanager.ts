@@ -4,6 +4,7 @@ import * as os from 'os';
 import * as fs from 'fs';
 import * as path from 'path';
 import { EventEmitter } from 'events';
+import { API_URL, WEBSITE_URL as CONFIG_WEBSITE_URL } from './config';
 
 /**
  * Deep Link Protocol Handler for RequestPlus Desktop Client
@@ -11,8 +12,8 @@ import { EventEmitter } from 'events';
  */
 
 const PROTOCOL = 'requestplus';
-const AUTH_API_URL = process.env.AUTH_API_URL || 'https://api.requestplus.xyz';
-const WEBSITE_URL = process.env.WEBSITE_URL || 'https://requestplus.xyz';
+const AUTH_API_URL = API_URL;
+const WEBSITE_URL = CONFIG_WEBSITE_URL;
 let initialized = false;
 
 // Safe logger helpers — no-ops if Logger isn't initialized yet (e.g. during auth callback process)

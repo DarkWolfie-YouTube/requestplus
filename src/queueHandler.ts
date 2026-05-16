@@ -150,7 +150,10 @@ class QueueHandler {
     }
 
     getQueue(): Queue {
-        return { ...this.queue };
+        return {
+            ...this.queue,
+            items: this.queue.items.map(item => ({ ...item }))
+        };
     }
 
     getFormattedQueue(): Queue {
