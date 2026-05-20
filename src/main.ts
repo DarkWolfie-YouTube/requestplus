@@ -89,6 +89,50 @@ interface UpdateSettings {
     [key: string]: any;
 }
 
+function getSpotifyArtistNames(track: any): string {
+    const artists = Array.isArray(track?.artists)
+        ? track.artists
+        : Array.isArray(track?.artists?.items)
+            ? track.artists.items
+            : [];
+
+    const names = artists
+        .map((artist: any) => artist?.profile?.name || artist?.name)
+        .filter(Boolean);
+
+    return names.length > 0 ? names.join(', ') : 'Unknown Artist';
+}
+
+function getSpotifyCover(track: any): string {
+    const album = track?.album || track?.albumOfTrack || {};
+    const sources = album?.coverArt?.sources || album?.images || [];
+    const coverFromSources = Array.isArray(sources)
+        ? sources.find((source: any) => source?.url)?.url
+        : '';
+
+    if (coverFromSources) return coverFromSources;
+
+    const fileId = album?.cover_group?.image?.[0]?.file_id;
+    return fileId ? `https://i.scdn.co/image/${fileId}` : '';
+}
+
+function normalizeSpotifySearchResult(track: any) {
+    const uri = String(track?.uri || '');
+    const id = track?.id || uri.replace('spotify:track:', '');
+    const album = track?.album || track?.albumOfTrack || {};
+
+    return {
+        id,
+        uri: uri || (id ? `spotify:track:${id}` : ''),
+        songName: track?.name || 'Unknown Title',
+        artist: getSpotifyArtistNames(track),
+        albumName: album?.name || 'Unknown Album',
+        duration: track?.duration_ms || track?.duration?.totalMilliseconds || track?.duration || 0,
+        cover: getSpotifyCover(track),
+        songLink: track?.external_urls?.spotify || (id ? `https://open.spotify.com/track/${id}` : '')
+    };
+}
+
 
 // Global variables with proper typing
 let WSServer: websocket;
@@ -1128,29 +1172,23 @@ websocketManager.on('song-search-request', async (message) => {
                 return;
             }
 
-            const songName = firstResult.name || 'Unknown Title';
-            const artist = Array.isArray(firstResult.artists)
-                ? firstResult.artists.map((item: any) => item.name).filter(Boolean).join(', ')
-                : 'Unknown Artist';
-            const songId = firstResult.id || String(firstResult.uri || '').replace('spotify:track:', '');
-            const songLink = firstResult.external_urls?.spotify || (songId ? `https://open.spotify.com/track/${songId}` : '');
+            const normalizedResult = normalizeSpotifySearchResult(firstResult);
+            const songName = normalizedResult.songName;
+            const artist = normalizedResult.artist;
+            const songId = normalizedResult.id;
+            const songLink = normalizedResult.songLink;
 
             if (settings.autoAcceptSearchResults && songId) {
                 if (settings.autoPlay) {
-                    const album = firstResult.album || {};
-                    const cover =
-                        album.cover_group?.image?.[0]?.file_id
-                            ? `https://i.scdn.co/image/${album.cover_group.image[0].file_id}`
-                            : album.images?.[0]?.url || '';
                     const queueItem: QueueItem = {
                         id: songId + '-' + message.username,
                         title: songName,
                         artist,
                         requestedBy: message.username,
-                        album: album.name || 'Unknown Album',
-                        duration: firstResult.duration_ms || firstResult.duration || 0,
+                        album: normalizedResult.albumName,
+                        duration: normalizedResult.duration,
                         progress: 0,
-                        cover,
+                        cover: normalizedResult.cover,
                         platform: 'spotify',
                         iscurrentlyPlaying: false,
                     };

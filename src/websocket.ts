@@ -82,17 +82,25 @@ interface ClientInfo {
 }
 
 interface SearchAPITrackData {
-    album: SearchAPIAlbumData
-    artists: Array<{ name: string }>
+    album?: SearchAPIAlbumData
+    albumOfTrack?: {
+        coverArt?: { sources?: Array<{ height?: number; width?: number; url: string }> };
+        id?: string;
+        name?: string;
+        uri?: string;
+    }
+    artists: Array<{ name?: string; profile?: { name?: string } }> | { items?: Array<{ name?: string; profile?: { name?: string } }> }
     name: string
     id: string
     uri: string
-    external_urls: { spotify: string }
-    type: string
-    popularity: number
-    is_local: boolean
-    is_playable: boolean
-    track_number: number
+    external_urls?: { spotify: string }
+    duration?: { totalMilliseconds?: number } | number
+    duration_ms?: number
+    type?: string
+    popularity?: number
+    is_local?: boolean
+    is_playable?: boolean
+    track_number?: number
 }
 
 interface SearchAPIAlbumData {
@@ -134,6 +142,13 @@ class WebSocketServer {
         this.lastReq = null;
         
         this.initServer();
+    }
+
+    private normalizeSearchResults(data: any): Array<SearchAPITrackData> {
+        if (Array.isArray(data)) return data;
+        if (Array.isArray(data?.tracks?.items)) return data.tracks.items;
+        if (Array.isArray(data?.items)) return data.items;
+        return [];
     }
 
     private initServer(): void {
@@ -278,7 +293,7 @@ class WebSocketServer {
 
                     if (parsed.command === "searchResults") {
                         console.log('Search Results:', parsed.data);
-                        this.SearchResults = parsed.data?.tracks?.items;
+                        this.SearchResults = this.normalizeSearchResults(parsed.data);
                         return;
                     }
                     } else if (client && client.type === 'soundcloud') {
@@ -344,7 +359,7 @@ class WebSocketServer {
 
                         if (parsed.command === "searchResults") {
                             console.log('Search Results:', parsed.data);
-                            this.SearchResults = parsed.data?.tracks?.items;
+                            this.SearchResults = this.normalizeSearchResults(parsed.data);
                             return;
                         }
                     }

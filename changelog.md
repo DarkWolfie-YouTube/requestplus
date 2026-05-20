@@ -4,7 +4,7 @@ All notable changes to Request+ will be documented in this file.
 
 ---
 
-## [2.2.0] - 2026-05-2
+## [2.2.0] - 2026-05-20
 
 ### API Changes
 

@@ -26,6 +26,8 @@
   "CLIENT_OVERLAY_URL_DESC": "Adicione isso como fonte de navegador no OBS",
   "CLIENT_REQUEST_MGMT_TITLE": "Gerenciamento de solicitações",
   "CLIENT_REQUEST_MGMT_DESC": "Controle como as solicitações de músicas funcionam",
+  "CLIENT_AUTO_ACCEPT_SEARCH": "Colocar buscas do chat na fila automaticamente",
+  "CLIENT_AUTO_ACCEPT_SEARCH_DESC": "Quando o chat pesquisar sem link, use imediatamente o primeiro resultado em vez de esperar por !sraccept",
   "CLIENT_ENABLE_REQUESTS": "Ativar solicitações",
   "CLIENT_ENABLE_REQUESTS_DESC": "Permitir que os espectadores solicitem músicas",
   "CLIENT_MODS_ONLY": "Apenas moderadores",
