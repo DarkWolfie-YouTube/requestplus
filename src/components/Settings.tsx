@@ -30,6 +30,7 @@ interface SettingsState {
   modsOnly: boolean;
   requestLimit: number;
   autoPlay: boolean;
+  autoAcceptSearchResults: boolean;
   platform: string;
   filterExplicit: boolean;
   telemetryEnabled: boolean;
@@ -331,6 +332,21 @@ export function Settings({
                   checked={settings.subsOnly}
                   onCheckedChange={(checked) =>
                     setSettings({...settings, subsOnly: checked})
+                  }
+                />
+              </div>
+
+              <div className="flex items-center justify-between p-3 bg-slate-900/30 rounded-lg">
+                <div className="space-y-0.5">
+                  <Label className="text-white">{t('CLIENT_AUTO_ACCEPT_SEARCH', locale)}</Label>
+                  <p className="text-xs text-gray-400">
+                    {t('CLIENT_AUTO_ACCEPT_SEARCH_DESC', locale)}
+                  </p>
+                </div>
+                <Switch
+                  checked={settings.autoAcceptSearchResults || false}
+                  onCheckedChange={(checked) =>
+                    setSettings({...settings, autoAcceptSearchResults: checked})
                   }
                 />
               </div>

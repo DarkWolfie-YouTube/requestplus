@@ -1,4 +1,4 @@
-import axios, { AxiosError, AxiosInstance } from 'axios';
+import axios, { AxiosInstance } from 'axios';
 import WebSocket from 'ws';
 import { EventEmitter } from 'events';
 import fs from 'node:fs';
@@ -50,6 +50,7 @@ class YTManager extends EventEmitter {
     private tokenPath: string;
     private logger: Logger;
     private timesTried: number;
+    private tokenRequestPromise: Promise<void> | null = null;
 
     // WebSocket state
     private ws: WebSocket | null = null;
@@ -77,7 +78,21 @@ class YTManager extends EventEmitter {
         });
 
         // Load existing token or create new one
-        this.initializeToken();
+        this.initializeToken().catch((error) => {
+            this.logger.warn(`[YTManager] Pear Desktop is not reachable. Make sure Pear is open and the Pear API port is set to 26538. ${this.formatErrorMessage(error)}`);
+        });
+    }
+
+    private formatErrorMessage(error: unknown): string {
+        if (axios.isAxiosError(error)) {
+            return error.message ? `(${error.message})` : '';
+        }
+
+        if (error instanceof Error) {
+            return error.message ? `(${error.message})` : '';
+        }
+
+        return '';
     }
 
     private async initializeToken(): Promise<void> {
@@ -96,8 +111,8 @@ class YTManager extends EventEmitter {
                     this.connectWebSocket();
                 }
             } catch (error) {
-                this.logger.error('[YTManager] Error validating existing token:', (error as AxiosError).message);
-                this.logger.warn('[YTManager] This error was thrown while validating the existing token. A new token had been requested but not returned. Please make sure Pear Desktop is running and Request+ is authorized in Pear Desktop. Re running token Check in 30 seconds.');
+            this.logger.warn(`[YTManager] Could not validate Pear token. Make sure Pear is open and the Pear API port is set to 26538. ${this.formatErrorMessage(error)}`);
+            this.logger.warn('[YTManager] Request+ will retry Pear token validation in 30 seconds.');
                 
                 if (this.timesTried >= 3) {
                     this.logger.error('[YTManager] Maximum token validation attempts reached. Please restart the application if you wish to continue using Youtube playback features.');
@@ -112,14 +127,30 @@ class YTManager extends EventEmitter {
     }
 
     async newToken(): Promise<void> {
+        if (this.tokenRequestPromise) {
+            this.logger.info('[YTManager] Pear token request already pending; waiting for the existing request.');
+            return this.tokenRequestPromise;
+        }
+
+        this.tokenRequestPromise = this.requestNewToken();
+        try {
+            await this.tokenRequestPromise;
+        } finally {
+            this.tokenRequestPromise = null;
+        }
+    }
+
+    private async requestNewToken(): Promise<void> {
         try {
             const tempInstance = axios.create({
                 baseURL: "http://localhost:26538/",
-                timeout: 10000,
+                timeout: 120000,
                 headers: {
                     'Content-Type': 'application/json',
                 },
             });
+
+            this.logger.info('[YTManager] Requesting Pear token. Waiting for the user to accept in Pear Desktop.');
             
             const response = await tempInstance.post('/auth/Request+');
             
@@ -131,9 +162,7 @@ class YTManager extends EventEmitter {
                 throw new Error("Invalid token response");
             }
         } catch (error) {
-            this.logger.error('[YTManager] Error obtaining new token:', (error as AxiosError).message);
-            this.logger.warn('[YTManager] This can be due to Pear Desktop not running or Request+ not being authorized in Pear Desktop. Please make sure both are running and authorized.');
-            return Promise.reject(error);
+            this.logger.warn(`[YTManager] Could not request a Pear token. Make sure Pear is open and the Pear API port is set to 26538. ${this.formatErrorMessage(error)}`);
         }
     }
 

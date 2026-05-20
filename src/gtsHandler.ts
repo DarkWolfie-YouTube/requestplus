@@ -29,6 +29,9 @@ export default class GTSHandler {
     private callback: any;
     private gtsActive: boolean;
     private songInfo: songInfo;
+    private scoresFilePath: string;
+    private scores: Record<string, number> = {};
+    private attemptedUsers: Set<string> = new Set();
     public hasGuessed: boolean = false;
     constructor( app: App, mainWindow: BrowserWindow, APIHandler: APIHandler, playbackHandler: PlaybackHandler, logger: Logger, settings: Settings) {
         this.app = app;
@@ -38,10 +41,33 @@ export default class GTSHandler {
         this.logger = logger;
         this.settings = settings;
         this.refresh = null;
+        this.scoresFilePath = require('node:path').join(this.app.getPath('userData'), 'gts_scores.json');
+        this.loadScores();
         if (this.settings.gtsEnabled) {
             this.gtsActive = true;
         } else {
             this.gtsActive = false;
+        }
+    }
+
+    private loadScores(): void {
+        try {
+            const fs = require('node:fs');
+            if (fs.existsSync(this.scoresFilePath)) {
+                this.scores = JSON.parse(fs.readFileSync(this.scoresFilePath, 'utf-8'));
+            }
+        } catch (error) {
+            this.logger.warn('GTS: Failed to load scores', error);
+            this.scores = {};
+        }
+    }
+
+    private saveScores(): void {
+        try {
+            const fs = require('node:fs');
+            fs.writeFileSync(this.scoresFilePath, JSON.stringify(this.scores, null, 2), 'utf-8');
+        } catch (error) {
+            this.logger.warn('GTS: Failed to save scores', error);
         }
     }
 
@@ -91,6 +117,7 @@ export default class GTSHandler {
         if (this.gtsActive) {
             this.logger.info("GTS: User failed to guess the song in time.");
             this.hasGuessed = false;
+            this.attemptedUsers.clear();
             this.apiHandler.gtsShowSongInView();
             
         }
@@ -109,6 +136,27 @@ export default class GTSHandler {
         } else {
             return false;
         }
+    }
+
+    public async handleChatGuess(username: string, guess: string): Promise<{ code: string; points?: number }> {
+        if (!this.settings.gtsEnabled || this.gtsActive === false) {
+            return { code: 'ERR_GTS_DISABLED' };
+        }
+
+        const key = username.toLowerCase();
+        if (this.attemptedUsers.has(key)) {
+            return { code: 'ERR_GTS_ALREADY_GUESSED', points: this.scores[key] || 0 };
+        }
+
+        this.attemptedUsers.add(key);
+        const correct = await this.gtshandle(guess);
+        if (!correct) {
+            return { code: 'ERR_GTS_WRONG', points: this.scores[key] || 0 };
+        }
+
+        this.scores[key] = (this.scores[key] || 0) + 1;
+        this.saveScores();
+        return { code: 'OKAY_GTS_CORRECT', points: this.scores[key] };
     }
 
 }

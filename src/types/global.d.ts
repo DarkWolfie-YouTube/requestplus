@@ -29,6 +29,7 @@ interface Settings {
   enableRequests?: boolean;
   modsOnly?: boolean;
   requestLimit?: number;
+  autoAcceptSearchResults?: boolean;
   [key: string]: any;
 }
 

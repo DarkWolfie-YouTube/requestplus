@@ -82,6 +82,7 @@ const App = () => {
     enableRequests: true,
     modsOnly: false,
     requestLimit: 10,
+    autoAcceptSearchResults: false,
     telemetryEnabled: true
   });
   const [queue, setQueue] = useState<Queue>(emptyQueue);

@@ -145,6 +145,12 @@ async function monitorTrackProgress(trackData: songInfo): Promise<void> {
     const TEN_SECONDS = 10000;
     const THIRTY_SECONDS = 30000;
 
+    if (currentTrackId === trackId && lastTrackProgress > 0 && progress + 5000 < lastTrackProgress) {
+        currentTrackId2 = null;
+        autoQueueTriggered = false;
+        Logger.info(`Playback progress restarted for same track: ${trackId}`);
+    }
+
     if (!gtsHandler.hasGuessed && timeElapsed >= THIRTY_SECONDS) {
         gtsHandler.failedToGuess();
     }
@@ -160,6 +166,7 @@ async function monitorTrackProgress(trackData: songInfo): Promise<void> {
 
     if (currentTrackId !== trackId) {
         currentTrackId = trackId;
+        currentTrackId2 = null;
         autoQueueTriggered = false;
         lastTrackProgress = progress;
         Logger.info(`New track detected: ${trackId}`);
@@ -245,12 +252,22 @@ async function checkCurrentlyPlayingTrack(trackData: TrackData): Promise<void> {
         trackId = trackId.replace('spotify:track:', '');
     }
 
-    const matchingTrackIndex = queue.items.findIndex(item => item.id === trackId + '-' + lastRequestQueueName);
+    const matchingQueueItemId = trackId + '-' + lastRequestQueueName;
+    const matchingTrackIndex = queue.items.findIndex(item => item.id === matchingQueueItemId);
 
     if (matchingTrackIndex !== -1) {
-        if (currentTrackId2 === trackId) {
+        if (currentTrackId2 === matchingQueueItemId) {
             return;
         }
+        const progress = trackData.progress || 0;
+        const duration = trackData.duration || 0;
+        const restartWindow = Math.min(15000, Math.max(3000, duration * 0.25));
+
+        if (currentTrackId === trackId && currentTrackId2 && progress > restartWindow) {
+            Logger.info(`Same track is still playing for ${currentTrackId2}; waiting before handling ${matchingQueueItemId}`);
+            return;
+        }
+
         Logger.info(`Currently playing track matches queue item at index ${matchingTrackIndex}`);
         if (matchingTrackIndex !== 0) {
           Logger.info('Song is not at the top of the queue. Stopping.') 
@@ -267,12 +284,11 @@ async function checkCurrentlyPlayingTrack(trackData: TrackData): Promise<void> {
         );
         Logger.info(`Now playing from queue: ${track.title} by ${track.artist}`);
         
-        currentTrackId2 = trackId;
+        currentTrackId2 = matchingQueueItemId;
 
         setTimeout(async () => {
             await queueHandler.removeFromQueue(matchingTrackIndex);
             Logger.info(`Removed played track from queue: ${track.title}`);
-            currentTrackId2 = '';
         }, 2000);
     }
 }
@@ -432,14 +448,14 @@ async function createWindow(): Promise<void> {
         playbackHandler = new PlaybackHandler(settings.platform, WSServer, Logger, ytManager, amHandler);
     }
     
-    if (authManager.isAuthenticated()) {
-    const token = authManager.getAuthToken();
+    const token = await authManager.getValidAuthToken();
     const hardwareInfo = authManager.getHardwareInfoPublic();
     
     if (token && hardwareInfo) {
       websocketManager.connect(token.token, hardwareInfo.deviceId);
+      scheduleTokenRefresh(token.expiresAt);
     }
-  }
+
   if (!apiHandler && !(global as any).ISAUTHING) {
         apiHandler = new APIHandler(mainWindow, playbackHandler, Logger, settings);
     }
@@ -450,7 +466,7 @@ async function createWindow(): Promise<void> {
     }
     
     updateIntervalForSongInfo();
-    if (authManager.isAuthenticated()) {
+    if (token) {
         mainWindow.webContents.send('auth-check', true);
     }
 
@@ -763,8 +779,8 @@ ipcMain.handle('login', async () => {
 
 
 ipcMain.handle('auth:getStatus', async () => {
-  const isAuthenticated = authManager.isAuthenticated();
-  const token = authManager.getAuthToken();
+  const token = await authManager.getValidAuthToken();
+  const isAuthenticated = token !== null;
   const hardwareInfo = authManager.getHardwareInfoPublic();
 
   return {
@@ -776,8 +792,8 @@ ipcMain.handle('auth:getStatus', async () => {
 });
 
 ipcMain.handle('fetch-user-data', async () => {
-    if (!authManager.isAuthenticated()) return null;
     try {
+        if (!(await authManager.getValidAuthToken())) return null;
         const userData = await authManager.fetchUserData();
         return {
             display_name: userData?.user.displayName || null,
@@ -884,7 +900,8 @@ app.whenReady().then(async () => {
 );
 
 ipcMain.handle('auth-checker', async () => {
-    const isAuthenticated = authManager.isAuthenticated();
+    const isAuthenticated = await authManager.getValidAuthToken();
+    if (!isAuthenticated) return null;
     const userData = await authManager.fetchUserData();
     mainWindow?.webContents.send('auth-success', userData);
 })
@@ -1090,17 +1107,99 @@ websocketManager.on('song-search-request', async (message) => {
     console.log('Received song search request:', message);
     var newQuery = message.query
     if (settings.platform === 'spotify') { 
-        websocketManager.send({ type: 'song_search_response', message: 'ERR_SP_SEARCH_NOT_ALLOWED',username: message.username, msgID: message.messageId, channel: message.channel });
+        try {
+            if (!WSServer) {
+                websocketManager.send({ type: 'song_search_response', message: 'ERR_SP_SEARCH_FAILED', username: message.username, msgID: message.messageId, platform: message.platform, channel: message.channel });
+                return;
+            }
+
+            WSServer.SearchResults = [];
+            WSServer.WSSendToType({ command: 'searchRequest', data: { query: newQuery } } as WSCommand, 'spotify');
+
+            let firstResult: any = null;
+            for (let attempt = 0; attempt < 20; attempt++) {
+                await wait(100);
+                firstResult = WSServer.SearchResults?.[0];
+                if (firstResult) break;
+            }
+
+            if (!firstResult) {
+                websocketManager.send({ type: 'song_search_response', message: 'ERR_SP_SEARCH_FAILED', username: message.username, msgID: message.messageId, platform: message.platform, channel: message.channel });
+                return;
+            }
+
+            const songName = firstResult.name || 'Unknown Title';
+            const artist = Array.isArray(firstResult.artists)
+                ? firstResult.artists.map((item: any) => item.name).filter(Boolean).join(', ')
+                : 'Unknown Artist';
+            const songId = firstResult.id || String(firstResult.uri || '').replace('spotify:track:', '');
+            const songLink = firstResult.external_urls?.spotify || (songId ? `https://open.spotify.com/track/${songId}` : '');
+
+            if (settings.autoAcceptSearchResults && songId) {
+                if (settings.autoPlay) {
+                    const album = firstResult.album || {};
+                    const cover =
+                        album.cover_group?.image?.[0]?.file_id
+                            ? `https://i.scdn.co/image/${album.cover_group.image[0].file_id}`
+                            : album.images?.[0]?.url || '';
+                    const queueItem: QueueItem = {
+                        id: songId + '-' + message.username,
+                        title: songName,
+                        artist,
+                        requestedBy: message.username,
+                        album: album.name || 'Unknown Album',
+                        duration: firstResult.duration_ms || firstResult.duration || 0,
+                        progress: 0,
+                        cover,
+                        platform: 'spotify',
+                        iscurrentlyPlaying: false,
+                    };
+                    queueHandler.addToQueue(queueItem);
+                } else {
+                    WSServer.WSSendToType({ command: 'addTrack', data: { uri: `spotify:track:${songId}` } } as WSCommand, 'spotify');
+                }
+
+                websocketManager.send({ type: 'song_request_response', message: 'OKAY_SP_QUEUED', username: message.username, songName, artist, msgID: message.messageId, platform: message.platform, channel: message.channel });
+                return;
+            }
+
+            websocketManager.send({ type: 'song_search_response', message: 'OKAY_SP_SEARCH', username: message.username, songName, artist, msgID: message.messageId, platform: message.platform, channel: message.channel, songLink });
+        } catch (error) {
+            Logger.error('Error searching Spotify:', error);
+            websocketManager.send({ type: 'song_search_response', message: 'ERR_SP_SEARCH_FAILED', username: message.username, msgID: message.messageId, platform: message.platform, channel: message.channel });
+        }
     } else if (settings.platform === 'apple') {
         newQuery = newQuery.replace(' ', '+').trim();
         console.log('Performing Apple Music search with query:', newQuery);
         try {
             await amHandler.onSearchRequest(newQuery).then((response) => {
                 console.log('Received response from Apple Music search:', response);
-                if (response) {
-                    const songName = response.songs.data[0]?.attributes?.name || 'Unknown Title';
-                    const artist = response.songs.data[0]?.attributes?.artistName || 'Unknown Artist';
-                    websocketManager.send({ type: 'song_search_response', message: 'OKAY_AM_SEARCH', username: message.username, songName, artist, msgID: message.messageId, platform: message.platform, channel: message.channel, songLink: response.songs.data[0]?.attributes?.url || '' });
+                const firstResult = response?.songs?.data?.[0];
+                if (firstResult) {
+                    const songName = firstResult.attributes?.name || 'Unknown Title';
+                    const artist = firstResult.attributes?.artistName || 'Unknown Artist';
+                    const songLink = firstResult.attributes?.url || '';
+
+                    if (settings.autoAcceptSearchResults && songLink) {
+                        amHandler.handleChatRequest(songLink, queueHandler, settings, message.username).then((requestResponse) => {
+                            if (requestResponse === 'ERR_AM_NOLINK') {
+                                websocketManager.send({ type: 'song_request_response', message: 'ERR_AM_NOLINK', username: message.username, msgID: message.messageId, platform: message.platform, channel: message.channel });
+                            } else if (requestResponse === 'ERR_AM_IDENTIFIER_MISSING') {
+                                websocketManager.send({ type: 'song_request_response', message: 'ERR_AM_IDENTIFIER_MISSING', username: message.username, msgID: message.messageId, platform: message.platform, channel: message.channel });
+                            } else if (requestResponse === 'ERR_AM_SONG_NOT_FOUND') {
+                                websocketManager.send({ type: 'song_request_response', message: 'ERR_AM_SONG_NOT_FOUND', username: message.username, msgID: message.messageId, platform: message.platform, channel: message.channel });
+                            } else {
+                                const queueObject = JSON.parse(requestResponse);
+                                websocketManager.send({ type: 'song_request_response', message: 'OKAY_AM_QUEUED', username: message.username, songName: queueObject.title || songName, artist: queueObject.artist || artist, msgID: message.messageId, platform: message.platform, channel: message.channel });
+                            }
+                        }).catch((error) => {
+                            Logger.error('Error auto-accepting Apple Music search result:', error);
+                            websocketManager.send({ type: 'song_search_response', message: 'ERR_AM_SEARCH_FAILED', username: message.username, msgID: message.messageId, platform: message.platform, channel: message.channel });
+                        });
+                        return;
+                    }
+
+                    websocketManager.send({ type: 'song_search_response', message: 'OKAY_AM_SEARCH', username: message.username, songName, artist, msgID: message.messageId, platform: message.platform, channel: message.channel, songLink });
                 } else {
                     websocketManager.send({ type: 'song_search_response', message: 'ERR_AM_SEARCH_FAILED', username: message.username, msgID: message.messageId, platform: message.platform, channel: message.channel });
                 }
@@ -1111,4 +1210,72 @@ websocketManager.on('song-search-request', async (message) => {
         websocketManager.send({ type: 'song_search_response', message: 'ERR_SEARCH_PLATFORM_NOT_SUPPORTED', username: message.username, msgID: message.messageId, platform: message.platform, channel: message.channel });
     }
 
+});
+
+websocketManager.on('queue-sync-request', (message) => {
+    websocketManager.send({
+        type: 'queue_sync_response',
+        requestId: message.requestId,
+        queue: queueHandler ? queueHandler.getQueue() : { items: [], currentCount: 0, currentlyPlayingIndex: -1 }
+    });
+});
+
+websocketManager.on('moderation-command', async (message) => {
+    if (message.command === 'srremove') {
+        if (!settings.autoPlay) {
+            websocketManager.send({
+                type: 'moderation_command_response',
+                message: 'ERR_SRREMOVE_NOT_MOD_QUEUE',
+                username: message.username,
+                id: message.id,
+                msgID: message.msgID,
+                platform: message.platform,
+                channel: message.channel
+            });
+            return;
+        }
+
+        const removed = await queueHandler.removeFromQueueByIdOrPosition(message.id);
+        websocketManager.send({
+            type: 'moderation_command_response',
+            message: removed ? 'OKAY_SRREMOVE' : 'ERR_SRREMOVE_NOT_FOUND',
+            username: message.username,
+            id: message.id,
+            msgID: message.msgID,
+            platform: message.platform,
+            channel: message.channel
+        });
+        return;
+    }
+
+    if (message.command === 'srmod') {
+        settings = { ...settings, modsOnly: message.action === 'disable' };
+        settingsHandler.save(settings);
+        playbackHandler.updateSettings(settings.platform);
+        apiHandler.updateSettings(settings);
+        gtsHandler.updateSettings(settings);
+        amHandler.updateSettings(settings);
+        mainWindow?.webContents.send('settings-updated-from-main', settings);
+        websocketManager.send({
+            type: 'moderation_command_response',
+            message: message.action === 'disable' ? 'OKAY_SRMOD_DISABLE' : 'OKAY_SRMOD_ENABLE',
+            username: message.username,
+            msgID: message.msgID,
+            platform: message.platform,
+            channel: message.channel
+        });
+    }
+});
+
+websocketManager.on('gts-guess', async (message) => {
+    const result = await gtsHandler.handleChatGuess(message.username, message.guess);
+    websocketManager.send({
+        type: 'gts_guess_response',
+        message: result.code,
+        username: message.username,
+        points: result.points || 0,
+        msgID: message.msgID,
+        platform: message.platform,
+        channel: message.channel
+    });
 });

@@ -4,6 +4,62 @@ All notable changes to Request+ will be documented in this file.
 
 ---
 
+## [2.2.0] - 2026-05-2
+
+### API Changes
+
+### MAJOR BUG CHANGE
+
+- Fixed a bug where the client would after reauthentication register too many handlers for chat, causing multiple messages to be sent between the client and server.
+ 
+### Bugs and Changes
+- Fixed a bug where the locale wouldn't apply to the client when you changed it via the website.
+- Prevented malformed stored scopes from crashing Twitch/YouTube Discord bot status commands.
+- Prevented malformed stored scopes from crashing Twitch API (Codename: Helix) fallback.
+- Prevented duplicate TMI pending-search and health-check timers.
+- Hardened TMI reconnect wait behavior.
+- Fixed Kick token refresh response crash when a token is revoked/deleted.
+- Fixed Apple Music search response handling in WebSocket song search.
+- Ensured users created from bearer or legacy cookie auth get a default locale.
+- Added `locale` to auth responses from register, login, refresh, migrate, and JWT token responses.
+- Added shared moderation command handling for Twitch, Kick, and YouTube chat.
+  - `!srhelp` - Sends a help command talking about Request+ and its commands
+  - `!queue` - Sends the user a queue page containing the Queue object in the client.
+  - `!srremove <id>` - Moderator Only - Allows the user to remove a song from the queue using its Queue ID
+  - `!srmod disable|enable` - Moderator Only - Allows the user to toggle the Moderator Only toggle in the broadcasters client, disabiling the ability to send song requests at the time. Example: `!srmod disable` - Disabled song requests by enabling the Moderation only setting.
+  - `!guess <name>` - Allows the user to guess songs using the Guess the Song module, as long as it's enabled on the client.
+- Websocket Message changes.
+- Queue Endpoint Added, syncing the queue object from the client.
+
+
+### Fixes
+
+- Improved `README.md` to better present Request+ as a streamer-focused desktop product.
+- Adjusted README screenshot layout so the image appears beside the intro text without a table border.
+- Added new setting: Auto-queue Chat Searches.
+  - When enabled, Apple Music chat searches immediately use the first result instead of waiting for `!sraccept`
+  - Current default remains off, preserving the existing manual accept flow.
+  - Added persisted setting key: `autoAcceptSearchResults`
+- Websocket message changes:
+  - `queue_sync_request`
+  - `moderation_command`
+  - `gts_guess`
+- Added command handlers for the new commands.
+- Added one guess attempt per user per song.
+- Added local Guess the Song score storage in `gts_scores.json`.
+- Added responses for correct, wrong, duplicate, and disabled Guess the Song states.
+- Improved YTManager to only ask once for a token, if that fails, catches it and says its not open or port is wrong.
+- Added Spotify Searching 
+
+
+### Website Changes
+
+- Added a Queue page for public queue viewing, also shows queue ID's for moderators.
+- Locale now syncs to client and chat responses.
+- Updated text in locales.
+
+
+---
 ## [2.1.1] - 2026-04-09
 
 ### Bug Fixes

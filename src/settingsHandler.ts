@@ -9,6 +9,7 @@ interface Settings {
     modsOnly: boolean;
     subsOnly: boolean;
     autoPlay: boolean;
+    autoAcceptSearchResults: boolean;
     filterExplicit: boolean;
     platform: string;
     telemetryEnabled: boolean;
@@ -38,6 +39,7 @@ class SettingsHandler {
                 modsOnly: false,
                 subsOnly: false,
                 autoPlay: false,
+                autoAcceptSearchResults: false,
                 filterExplicit: false,
                 platform: 'spotify',
                 telemetryEnabled: true,
@@ -59,6 +61,7 @@ class SettingsHandler {
                 modsOnly: false,
                 subsOnly: false,
                 autoPlay: false,
+                autoAcceptSearchResults: false,
                 filterExplicit: false,
                 platform: 'spotify',
                 telemetryEnabled: true,

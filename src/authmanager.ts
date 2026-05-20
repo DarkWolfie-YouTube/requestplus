@@ -1,4 +1,4 @@
-import { app, BrowserWindow, shell } from 'electron';
+import { app, BrowserWindow, safeStorage, shell } from 'electron';
 import { createHash } from 'crypto';
 import * as os from 'os';
 import * as fs from 'fs';
@@ -66,12 +66,16 @@ class AuthManager extends EventEmitter {
   private authToken: AuthToken | null = null;
   private hardwareInfo: HardwareInfo | null = null;
   private configPath: string;
+  private legacyConfigPath: string;
   private isProtocolRegistered: boolean = false;
+  private readyPromise: Promise<void>;
+  private refreshPromise: Promise<boolean> | null = null;
 
   private constructor() {
     super();
-    this.configPath = path.join(app.getPath('userData'), 'auth-config.json');
-    this.init();
+    this.configPath = path.join(app.getPath('userData'), 'auth-token.enc');
+    this.legacyConfigPath = path.join(app.getPath('userData'), 'auth-config.json');
+    this.readyPromise = this.init();
   }
 
   public static getInstance(): AuthManager {
@@ -100,11 +104,22 @@ class AuthManager extends EventEmitter {
     
     // Load saved auth token if exists
     this.loadAuthToken();
+
+    if (this.authToken?.expiresAt && this.authToken.expiresAt <= Date.now()) {
+      log.info('[AuthManager] Saved access token is expired, attempting refresh');
+      await this.performTokenRefresh();
+    } else if (this.authToken) {
+      this.emit('auth-restored', this.authToken);
+    }
     
     // Register protocol handler
     this.registerProtocolHandler();
     
     console.log('[AuthManager] Initialized with device ID:', this.hardwareInfo.deviceId);
+  }
+
+  public async ready(): Promise<void> {
+    await this.readyPromise;
   }
 
   /**
@@ -253,13 +268,22 @@ class AuthManager extends EventEmitter {
     if (!this.authToken) return;
 
     try {
+      if (!safeStorage.isEncryptionAvailable()) {
+        log.warn('[AuthManager] OS token encryption is not available; auth token was not saved.');
+        return;
+      }
+
       const data = {
         ...this.authToken,
         savedAt: Date.now()
       };
 
-      fs.writeFileSync(this.configPath, JSON.stringify(data, null, 2), 'utf-8');
-      log.info('[AuthManager] Auth token saved to disk');
+      const encrypted = safeStorage.encryptString(JSON.stringify(data));
+      fs.writeFileSync(this.configPath, encrypted);
+      if (fs.existsSync(this.legacyConfigPath)) {
+        fs.unlinkSync(this.legacyConfigPath);
+      }
+      log.info('[AuthManager] Auth token saved with OS encryption');
     } catch (error) {
       log.error('[AuthManager] Error saving auth token:', error);
     }
@@ -270,18 +294,23 @@ class AuthManager extends EventEmitter {
    */
   private loadAuthToken() {
     try {
-      if (!fs.existsSync(this.configPath)) {
+      if (!fs.existsSync(this.configPath) && !fs.existsSync(this.legacyConfigPath)) {
         log.info('[AuthManager] No saved auth token found');
         return;
       }
 
-      const data = JSON.parse(fs.readFileSync(this.configPath, 'utf-8'));
+      let data: AuthToken & { savedAt?: number };
 
-      // Check if token is expired
-      if (data.expiresAt && data.expiresAt < Date.now()) {
-        log.info('[AuthManager] Saved token is expired');
-        this.deleteAuthToken();
-        return;
+      if (fs.existsSync(this.configPath)) {
+        if (!safeStorage.isEncryptionAvailable()) {
+          log.warn('[AuthManager] OS token encryption is unavailable, cannot read saved auth token');
+          return;
+        }
+        const encrypted = fs.readFileSync(this.configPath);
+        data = JSON.parse(safeStorage.decryptString(encrypted));
+      } else {
+        data = JSON.parse(fs.readFileSync(this.legacyConfigPath, 'utf-8'));
+        log.info('[AuthManager] Migrating legacy auth token storage to OS encryption');
       }
 
       // Verify device ID matches (prevent token theft)
@@ -292,8 +321,10 @@ class AuthManager extends EventEmitter {
       }
 
       this.authToken = data;
-      log.info('[AuthManager] Auth token loaded from disk');
-      this.emit('auth-restored', this.authToken);
+      if (fs.existsSync(this.legacyConfigPath)) {
+        this.saveAuthToken();
+      }
+      log.info('[AuthManager] Auth token loaded from secure storage');
     } catch (error) {
       log.error('[AuthManager] Error loading auth token:', error);
       this.deleteAuthToken();
@@ -307,8 +338,11 @@ class AuthManager extends EventEmitter {
     try {
       if (fs.existsSync(this.configPath)) {
         fs.unlinkSync(this.configPath);
-        log.info('[AuthManager] Auth token deleted from disk');
       }
+      if (fs.existsSync(this.legacyConfigPath)) {
+        fs.unlinkSync(this.legacyConfigPath);
+      }
+      log.info('[AuthManager] Auth token deleted');
     } catch (error) {
       log.error('[AuthManager] Error deleting auth token:', error);
     }
@@ -334,9 +368,24 @@ class AuthManager extends EventEmitter {
     // Check if token is expired
     if (this.authToken && this.authToken.expiresAt < Date.now()) {
       log.info('[AuthManager] Token expired');
-      this.authToken = null;
-      this.deleteAuthToken();
       return null;
+    }
+
+    return this.authToken;
+  }
+
+  public async getValidAuthToken(): Promise<AuthToken | null> {
+    await this.ready();
+
+    if (!this.authToken) return null;
+
+    const expiresAt = this.authToken.expiresAt || 0;
+    const shouldRefresh = expiresAt <= Date.now() + (60 * 1000);
+    if (shouldRefresh) {
+      const refreshed = await this.refreshAuthToken();
+      if (!refreshed && expiresAt <= Date.now()) {
+        return null;
+      }
     }
 
     return this.authToken;
@@ -361,7 +410,7 @@ class AuthManager extends EventEmitter {
    * Returns full profile including Firebase user data and device info
    */
   public async fetchUserData(): Promise<ProfileResponse> {
-    const token = this.getAuthToken();
+    const token = await this.getValidAuthToken();
     if (!token) {
       throw new Error('Not authenticated. Please login first.');
     }
@@ -398,11 +447,26 @@ class AuthManager extends EventEmitter {
    * Refresh the auth token
    */
   public async refreshAuthToken(): Promise<boolean> {
+    await this.ready();
+
+    if (this.refreshPromise) {
+      return this.refreshPromise;
+    }
+
     if (!this.authToken?.refreshToken) {
       console.error('[AuthManager] No refresh token available');
       return false;
     }
 
+    this.refreshPromise = this.performTokenRefresh();
+    try {
+      return await this.refreshPromise;
+    } finally {
+      this.refreshPromise = null;
+    }
+  }
+
+  private async performTokenRefresh(): Promise<boolean> {
     try {
       const response = await fetch(`${AUTH_API_URL}/desktop/auth/refresh`, {
         method: 'POST',
@@ -416,14 +480,19 @@ class AuthManager extends EventEmitter {
       });
 
       if (!response.ok) {
-        throw new Error('Token refresh failed');
+        if (response.status === 401 || response.status === 403) {
+          this.authToken = null;
+          this.deleteAuthToken();
+          this.emit('auth-error', { error: 'Token refresh failed, please re-authenticate' });
+        }
+        throw new Error(`Token refresh failed with HTTP ${response.status}`);
       }
 
       const data = await response.json();
 
       this.authToken = {
         token: data.token,
-        refreshToken: data.refresh_token,
+        refreshToken: data.refresh_token || this.authToken!.refreshToken,
         expiresAt: Date.now() + (data.expires_in * 1000),
         deviceId: this.hardwareInfo!.deviceId
       };
@@ -435,9 +504,6 @@ class AuthManager extends EventEmitter {
       return true;
     } catch (error) {
       log.error('[AuthManager] Error refreshing token:', error);
-      this.authToken = null;
-      this.deleteAuthToken();
-      this.emit('auth-error', { error: 'Token refresh failed' });
       return false;
     }
   }
@@ -452,7 +518,7 @@ class AuthManager extends EventEmitter {
   }
 
   public async checkExperimentalUser(): Promise<boolean> {
-    const token = this.getAuthToken();
+    const token = await this.getValidAuthToken();
     if (!token) {
       log.info('[AuthManager] Not authenticated, cannot check experimental user status');
       return false;
@@ -468,7 +534,7 @@ class AuthManager extends EventEmitter {
   }
 
   public async fetchLocale(): Promise<string> {
-    const token = this.getAuthToken();
+    const token = await this.getValidAuthToken();
     if (!token) return 'en';
     try {
       apiClient.setCredentials(token.token, this.hardwareInfo!.deviceId);

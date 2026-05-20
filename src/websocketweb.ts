@@ -1,6 +1,7 @@
 // websocket-manager.ts
 import WebSocket from 'ws';
 import { EventEmitter } from 'events';
+import { app } from 'electron';
 import { WS_URL } from './config';
 
 export interface WebSocketMessage {
@@ -78,6 +79,10 @@ class WebSocketManager extends EventEmitter {
         this.stopPingInterval();
         this.emit('disconnected', { code, reason: reason.toString() });
 
+        if (code === 4003) {
+          this.intentionalDisconnect = true;
+        }
+
         // Keep retrying indefinitely as long as we haven't intentionally disconnected
         if (!this.intentionalDisconnect) {
           this.scheduleReconnect();
@@ -113,7 +118,8 @@ class WebSocketManager extends EventEmitter {
     this.send({
       type: 'auth_desktop',
       token: this.token,
-      deviceId: this.deviceId
+      deviceId: this.deviceId,
+      clientVersion: app.getVersion()
     });
   }
 
@@ -202,6 +208,18 @@ class WebSocketManager extends EventEmitter {
 
       case 'song_search_request':
         this.emit('song-search-request', message);
+        break;
+
+      case 'queue_sync_request':
+        this.emit('queue-sync-request', message);
+        break;
+
+      case 'moderation_command':
+        this.emit('moderation-command', message);
+        break;
+
+      case 'gts_guess':
+        this.emit('gts-guess', message);
         break;
 
       default:

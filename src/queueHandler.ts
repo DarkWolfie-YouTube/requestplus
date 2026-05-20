@@ -79,6 +79,19 @@ class QueueHandler {
         }
     }
 
+    async removeFromQueueByIdOrPosition(idOrPosition: string): Promise<boolean> {
+        const trimmed = String(idOrPosition || '').trim();
+        if (!trimmed) return false;
+
+        const position = Number.parseInt(trimmed, 10);
+        if (Number.isInteger(position) && String(position) === trimmed && position > 0) {
+            return this.removeFromQueue(position - 1);
+        }
+
+        const index = this.queue.items.findIndex(item => item.id === trimmed);
+        return this.removeFromQueue(index);
+    }
+
     async clearQueue(): Promise<boolean> {
         try {
             this.queue.items = [];
@@ -152,7 +165,7 @@ class QueueHandler {
     getQueue(): Queue {
         return {
             ...this.queue,
-            items: this.queue.items.map(item => ({ ...item }))
+            items: this.queue.items.map((item, index) => ({ ...item, queueId: index + 1 }))
         };
     }
 

@@ -32,6 +32,8 @@
   "CLIENT_MODS_ONLY_DESC": "Only allow mods to request songs",
   "CLIENT_SUBS_ONLY": "Subscribers Only",
   "CLIENT_SUBS_ONLY_DESC": "Only allow subscribers and mods to request songs",
+  "CLIENT_AUTO_ACCEPT_SEARCH": "Auto-queue Chat Searches",
+  "CLIENT_AUTO_ACCEPT_SEARCH_DESC": "When chat searches without a link, immediately use the first result instead of waiting for !sraccept",
   "CLIENT_MODULES_TITLE": "Modules",
   "CLIENT_MODULES_DESC": "Enable or disable optional features",
   "CLIENT_GTS_TITLE": "Guess The Song",
