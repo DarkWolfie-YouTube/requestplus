@@ -514,39 +514,44 @@ async function createWindow(): Promise<void> {
         mainWindow.webContents.send('auth-check', true);
     }
 
-    // Create tray icon
-    const iconPath = path.join(__dirname, 'assets', 'tray.png');
-    tray = new Tray(iconPath);
+    // Create tray icon. Some Linux desktop sessions do not expose a usable tray,
+    // so keep the app running even if this optional integration fails.
+    try {
+        const iconPath = path.join(__dirname, 'assets', 'tray.png');
+        tray = new Tray(iconPath);
 
-    const contextMenu = Menu.buildFromTemplate([
-        {
-            label: 'Show Request+',
-            click: () => {
+        const contextMenu = Menu.buildFromTemplate([
+            {
+                label: 'Show Request+',
+                click: () => {
+                    mainWindow?.show();
+                    mainWindow?.focus();
+                }
+            },
+            { type: 'separator' },
+            {
+                label: 'Quit',
+                click: () => {
+                    isQuitting = true;
+                    app.quit();
+                }
+            }
+        ]);
+
+        tray.setToolTip('Request+');
+        tray.setContextMenu(contextMenu);
+
+        // Single click on tray icon shows/focuses the window
+        tray.on('click', () => {
+            if (mainWindow?.isVisible()) {
+                mainWindow.focus();
+            } else {
                 mainWindow?.show();
-                mainWindow?.focus();
             }
-        },
-        { type: 'separator' },
-        {
-            label: 'Quit',
-            click: () => {
-                isQuitting = true;
-                app.quit();
-            }
-        }
-    ]);
-
-    tray.setToolTip('Request+');
-    tray.setContextMenu(contextMenu);
-
-    // Single click on tray icon shows/focuses the window
-    tray.on('click', () => {
-        if (mainWindow?.isVisible()) {
-            mainWindow.focus();
-        } else {
-            mainWindow?.show();
-        }
-    });
+        });
+    } catch (error) {
+        Logger.warn('Tray integration failed; continuing without tray icon:', error);
+    }
 
 
     mainWindow.on('close', (event) => {
