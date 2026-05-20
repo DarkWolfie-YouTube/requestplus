@@ -917,6 +917,7 @@ authManager.on('auth-success', async (token) => {
 
   // Push locale to renderer
   authManager.fetchLocale().then(locale => {
+    console.log(locale)
     mainWindow?.webContents.send('locale-update', locale);
   });
 

@@ -472,6 +472,7 @@ class AuthManager extends EventEmitter {
     if (!token) return 'en';
     try {
       apiClient.setCredentials(token.token, this.hardwareInfo!.deviceId);
+      console.log(await apiClient.fetchLocale())
       return await apiClient.fetchLocale();
     } catch {
       return 'en';
