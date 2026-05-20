@@ -278,15 +278,31 @@ var requestplus = (() => {
                                 const query = messageData.data.query;
                                 console.log(query);
                                 if (typeof query === "string") {
-                                    const response = await Spicetify.GraphQL.Request(
-                                        Spicetify.GraphQL.Definitions.getTrack ?? definitionGetTrack,
-                                        { uri: uri },
+                                   const response = await Spicetify.GraphQL.Request(
+                                        Spicetify.GraphQL.Definitions.searchTracks ?? definitionSearchTracks,
+                                        {
+                                        searchTerm: query,
+                                        limit: 3,
+                                        includeAudiobooks: false,
+                                        includeAuthors: false,
+                                        includePreReleases: false,
+                                        },
                                     );
 
-                                    const data = response.data.trackUnion;
+                                    const items = response?.data?.searchV2?.tracksV2?.items;
 
-                                    if (!("uri" in data)) await ws.send(JSON.stringify({command: "searchResults", data: "Failed to search"}))
-                                    await ws.send(JSON.stringify({command: "searchResults", data}))
+                                    if (!items?.length) return null;
+
+                                    const songs = items.map(({ item }) => {
+                                        const data = item.data;
+                                        return data;
+                                    });
+
+                                    await ws.send(JSON.stringify({
+                                        command: "searchResults",
+                                        data: songs
+                                    }))
+                                    
                                 } else {
                                     console.warn("Invalid query provided in search command.");
                                     ws.send(
@@ -378,10 +394,10 @@ async function fetchAPIData(id) {
 };
 
 
-const definitionGetTrack = {
-  name: "getTrack",
+const definitionSearchTracks = {
+  name: "searchTracks",
   operation: "query",
   sha256Hash:
-    "612585ae06ba435ad26369870deaae23b5c8800a256cd8a57e08eddc25a37294",
+    "bc1ca2fcd0ba1013a0fc88e6cc4f190af501851e3dafd3e1ef85840297694428",
   value: null,
 };
