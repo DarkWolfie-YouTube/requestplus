@@ -278,14 +278,15 @@ var requestplus = (() => {
                                 const query = messageData.data.query;
                                 console.log(query);
                                 if (typeof query === "string") {
-                                    Spicetify.CosmosAsync.get("https://api.spotify.com/v1/search?q=" + query + "&type=track").then((data) => {
-                                        ws.send(
-                                            JSON.stringify({
-                                                command: "searchResults",
-                                                data: data,
-                                            })
-                                        );
-                                    })
+                                    const response = await Spicetify.GraphQL.Request(
+                                        Spicetify.GraphQL.Definitions.getTrack ?? definitionGetTrack,
+                                        { uri: uri },
+                                    );
+
+                                    const data = response.data.trackUnion;
+
+                                    if (!("uri" in data)) await ws.send(JSON.stringify({command: "searchResults", data: "Failed to search"}))
+                                    await ws.send(JSON.stringify({command: "searchResults", data}))
                                 } else {
                                     console.warn("Invalid query provided in search command.");
                                     ws.send(
@@ -374,4 +375,13 @@ async function fetchAPIData(id) {
         reject(error)    
     });
     });
+};
+
+
+const definitionGetTrack = {
+  name: "getTrack",
+  operation: "query",
+  sha256Hash:
+    "612585ae06ba435ad26369870deaae23b5c8800a256cd8a57e08eddc25a37294",
+  value: null,
 };
