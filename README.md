@@ -1,13 +1,24 @@
 # Request+
 
+<table>
+<tr>
+<td width="54%" valign="top">
+
 Request+ is a desktop companion app for streamers who want chat-driven song requests, a polished "now playing" overlay, and multi-platform music control without turning their stream setup into a science project.
 
 It connects your stream chat, your music player, and your OBS/Streamlabs overlay so viewers can request songs while you stay in control of playback, queue behavior, moderation rules, and what appears on stream.
 
-![Request+ screenshot](./screenshot.png)
-
 > [!IMPORTANT]
 > By using Request+, you agree to the [Request+ Terms of Service](https://requestplus.xyz/terms-of-service).
+
+</td>
+<td width="46%" valign="top">
+
+<img src="./screenshot.png" alt="Request+ now playing screen" width="100%">
+
+</td>
+</tr>
+</table>
 
 ## What It Does
 
