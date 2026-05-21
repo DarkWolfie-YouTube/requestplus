@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Request+
+Comment=Supercharged Music Overlay for Streamers
+Exec=requestplus %u
+Icon=${SNAP}/usr/share/icons/hicolor/512x512/apps/requestplus.png
+Terminal=false
+Categories=Audio;Music;AudioVideo;
+MimeType=x-scheme-handler/requestplus;
+StartupNotify=true

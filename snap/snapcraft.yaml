@@ -1,0 +1,88 @@
+name: requestplus
+base: core22
+version: '2.2.0'
+summary: Request+ song request companion for streamers
+description: |
+  Request+ is a desktop companion app for streamers who want chat-driven song
+  requests, a polished now-playing overlay, moderation controls, and playback
+  control across supported music platforms.
+
+grade: stable
+confinement: strict
+license: GPL-3.0-only
+
+architectures:
+  - build-on: amd64
+    build-for: amd64
+
+apps:
+  requestplus:
+    command: bin/requestplus-launch
+    desktop: usr/share/applications/requestplus.desktop
+    extensions:
+      - gnome
+    environment:
+      TMPDIR: $XDG_RUNTIME_DIR
+      ELECTRON_DISABLE_SECURITY_WARNINGS: 'true'
+    plugs:
+      - audio-playback
+      - browser-support
+      - desktop
+      - desktop-legacy
+      - gsettings
+      - home
+      - network
+      - network-bind
+      - opengl
+      - password-manager-service
+      - unity7
+      - wayland
+      - x11
+
+parts:
+  requestplus:
+    plugin: nil
+    source: .
+    build-snaps:
+      - node/22/stable
+    build-packages:
+      - build-essential
+      - python3
+      - pkg-config
+    stage-packages:
+      - libasound2
+      - libatk-bridge2.0-0
+      - libatk1.0-0
+      - libcups2
+      - libdrm2
+      - libgbm1
+      - libgtk-3-0
+      - libnotify4
+      - libnss3
+      - libsecret-1-0
+      - libx11-xcb1
+      - libxcb-dri3-0
+      - libxcomposite1
+      - libxdamage1
+      - libxfixes3
+      - libxkbcommon0
+      - libxrandr2
+      - libxss1
+      - libxtst6
+      - xdg-utils
+    override-build: |
+      set -eux
+      npm ci
+      npx electron-forge package --platform=linux --arch=x64
+
+      mkdir -p "$CRAFT_PART_INSTALL/opt/requestplus"
+      cp -a out/Request+-linux-x64/. "$CRAFT_PART_INSTALL/opt/requestplus/"
+
+      mkdir -p "$CRAFT_PART_INSTALL/bin"
+      install -m 0755 snap/local/requestplus-launch "$CRAFT_PART_INSTALL/bin/requestplus-launch"
+
+      mkdir -p "$CRAFT_PART_INSTALL/usr/share/applications"
+      install -m 0644 snap/gui/requestplus.desktop "$CRAFT_PART_INSTALL/usr/share/applications/requestplus.desktop"
+
+      mkdir -p "$CRAFT_PART_INSTALL/usr/share/icons/hicolor/512x512/apps"
+      install -m 0644 build/icon.png "$CRAFT_PART_INSTALL/usr/share/icons/hicolor/512x512/apps/requestplus.png"

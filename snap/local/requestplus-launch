@@ -1,0 +1,8 @@
+#!/bin/sh
+set -eu
+
+export TMPDIR="${XDG_RUNTIME_DIR:-/tmp}"
+export DISABLE_WAYLAND=0
+
+exec "$SNAP/opt/requestplus/Request+" "$@"
+

@@ -4,6 +4,7 @@ import * as os from 'os';
 import * as fs from 'fs';
 import * as path from 'path';
 import { EventEmitter } from 'events';
+import { execFile } from 'child_process';
 import { API_URL, WEBSITE_URL as CONFIG_WEBSITE_URL } from './config';
 
 /**
@@ -170,6 +171,10 @@ class AuthManager extends EventEmitter {
    * Register the requestplus:// protocol handler
    */
   private registerProtocolHandler() {
+    if (process.platform === 'linux') {
+      this.registerLinuxProtocolHandler();
+    }
+
     if (process.defaultApp) {
       // Development mode
       if (process.argv.length >= 2) {
@@ -183,6 +188,51 @@ class AuthManager extends EventEmitter {
     }
 
     this.isProtocolRegistered = true;
+  }
+
+  private registerLinuxProtocolHandler() {
+    try {
+      const applicationsDir = path.join(os.homedir(), '.local', 'share', 'applications');
+      fs.mkdirSync(applicationsDir, { recursive: true });
+
+      const desktopFileName = 'requestplus.desktop';
+      const desktopFilePath = path.join(applicationsDir, desktopFileName);
+      const appCommand = process.defaultApp && process.argv.length >= 2
+        ? `${this.shellQuote(process.execPath)} ${this.shellQuote(path.resolve(process.argv[1]))} %u`
+        : `${this.shellQuote(process.execPath)} %u`;
+
+      const desktopEntry = [
+        '[Desktop Entry]',
+        'Type=Application',
+        'Name=Request+',
+        'Comment=Supercharged Music Overlay for Streamers',
+        `Exec=${appCommand}`,
+        `Icon=${path.join(__dirname, 'assets', 'the_letter.png')}`,
+        'Terminal=false',
+        'Categories=Audio;Music;AudioVideo;',
+        'MimeType=x-scheme-handler/requestplus;',
+        'StartupNotify=true',
+        ''
+      ].join('\n');
+
+      fs.writeFileSync(desktopFilePath, desktopEntry, { mode: 0o644 });
+
+      execFile('xdg-mime', ['default', desktopFileName, 'x-scheme-handler/requestplus'], (error) => {
+        if (error) {
+          log.warn('[AuthManager] Failed to register Linux protocol handler with xdg-mime:', error);
+        }
+      });
+
+      execFile('update-desktop-database', [applicationsDir], () => {
+        // Optional helper; xdg-mime registration above is the important part.
+      });
+    } catch (error) {
+      log.warn('[AuthManager] Failed to create Linux protocol desktop entry:', error);
+    }
+  }
+
+  private shellQuote(value: string): string {
+    return `"${value.replace(/(["\\$`])/g, '\\$1')}"`;
   }
 
   /**
