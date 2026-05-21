@@ -581,8 +581,8 @@ export function setupDeepLinkHandling(mainWindow: BrowserWindow) {
     });
   }
 
-  // Handle deep link on Windows when app is already running
-  if (process.platform === 'win32') {
+  // Handle deep link on Windows/Linux when the app is launched by the protocol.
+  if (process.platform !== 'darwin') {
     const url = process.argv.find(arg => arg.startsWith(`${PROTOCOL}://`));
     if (url) {
       authManager.handleDeepLink(url);

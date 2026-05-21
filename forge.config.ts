@@ -54,7 +54,8 @@ module.exports = {
           icon: 'build/icon.png',
           maintainer: 'QuilDayTrack',
           executeableName: "Request+",
-          homepage: 'https://requestplus.xyz'
+          homepage: 'https://requestplus.xyz',
+          mimeType: ['x-scheme-handler/requestplus']
         }
       },
     }
