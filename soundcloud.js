@@ -48,7 +48,16 @@
 
   function cleanSoundCloudTitle(value) {
     if (!value) return "";
-    let title = String(value).replace(/^Current track:\s*/i, "").trim();
+    let title = String(value)
+      .replace(/\s+/g, " ")
+      .replace(/^(Current track:|Playing:)\s*/i, "")
+      .trim();
+
+    const prefixedAgain = title.match(/Current track:\s*(.+)$/i);
+    if (prefixedAgain) {
+      title = prefixedAgain[1].trim();
+    }
+
     if (title.length % 2 === 0) {
       const half = title.slice(0, title.length / 2);
       if (half && half === title.slice(title.length / 2)) {
@@ -56,6 +65,16 @@
       }
     }
     return title.trim();
+  }
+
+  function getTitleFromElement(element) {
+    if (!element) return "";
+    return cleanSoundCloudTitle(
+      element.getAttribute("title") ||
+      element.getAttribute("aria-label") ||
+      element.textContent ||
+      ""
+    );
   }
 
   function getBackgroundImageUrl(element) {
@@ -93,7 +112,7 @@
     const titleLink = row.querySelector(".soundTitle__title, .playableTile__heading, a[href*='/'][title]");
     const artistLink = row.querySelector(".soundTitle__username, .playableTile__mainHeading + a, a[href*='soundcloud.com/']");
     const artworkElement = row.querySelector(".image__lightOutline span, .playableTile__artwork span, span[style*='sndcdn.com']");
-    const title = cleanSoundCloudTitle(titleLink?.textContent || titleLink?.getAttribute("title") || "");
+    const title = getTitleFromElement(titleLink);
     const url = getAbsoluteSoundCloudUrl(titleLink?.getAttribute("href"));
     if (!title || !url) return null;
     return {
@@ -415,7 +434,7 @@
       
       songinfocurrentdur = audio ? Math.floor(audio.currentTime * 1000) : parseTimeToMs(currentduration?.innerText || "0:00");
       songinfoenddur = audio ? Math.floor(audio.duration * 1000) : parseTimeToMs(endduration?.innerText || "0:00");
-      songinfocursongtitle = cleanSoundCloudTitle(titleLink?.textContent || currentsongtitle?.innerText?.split("\n").pop());
+      songinfocursongtitle = getTitleFromElement(titleLink) || getTitleFromElement(currentsongtitle);
       songinfocursongcoverurl = currentsongcover;
       songinfoartist = currentartist?.innerText || "";
       songinfovolume = getVolume();
@@ -642,6 +661,5 @@
     await initializePlaybackAPI();
   })();
 
-  console.log("RequestPlus|Integration loaded and initialized v2.0");
+  console.log("RequestPlus|Integration loaded and initialized v2.1");
 })();
-
