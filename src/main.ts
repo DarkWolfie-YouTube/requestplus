@@ -494,7 +494,7 @@ async function createWindow(): Promise<void> {
     }
 
     if (!amHandler) {
-        amHandler = new AMHandler(mainWindow, Logger, settings);
+        amHandler = new AMHandler(mainWindow, Logger, settings, WSServer);
     }
 
     
@@ -733,6 +733,8 @@ ipcMain.handle('song-seek', async (event: Electron.IpcMainInvokeEvent, position:
         await ytManager.seek(Math.floor(position / 1000));
     } else if (platform === 'apple' && amHandler) {
         await amHandler.seekTo(position / 1000);
+    } else if (platform === 'soundcloud' && WSServer) {
+        WSServer.WSSendToType({ command: 'seek', data: { position } } as WSCommand, 'soundcloud');
     }
 });
 
@@ -795,6 +797,74 @@ ipcMain.handle('websocket-probe', (event: Electron.IpcMainInvokeEvent, payload: 
 websocketManager.on('probe-response', (message) => {
     console.log(message)
 })
+
+function sendWebSocketProbeRequest(payload: WebSocketMessage, expectedTypes: string[], timeoutMs = 10000): Promise<WebSocketMessage> {
+    return new Promise((resolve, reject) => {
+        let timeout: NodeJS.Timeout | null = null;
+
+        const cleanup = () => {
+            if (timeout) {
+                clearTimeout(timeout);
+                timeout = null;
+            }
+            websocketManager.off('probe-response', handleResponse);
+        };
+
+        const handleResponse = (message: WebSocketMessage) => {
+            if (message.type === 'tcp_error') {
+                cleanup();
+                reject(new Error(message.error || 'Channel point request failed'));
+                return;
+            }
+
+            if (!expectedTypes.includes(message.type)) return;
+            cleanup();
+            resolve(message);
+        };
+
+        websocketManager.on('probe-response', handleResponse);
+        timeout = setTimeout(() => {
+            cleanup();
+            reject(new Error('Channel point request timed out'));
+        }, timeoutMs);
+
+        try {
+            websocketManager.sendProbe({ ...payload });
+        } catch (error) {
+            cleanup();
+            reject(error);
+        }
+    });
+}
+
+ipcMain.handle('channel-point:get', async (): Promise<WebSocketMessage> => {
+    return sendWebSocketProbeRequest(
+        { type: 'channel_point_pull' },
+        ['channel_point_response', 'tcp_error']
+    );
+});
+
+ipcMain.handle('channel-point:create', async (_event: Electron.IpcMainInvokeEvent, payload: { title: string; description: string; color: string; cooldown: number }): Promise<WebSocketMessage> => {
+    return sendWebSocketProbeRequest(
+        {
+            type: 'channel_point_create',
+            data: {
+                title: payload.title,
+                description: payload.description,
+                color: payload.color,
+                cooldown: JSON.stringify({ timeCooldown: payload.cooldown })
+            }
+        },
+        ['channel_point_success', 'tcp_error']
+    );
+});
+
+ipcMain.handle('channel-point:delete', async (_event: Electron.IpcMainInvokeEvent, id: string): Promise<WebSocketMessage> => {
+    return sendWebSocketProbeRequest(
+        { type: 'channel_point_delete', data: { id } },
+        ['channel_point_success', 'tcp_error']
+    );
+});
 
 app.whenReady().then(async () => {
     if (!(global as any).ISAUTHING) {

@@ -10,6 +10,7 @@ interface Settings {
     subsOnly: boolean;
     autoPlay: boolean;
     autoAcceptSearchResults: boolean;
+    useChannelPoints: boolean;
     filterExplicit: boolean;
     platform: string;
     telemetryEnabled: boolean;
@@ -40,6 +41,7 @@ class SettingsHandler {
                 subsOnly: false,
                 autoPlay: false,
                 autoAcceptSearchResults: false,
+                useChannelPoints: false,
                 filterExplicit: false,
                 platform: 'spotify',
                 telemetryEnabled: true,
@@ -62,6 +64,7 @@ class SettingsHandler {
                 subsOnly: false,
                 autoPlay: false,
                 autoAcceptSearchResults: false,
+                useChannelPoints: false,
                 filterExplicit: false,
                 platform: 'spotify',
                 telemetryEnabled: true,

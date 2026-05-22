@@ -1,6 +1,6 @@
 name: requestplus
 base: core22
-version: '2.2.0'
+version: '2.2.1'
 summary: Request+ song request companion for streamers
 description: |
   Request+ is a desktop companion app for streamers who want chat-driven song

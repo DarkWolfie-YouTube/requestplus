@@ -7,7 +7,7 @@
  *
  * @description
  * An Apple Music Handler for Cider enchancing playback and song information retrieval.
- * Uses Cider's Socket.io RPC for real-time playback state instead of HTTP polling.
+ * Uses the local Request+ WebSocket Cider plugin for real-time playback state.
  */;
 import { Settings } from "./settingsHandler";
 import { BrowserWindow } from "electron";
@@ -15,6 +15,7 @@ import Logger from "./logger";
 import axios, { AxiosInstance } from "axios";
 import QueueHandler, { QueueItem } from "./queueHandler";
 import fetch from "node-fetch";
+import WebSocketServer, { ParsedMessage } from "./websocket";
 import { io, Socket } from "socket.io-client";
 
 
@@ -146,7 +147,7 @@ export default class AMHandler {
     private cachedVolume: number = 0;
     private slowPollInterval: NodeJS.Timeout | null = null;
 
-    constructor(mainWindow: BrowserWindow, logger: Logger, settings: Settings) {
+    constructor(mainWindow: BrowserWindow, logger: Logger, settings: Settings, localWebSocket?: WebSocketServer) {
         this.mainWindow = mainWindow;
         this.logger = logger;
         this.settings = settings;
@@ -159,8 +160,69 @@ export default class AMHandler {
                 'User-Agent': 'Request+/2.0.1 Release'
             }
         });
-        this.connectWebSocket();
-        this.startSlowPoll();
+        localWebSocket?.on('cider-current-track', (message: ParsedMessage) => {
+            this.handleCiderTrackMessage(message);
+        });
+    }
+
+    private handleCiderTrackMessage(message: ParsedMessage): void {
+        const data = message.data || message.item?.attributes;
+        if (!data) return;
+
+        const playParams = data.playParams || message.item?.attributes?.playParams || {};
+        const prev = this.cachedSongInfo;
+        this.cachedIsPlaying = Boolean(message.isPlaying);
+        this.cachedVolume = typeof message.volume === 'number' ? message.volume : this.cachedVolume;
+
+        this.cachedSongInfo = {
+            albumName: data.albumName || '',
+            artistName: data.artistName || '',
+            artwork: data.artwork || { url: '', width: 0, height: 0 },
+            contentRating: data.contentRating || '',
+            discNumber: data.discNumber || 0,
+            durationInMillis: data.durationInMillis || message.duration || 0,
+            genreNames: data.genreNames || [],
+            hasLyrics: data.hasLyrics || false,
+            name: data.name || '',
+            playParams: {
+                ...playParams,
+                catalogId: playParams.catalogId || message.item?._songId || message.item?.assets?.[0]?.metadata?.itemId,
+                id: playParams.id || message.id || message.item?.id || ''
+            },
+            releaseDate: data.releaseDate || '',
+            trackNumber: data.trackNumber || 0,
+            composerName: data.composerName || '',
+            isrc: data.isrc || '',
+            previews: data.previews || [],
+            currentPlaybackTime: data.currentPlaybackTime ?? ((message.progress || 0) / 1000),
+            remainingTime: data.remainingTime ?? Math.max(0, ((message.duration || 0) - (message.progress || 0)) / 1000),
+            inFavorites: data.inFavorites ?? prev?.inFavorites ?? false,
+            inLibrary: data.inLibrary ?? message.isLiked ?? prev?.inLibrary ?? false,
+            shuffleMode: message.shuffle ? 1 : 0,
+            repeatMode: typeof message.repeat === 'number' ? message.repeat : 0,
+        };
+
+        this.mainWindow.webContents.send('song-info', {
+            id: this.cachedSongInfo.playParams.catalogId || this.cachedSongInfo.playParams.id || '',
+            title: this.cachedSongInfo.name || 'Unknown Title',
+            artist: this.cachedSongInfo.artistName || 'Unknown Artist',
+            album: this.cachedSongInfo.albumName || '',
+            duration: this.cachedSongInfo.durationInMillis || 0,
+            progress: this.cachedSongInfo.currentPlaybackTime * 1000 || 0,
+            isPlaying: this.cachedIsPlaying,
+            cover: this.resolveArtworkUrl(this.cachedSongInfo.artwork),
+            volume: this.cachedVolume,
+            shuffle: this.cachedSongInfo.shuffleMode === 1,
+            repeat: this.cachedSongInfo.repeatMode,
+            isLiked: this.cachedSongInfo.inLibrary || false
+        });
+    }
+
+    private resolveArtworkUrl(artwork?: AMSongAttributeArtwork): string {
+        if (!artwork?.url) return '';
+        const width = artwork.width || 600;
+        const height = artwork.height || 600;
+        return artwork.url.replace('{w}', width.toString()).replace('{h}', height.toString());
     }
 
     // Fetches slow-changing values (volume, shuffle, repeat) via HTTP every 2500ms
@@ -330,7 +392,7 @@ export default class AMHandler {
     }
 
     /**
-     * Returns the cached song info from the Cider WebSocket RPC.
+     * Returns cached song info from the Cider WebSocket plugin.
      * Falls back to HTTP if no cached data is available yet.
      */
     public async getCurrentSong(): Promise<AMCurrentSongResponse> {
@@ -348,7 +410,7 @@ export default class AMHandler {
     }
 
     /**
-     * Returns the cached playback state from the Cider WebSocket RPC.
+     * Returns the cached playback state from the Cider WebSocket plugin.
      */
     public async getIsPlayingState(): Promise<AMISPlayingResponse> {
         return { status: 'ok', is_playing: this.cachedIsPlaying };

@@ -6,7 +6,8 @@ All notable changes to Request+ will be documented in this file.
 
 ## [2.2.1] - 2026-05-21
 
-
+- Fixed the 502 unexpected error for the websocket, it now runs the reconnect code like the api is restarting. So now if I just kill it, the error shouldn't stop code from working at all.
+- Added Channel Point Support for Twitch. (Since Twitch is the main platform for chat.)
 
 
 ---

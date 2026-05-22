@@ -30,6 +30,7 @@ interface Settings {
   modsOnly?: boolean;
   requestLimit?: number;
   autoAcceptSearchResults?: boolean;
+  useChannelPoints?: boolean;
   [key: string]: any;
 }
 
@@ -57,6 +58,9 @@ interface ElectronAPI {
   loadSettings: () => Promise<Settings>;
   saveSettings: (settings: Settings) => Promise<void>;
   settingsUpdated: (settings: Settings) => void;
+  getChannelPointReward: () => Promise<any>;
+  createChannelPointReward: (payload: { title: string; description: string; color: string; cooldown: number }) => Promise<any>;
+  deleteChannelPointReward: (id: string) => Promise<any>;
 
   // Update system
   checkForUpdates: () => Promise<void>;

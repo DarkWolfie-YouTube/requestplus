@@ -41,6 +41,9 @@ interface ElectronAPI {
   loadSettings: () => Promise<any>;
   saveSettings: (settings: any) => Promise<void>;
   settingsUpdated: (settings: any) => void;
+  getChannelPointReward: () => Promise<WebSocketMessage>;
+  createChannelPointReward: (payload: { title: string; description: string; color: string; cooldown: number }) => Promise<WebSocketMessage>;
+  deleteChannelPointReward: (id: string) => Promise<WebSocketMessage>;
 
   // Update system
   checkForUpdates: () => Promise<void>;
@@ -160,6 +163,9 @@ const electronAPI: ElectronAPI = {
   loadSettings: () => ipcRenderer.invoke('load-settings'),
   saveSettings: (settings) => ipcRenderer.invoke('save-settings', settings),
   settingsUpdated: (settings) => ipcRenderer.send('settings-updated', settings),
+  getChannelPointReward: () => ipcRenderer.invoke('channel-point:get'),
+  createChannelPointReward: (payload) => ipcRenderer.invoke('channel-point:create', payload),
+  deleteChannelPointReward: (id) => ipcRenderer.invoke('channel-point:delete', id),
 
   // Update system
   checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),

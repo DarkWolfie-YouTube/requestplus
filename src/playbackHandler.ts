@@ -189,7 +189,7 @@ class PlaybackHandler {
                 isPlaying: spotifyData.isPlaying ?? false,
                 volume: spotifyData.volume ?? 100,
                 shuffle: spotifyData.shuffle ?? false,
-                repeat: spotifyData.repeat ?? 0,
+                repeat: this.convertSoundCloudRepeatMode(spotifyData.repeat),
                 isLiked: spotifyData.isLiked ?? false
             };
 
@@ -210,7 +210,7 @@ class PlaybackHandler {
             const spotifyData = this.SpotifyWS.lastSOInfo;
             
             if (!spotifyData) {
-                this.logger.warn('No Spotify data available');
+                this.logger.warn('No SoundCloud data available');
                 return null;
             }
 
@@ -221,16 +221,10 @@ class PlaybackHandler {
             
             const artists = dataArtists.length > 0 ? dataArtists.join(", ") : 'Unknown Artist';
 
-            //since duration is in the format of 0:00, replace to ms from there
-            const durationSplit = spotifyData.duration_time.split(':');
-            const durationMs = parseInt(durationSplit[0]) * 60 * 1000 + parseInt(durationSplit[1]) * 1000;
-            spotifyData.duration = durationMs;
-            //do this for current_time and set that to progress
-            const progressSplit = spotifyData.current_time.split(':');
-            const progressMs = parseInt(progressSplit[0]) * 60 * 1000 + parseInt(progressSplit[1]) * 1000;
-            spotifyData.progress = progressMs;
+            spotifyData.duration = this.parseSoundCloudTime(spotifyData.duration ?? spotifyData.duration_time);
+            spotifyData.progress = this.parseSoundCloudTime(spotifyData.progress ?? spotifyData.current_time);
 
-            spotifyData.album_art_url = spotifyData.album_art_url.replace('50x50', '500x500');
+            spotifyData.album_art_url = (spotifyData.album_art_url || spotifyData.image || '').replace('50x50', '500x500');
 
             this.currentSong = {
                 id: spotifyData.id || '',
@@ -251,6 +245,27 @@ class PlaybackHandler {
         } catch (err) {
             this.logger.error('Error fetching Soundcloud song data:', err);
             return null;
+        }
+    }
+
+    private parseSoundCloudTime(value: number | string | undefined): number {
+        if (typeof value === 'number' && Number.isFinite(value)) return value;
+        if (!value || typeof value !== 'string') return 0;
+        const parts = value.split(':').map(part => Number.parseInt(part, 10) || 0);
+        if (parts.length === 3) return ((parts[0] * 3600) + (parts[1] * 60) + parts[2]) * 1000;
+        if (parts.length === 2) return ((parts[0] * 60) + parts[1]) * 1000;
+        return parts[0] * 1000;
+    }
+
+    private convertSoundCloudRepeatMode(mode: number | string | undefined): number {
+        if (typeof mode === 'number') return mode;
+        switch (mode) {
+            case 'all':
+                return 1;
+            case 'one':
+                return 2;
+            default:
+                return 0;
         }
     }
 

@@ -4,6 +4,7 @@ import * as path from 'node:path';
 import * as net from 'net';
 import * as musicmetadata from 'music-metadata';
 import { BrowserWindow } from 'electron';
+import { EventEmitter } from 'events';
 
 // Type definitions
 interface Logger {
@@ -120,7 +121,7 @@ interface SearchAPIAlbumData {
     artists: Array<{ name: string }>
 }
 
-class WebSocketServer {
+class WebSocketServer extends EventEmitter {
     private port: number;
     private wss: WSS | null;
     private clients: Map<WebSocket, ClientInfo>;
@@ -132,6 +133,7 @@ class WebSocketServer {
     public SearchResults: Array<SearchAPITrackData> = []
 
     constructor(port: number, mainWindow: BrowserWindow, logger: Logger) {
+        super();
         this.port = port;
         this.wss = null;
         this.clients = new Map();
@@ -199,8 +201,13 @@ class WebSocketServer {
                     const messageString = message.toString();
                     const parsed: ParsedMessage = JSON.parse(messageString);
 
-                    // If client hasn't identified yet, ignore other messages
                     const client = this.clients.get(ws);
+                    if (client && client.type === 'unknown' && parsed.type) {
+                        client.type = parsed.type;
+                        this.logger.info(`Client identified from packet as type: ${parsed.type}`);
+                    }
+
+                    // If client hasn't identified yet, ignore other messages
                     if (client && client.type === 'unknown' && parsed.command !== 'identify') {
                         this.logger.warn('Received message from unidentified client, ignoring.');
                         return;
@@ -229,6 +236,13 @@ class WebSocketServer {
                             clientWs.send(JSON.stringify(parsed));
                         }
                     });
+
+                    if (client && client.type === 'cider') {
+                        if (parsed.command === 'currentTrack') {
+                            this.emit('cider-current-track', parsed);
+                            return;
+                        }
+                    }
 
                     if (client && client.type === 'spotify') {
                         if (parsed.command === "currentTrack") {

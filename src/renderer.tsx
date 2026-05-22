@@ -83,6 +83,7 @@ const App = () => {
     modsOnly: false,
     requestLimit: 10,
     autoAcceptSearchResults: false,
+    useChannelPoints: false,
     telemetryEnabled: true
   });
   const [queue, setQueue] = useState<Queue>(emptyQueue);
@@ -142,6 +143,20 @@ const App = () => {
       api.getInfo(handleTrackInfo);
     }
 
+    const loadCurrentUser = async () => {
+      if (!api.fetchUserData) return;
+
+      try {
+        const userData = await api.fetchUserData();
+        setUserd(userData || null);
+      } catch (err) {
+        console.error('Failed to load user data from Electron:', err);
+        setUserd(null);
+      }
+    };
+
+    loadCurrentUser();
+
     // Load settings
     if (api.loadSettings) {
       api.loadSettings().then((loadedSettings: any) => {
@@ -183,22 +198,23 @@ const App = () => {
       if (response.status === 'started') {
         toast.info('Authentication flow started. Please complete the process in your browser.');
         return
+      } else if (response.status === 'logged-out') {
+        setUserd(null);
+        return;
       } else if (response.status !== 'error') {
         toast.success('Authentication successful!');
       } else {
         toast.error(`Authentication failed: ${response.error}`);
+        setUserd(null);
+        return;
       }
-      api.fetchUserData().then((userData: User) => {
-        setUserd(userData);
-      });
+      loadCurrentUser();
       
     });
 
-    api.authCheck((isAuthenticated: boolean) => {
+    api.authCheck?.((isAuthenticated: boolean) => {
       if (isAuthenticated) {
-        api.fetchUserData().then((userData: User) => {
-          setUserd(userData);
-        });
+        loadCurrentUser();
       } else {
         setUserd(null);
       }

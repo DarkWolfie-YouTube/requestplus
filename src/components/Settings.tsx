@@ -31,6 +31,7 @@ interface SettingsState {
   requestLimit: number;
   autoPlay: boolean;
   autoAcceptSearchResults: boolean;
+  useChannelPoints: boolean;
   platform: string;
   filterExplicit: boolean;
   telemetryEnabled: boolean;
@@ -67,6 +68,15 @@ export function Settings({
 }: SettingsProps) {
   const [copied, setCopied] = useState(false);
   const [settingsSaved, setSettingsSaved] = useState(false);
+  const [channelPointId, setChannelPointId] = useState<string | null>(null);
+  const [channelPointLoading, setChannelPointLoading] = useState(false);
+  const [channelPointSaving, setChannelPointSaving] = useState(false);
+  const [channelPointForm, setChannelPointForm] = useState({
+    title: 'Song Requests',
+    prompt: 'Redeem this to request a song through Request+.',
+    color: '#9146ff',
+    cooldown: 30
+  });
   const renderCount = useRef(0);
 
   const themeOptions = [
@@ -185,12 +195,98 @@ export function Settings({
     }
   };
 
+  const refreshChannelPoint = async () => {
+    if (typeof window === 'undefined' || !(window as any).api?.getChannelPointReward) return;
+
+    setChannelPointLoading(true);
+    try {
+      const response = await (window as any).api.getChannelPointReward();
+      if (response?.type === 'channel_point_response' && response?.message === 'ok' && response?.data) {
+        setChannelPointId(response.data);
+      } else {
+        setChannelPointId(null);
+      }
+    } catch (err) {
+      console.error('Failed to load channel point reward:', err);
+      setChannelPointId(null);
+      toast.error(t('CLIENT_CHANNEL_POINTS_LOAD_FAILED', locale));
+    } finally {
+      setChannelPointLoading(false);
+    }
+  };
+
+  const createChannelPoint = async () => {
+    if (typeof window === 'undefined' || !(window as any).api?.createChannelPointReward) return;
+
+    const title = channelPointForm.title.trim();
+    const description = channelPointForm.prompt.trim();
+    const color = channelPointForm.color || '#9146ff';
+    const cooldown = Math.max(0, Number(channelPointForm.cooldown || 0));
+
+    if (!title) {
+      toast.error(t('CLIENT_CHANNEL_POINTS_TITLE_REQUIRED', locale));
+      return;
+    }
+
+    setChannelPointSaving(true);
+    try {
+      const response = await (window as any).api.createChannelPointReward({
+        title,
+        description,
+        color,
+        cooldown
+      });
+
+      if (response?.type !== 'channel_point_success' || response?.status !== 'ok') {
+        throw new Error(response?.error || 'Channel point create failed');
+      }
+
+      toast.success(t('CLIENT_CHANNEL_POINTS_CREATED', locale));
+      await refreshChannelPoint();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : t('CLIENT_CHANNEL_POINTS_CREATE_FAILED', locale);
+      console.error('Failed to create channel point reward:', err);
+      toast.error(message);
+    } finally {
+      setChannelPointSaving(false);
+    }
+  };
+
+  const deleteChannelPoint = async () => {
+    if (!channelPointId || typeof window === 'undefined' || !(window as any).api?.deleteChannelPointReward) return;
+
+    setChannelPointSaving(true);
+    try {
+      const response = await (window as any).api.deleteChannelPointReward(channelPointId);
+      if (response?.type !== 'channel_point_success') {
+        throw new Error(response?.error || 'Channel point delete failed');
+      }
+
+      setChannelPointId(null);
+      toast.success(t('CLIENT_CHANNEL_POINTS_DELETED', locale));
+    } catch (err) {
+      const message = err instanceof Error ? err.message : t('CLIENT_CHANNEL_POINTS_DELETE_FAILED', locale);
+      console.error('Failed to delete channel point reward:', err);
+      toast.error(message);
+    } finally {
+      setChannelPointSaving(false);
+    }
+  };
+
   useEffect(() => {
     renderCount.current += 1;
     if (renderCount.current <= 1) return;
     //Save Settings Automatically when they change
     saveSettings();
   }, [settings]);
+
+  useEffect(() => {
+    if (settings.useChannelPoints) {
+      refreshChannelPoint();
+    } else {
+      setChannelPointId(null);
+    }
+  }, [settings.useChannelPoints]);
 
   return (
     <div className="relative w-full h-full bg-gradient-to-br from-slate-900 via-purple-900/20 to-slate-900 overflow-hidden">
@@ -349,6 +445,106 @@ export function Settings({
                     setSettings({...settings, autoAcceptSearchResults: checked})
                   }
                 />
+              </div>
+
+              <div className="space-y-3 p-3 bg-slate-900/30 rounded-lg">
+                <div className="flex items-center justify-between gap-4">
+                  <div className="space-y-0.5">
+                    <Label className="text-white">{t('CLIENT_CHANNEL_POINTS_TITLE', locale)}</Label>
+                    <p className="text-xs text-gray-400">
+                      {t('CLIENT_CHANNEL_POINTS_DESC', locale)}
+                    </p>
+                  </div>
+                  <Switch
+                    checked={settings.useChannelPoints || false}
+                    onCheckedChange={(checked) =>
+                      setSettings({...settings, useChannelPoints: checked})
+                    }
+                  />
+                </div>
+
+                {settings.useChannelPoints && (
+                  <div className="space-y-3 border-t border-slate-700/60 pt-3">
+                    {channelPointLoading ? (
+                      <div className="flex items-center gap-2 text-sm text-purple-200">
+                        <RefreshCw className="size-4 animate-spin" />
+                        {t('COMMON_LOADING', locale)}
+                      </div>
+                    ) : channelPointId ? (
+                      <div className="space-y-3">
+                        <div className="rounded-lg border border-green-500/30 bg-green-500/10 p-3">
+                          <p className="text-sm text-green-200">{t('CLIENT_CHANNEL_POINTS_CREATED_STATUS', locale)}</p>
+                          <p className="mt-1 break-all text-xs text-green-100/80">{channelPointId}</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={deleteChannelPoint}
+                          disabled={channelPointSaving}
+                          className="w-full bg-red-500/20 hover:bg-red-500/30 disabled:opacity-60 text-red-200 px-4 py-2 rounded-lg transition-all"
+                        >
+                          {channelPointSaving ? t('COMMON_LOADING', locale) : t('CLIENT_CHANNEL_POINTS_DELETE', locale)}
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        <div className="space-y-1">
+                          <Label className="text-white">{t('CLIENT_CHANNEL_POINTS_REWARD_TITLE', locale)}</Label>
+                          <Input
+                            value={channelPointForm.title}
+                            onChange={(e) => setChannelPointForm({...channelPointForm, title: e.target.value})}
+                            placeholder={t('CLIENT_CHANNEL_POINTS_REWARD_TITLE_PLACEHOLDER', locale)}
+                          />
+                        </div>
+
+                        <div className="space-y-1">
+                          <Label className="text-white">{t('CLIENT_CHANNEL_POINTS_PROMPT', locale)}</Label>
+                          <Input
+                            value={channelPointForm.prompt}
+                            onChange={(e) => setChannelPointForm({...channelPointForm, prompt: e.target.value})}
+                            placeholder={t('CLIENT_CHANNEL_POINTS_PROMPT_PLACEHOLDER', locale)}
+                          />
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="space-y-1">
+                            <Label className="text-white">{t('CLIENT_CHANNEL_POINTS_COLOR', locale)}</Label>
+                            <div className="flex items-center gap-2">
+                              <Input
+                                type="color"
+                                value={channelPointForm.color}
+                                onChange={(e) => setChannelPointForm({...channelPointForm, color: e.target.value})}
+                                className="h-9 w-12 p-1"
+                              />
+                              <Input
+                                value={channelPointForm.color}
+                                onChange={(e) => setChannelPointForm({...channelPointForm, color: e.target.value})}
+                              />
+                            </div>
+                          </div>
+
+                          <div className="space-y-1">
+                            <Label className="text-white">{t('CLIENT_CHANNEL_POINTS_COOLDOWN', locale)}</Label>
+                            <Input
+                              type="number"
+                              min={0}
+                              value={channelPointForm.cooldown}
+                              onChange={(e) => setChannelPointForm({...channelPointForm, cooldown: Number(e.target.value)})}
+                            />
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={createChannelPoint}
+                          disabled={channelPointSaving}
+                          className="w-full bg-gradient-to-r from-purple-600 to-green-600 hover:from-purple-500 hover:to-green-500 disabled:opacity-60 text-white px-4 py-2 rounded-lg transition-all"
+                        >
+                          {channelPointSaving ? t('COMMON_LOADING', locale) : t('CLIENT_CHANNEL_POINTS_CREATE', locale)}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -598,7 +794,7 @@ export function Settings({
             <div>
               <h3 className="text-white font-medium">{t('CLIENT_ABOUT_TITLE', locale)}</h3>
               <p className="text-sm text-gray-400">
-                Version 2.2.0 • Built for streamers by streamers
+                Version 2.2.1 • Built for streamers by streamers
               </p>
             </div>
 
