@@ -193,10 +193,90 @@
     }
   }
 
+  function getInternalEventProps(element) {
+    if (!element) return null;
+    const internalKey = Object.keys(element).find((key) =>
+      key.startsWith("__reactProps$") ||
+      key.startsWith("__reactEventHandlers$") ||
+      key.startsWith("__reactFiber$")
+    );
+
+    if (!internalKey) return null;
+
+    const internalValue = element[internalKey];
+    return internalValue?.memoizedProps || internalValue || null;
+  }
+
+  function createSoundCloudVolumeEvent(element, volume) {
+    const rail = document.querySelector(".volume__sliderBackground") || element;
+    const rect = rail.getBoundingClientRect();
+    const clientX = rect.left + rect.width / 2;
+    const clientY = rect.bottom - (volume * rect.height);
+    const nativeEvent = new MouseEvent("mousedown", {
+      bubbles: true,
+      cancelable: true,
+      view: window,
+      clientX,
+      clientY,
+      button: 0,
+      buttons: 1
+    });
+
+    return {
+      target: element,
+      currentTarget: element,
+      nativeEvent,
+      clientX,
+      clientY,
+      pageX: clientX + window.scrollX,
+      pageY: clientY + window.scrollY,
+      button: 0,
+      buttons: 1,
+      preventDefault: () => nativeEvent.preventDefault(),
+      stopPropagation: () => nativeEvent.stopPropagation(),
+      persist: () => {}
+    };
+  }
+
+  function callSoundCloudVolumeHandlers(volume) {
+    const elements = [
+      document.querySelector(".volume__sliderHandle"),
+      document.querySelector(".volume__sliderBackground"),
+      document.querySelector(".volume__sliderWrapper"),
+      document.querySelector(".volume")
+    ].filter(Boolean);
+
+    for (const element of elements) {
+      const props = getInternalEventProps(element);
+      if (!props) continue;
+
+      const handlers = [
+        props.onMouseDown,
+        props.onPointerDown,
+        props.onClick,
+        props.onChange,
+        props.onInput
+      ].filter((handler) => typeof handler === "function");
+
+      for (const handler of handlers) {
+        try {
+          handler(createSoundCloudVolumeEvent(element, volume));
+          return true;
+        } catch (error) {
+          console.warn("RequestPlus|SoundCloud volume handler failed:", error);
+        }
+      }
+    }
+
+    return false;
+  }
+
   function nudgeVolumeUi(volume) {
     const volumeContainer = document.querySelector(".volume");
     const volumeButton = document.querySelector(".volume__button, .volume button, .volume");
     const volumeSlider = document.querySelector(".volume__sliderWrapper, .volume__slider");
+    const volumeRail = document.querySelector(".volume__sliderBackground") || volumeSlider;
+    const volumeHandle = document.querySelector(".volume__sliderHandle") || volumeRail;
     if (!volumeSlider) return false;
 
     const hoverTarget = volumeButton || volumeContainer || volumeSlider;
@@ -204,19 +284,24 @@
     dispatchPointerMouseEvent(hoverTarget, "mouseover", hoverRect.left + 1, hoverRect.top + 1);
     dispatchPointerMouseEvent(hoverTarget, "mouseenter", hoverRect.left + 1, hoverRect.top + 1);
 
-    const rect = volumeSlider.getBoundingClientRect();
+    const rect = volumeRail.getBoundingClientRect();
     if (!rect.height || !rect.width) return false;
 
     const x = rect.left + rect.width / 2;
     const y = rect.bottom - (volume * rect.height);
-    const target = document.elementFromPoint(x, y) || volumeSlider;
+    const startRect = volumeHandle.getBoundingClientRect();
+    const startX = startRect.left + startRect.width / 2;
+    const startY = startRect.top + startRect.height / 2;
+    const target = document.elementFromPoint(x, y) || volumeRail || volumeSlider;
 
-    dispatchPointerMouseEvent(target, "pointerdown", x, y);
-    dispatchPointerMouseEvent(target, "mousedown", x, y);
+    dispatchPointerMouseEvent(volumeHandle, "pointerdown", startX, startY);
+    dispatchPointerMouseEvent(volumeHandle, "mousedown", startX, startY);
+    dispatchPointerMouseEvent(document, "pointermove", x, y);
+    dispatchPointerMouseEvent(document, "mousemove", x, y);
     dispatchPointerMouseEvent(target, "pointermove", x, y);
     dispatchPointerMouseEvent(target, "mousemove", x, y);
-    dispatchPointerMouseEvent(target, "pointerup", x, y);
-    dispatchPointerMouseEvent(target, "mouseup", x, y);
+    dispatchPointerMouseEvent(document, "pointerup", x, y);
+    dispatchPointerMouseEvent(document, "mouseup", x, y);
     target.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window, clientX: x, clientY: y }));
 
     volumeSlider.setAttribute("aria-valuenow", String(volume));
@@ -236,9 +321,15 @@
       // Clamp volume between 0 and 1
       volume = Math.max(0, Math.min(1, volume));
       const audio = getAudio();
-      if (audio) {
-        audio.volume = volume;
-        audio.dispatchEvent(new Event("volumechange", { bubbles: true }));
+    if (audio) {
+      audio.volume = volume;
+      audio.dispatchEvent(new Event("volumechange", { bubbles: true }));
+    }
+
+      if (callSoundCloudVolumeHandlers(volume)) {
+        await delay(50);
+        console.log("RequestPlus|Volume set through SoundCloud handler:", volume);
+        return true;
       }
 
       if (nudgeVolumeUi(volume)) {
@@ -551,6 +642,6 @@
     await initializePlaybackAPI();
   })();
 
-  console.log("RequestPlus|Integration loaded and initialized");
+  console.log("RequestPlus|Integration loaded and initialized v2.0");
 })();
 
