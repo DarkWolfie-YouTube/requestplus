@@ -159,7 +159,7 @@
       var volumeSlider = document.querySelector(".volume__sliderWrapper");
       if (volumeSlider) {
         var volumeValue = parseFloat(volumeSlider.getAttribute("aria-valuenow"));
-        return volumeValue;
+        return volumeValue > 1 ? volumeValue / 100 : volumeValue;
       }
       return 1; // Default to max volume if not found
     } catch (error) {
@@ -168,54 +168,85 @@
     }
   }
 
+  function dispatchPointerMouseEvent(element, type, clientX, clientY) {
+    if (!element) return;
+    const options = {
+      bubbles: true,
+      cancelable: true,
+      view: window,
+      clientX,
+      clientY,
+      buttons: type === "mouseup" || type === "pointerup" ? 0 : 1,
+      button: 0,
+      pointerId: 1,
+      pointerType: "mouse",
+      isPrimary: true
+    };
+
+    if (window.PointerEvent && type.startsWith("pointer")) {
+      element.dispatchEvent(new PointerEvent(type, options));
+      return;
+    }
+
+    if (!type.startsWith("pointer")) {
+      element.dispatchEvent(new MouseEvent(type, options));
+    }
+  }
+
+  function nudgeVolumeUi(volume) {
+    const volumeContainer = document.querySelector(".volume");
+    const volumeButton = document.querySelector(".volume__button, .volume button, .volume");
+    const volumeSlider = document.querySelector(".volume__sliderWrapper, .volume__slider");
+    if (!volumeSlider) return false;
+
+    const hoverTarget = volumeButton || volumeContainer || volumeSlider;
+    const hoverRect = hoverTarget.getBoundingClientRect();
+    dispatchPointerMouseEvent(hoverTarget, "mouseover", hoverRect.left + 1, hoverRect.top + 1);
+    dispatchPointerMouseEvent(hoverTarget, "mouseenter", hoverRect.left + 1, hoverRect.top + 1);
+
+    const rect = volumeSlider.getBoundingClientRect();
+    if (!rect.height || !rect.width) return false;
+
+    const x = rect.left + rect.width / 2;
+    const y = rect.bottom - (volume * rect.height);
+    const target = document.elementFromPoint(x, y) || volumeSlider;
+
+    dispatchPointerMouseEvent(target, "pointerdown", x, y);
+    dispatchPointerMouseEvent(target, "mousedown", x, y);
+    dispatchPointerMouseEvent(target, "pointermove", x, y);
+    dispatchPointerMouseEvent(target, "mousemove", x, y);
+    dispatchPointerMouseEvent(target, "pointerup", x, y);
+    dispatchPointerMouseEvent(target, "mouseup", x, y);
+    target.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window, clientX: x, clientY: y }));
+
+    volumeSlider.setAttribute("aria-valuenow", String(volume));
+    if (volumeContainer) {
+      volumeContainer.setAttribute("data-level", String(Math.round(volume * 10)));
+    }
+
+    return true;
+  }
+
   /**
    * Set volume in SoundCloud player
    * @param {number} volume - Volume level between 0 and 1
    */
-  function setVolume(volume) {
+  async function setVolume(volume) {
     try {
       // Clamp volume between 0 and 1
       volume = Math.max(0, Math.min(1, volume));
       const audio = getAudio();
       if (audio) {
         audio.volume = volume;
+        audio.dispatchEvent(new Event("volumechange", { bubbles: true }));
       }
 
-      var volumeConbtainer = document.querySelector(".volume");
-        
-      
-      var volumeSlider = document.querySelector(".volume__sliderWrapper");
-      if (volumeSlider) {
-        // Calculate the height of the slider (assuming 130px total height based on the calculation)
-        var sliderHeight = 130; // This might need adjustment based on actual slider height
-        var handlePosition = sliderHeight - (volume * sliderHeight);
-        var progressHeight = volume * sliderHeight;
-        
-        // Update the slider elements
-        var sliderProgress = document.querySelector(".volume__sliderProgress");
-        var sliderHandle = document.querySelector(".volume__sliderHandle");
-        
-        if (sliderProgress) {
-          sliderProgress.style.height = progressHeight + "px";
-        }
-        
-        if (sliderHandle) {
-          sliderHandle.style.top = handlePosition + "px";
-        }
-        
-        // Update aria attribute
-        volumeSlider.setAttribute("aria-valuenow", volume);
-        if (volumeConbtainer) {
-            // because this data attribute is used to reflect volume level in code, make this a whole number of the volume object of 1-10
-            volumeConbtainer.setAttribute("data-level", Math.round(volume * 10));
-        }
-        
-        // Trigger a click event to actually change the volume
-
-        
+      if (nudgeVolumeUi(volume)) {
+        await delay(50);
         console.log("RequestPlus|Volume set to:", volume);
         return true;
       }
+
       return Boolean(audio);
     } catch (error) {
       console.error("RequestPlus|Error setting volume:", error);
@@ -444,7 +475,7 @@
               if (messageData.data && typeof messageData.data.volume === "number") {
                 var newVolume = messageData.data.volume;
                 console.log("RequestPlus|Setting volume to:", newVolume);
-                if (setVolume(newVolume)) {
+                if (await setVolume(newVolume)) {
                   await delay(50);
                   sendCurrentTrack(ws);
                 } else {
