@@ -133,6 +133,28 @@ function normalizeSpotifySearchResult(track: any) {
     };
 }
 
+function extractSoundCloudUrl(input: string | undefined): string {
+    if (!input) return '';
+    const match = input.match(/https?:\/\/(?:on\.soundcloud\.com|(?:www\.|m\.)?soundcloud\.com)\/[^\s<>"']+/i);
+    return match ? match[0].replace(/[),.]+$/, '') : '';
+}
+
+function isSoundCloudRequest(message: WebSocketMessage): boolean {
+    return Boolean(extractSoundCloudUrl(message.link || message.message));
+}
+
+function sendSongRequestResponse(message: WebSocketMessage, code: string, extra: Record<string, any> = {}): void {
+    websocketManager.send({
+        type: 'song_request_response',
+        message: code,
+        username: message.username,
+        msgID: message.messageId,
+        platform: message.platform,
+        channel: message.channel,
+        ...extra
+    });
+}
+
 
 // Global variables with proper typing
 let WSServer: websocket;
@@ -160,6 +182,7 @@ let songIntervalID: NodeJS.Timeout;
 let tray: Tray | null = null;
 let isQuitting: boolean = false;
 let tokenRefreshTimer: NodeJS.Timeout | null = null;
+let soundCloudQueueTimer: NodeJS.Timeout | null = null;
 
 function getQueueItemTrackId(item: QueueItem): string {
     const requestedBySuffix = `-${item.requestedBy}`;
@@ -209,6 +232,7 @@ async function monitorTrackProgress(trackData: songInfo): Promise<void> {
     const timeRemaining = duration - progress;
     const timeElapsed = progress;
     const TEN_SECONDS = 10000;
+    const SOUNDCLOUD_END_WINDOW = 1000;
     const THIRTY_SECONDS = 30000;
 
     if (currentTrackId === trackId && lastTrackProgress > 0 && progress + 5000 < lastTrackProgress) {
@@ -243,7 +267,8 @@ async function monitorTrackProgress(trackData: songInfo): Promise<void> {
     if (duration <= 0) return;
 
     
-    if (timeRemaining <= TEN_SECONDS && timeRemaining > 0 && !autoQueueTriggered) {
+    const autoQueueWindow = settings.platform === 'soundcloud' ? SOUNDCLOUD_END_WINDOW : TEN_SECONDS;
+    if (timeRemaining <= autoQueueWindow && timeRemaining > 0 && !autoQueueTriggered) {
         Logger.info(`Track ending soon (${Math.floor(timeRemaining / 1000)}s remaining) calling auto-queue function...`);
         autoQueueNextTrack();
         autoQueueTriggered = true;
@@ -254,6 +279,10 @@ async function monitorTrackProgress(trackData: songInfo): Promise<void> {
 
 async function autoQueueNextTrack(): Promise<void> {
     if (!queueHandler || !WSServer) return;
+    if (soundCloudQueueTimer) {
+        clearTimeout(soundCloudQueueTimer);
+        soundCloudQueueTimer = null;
+    }
 
     const queue = queueHandler.getQueue();
     if (queue.items.length === 0) {
@@ -279,6 +308,13 @@ async function autoQueueNextTrack(): Promise<void> {
             if (nextTrack.platform === 'youtube') {
                 await ytManager.addItemToQueueById(getQueueItemTrackId(nextTrack));
             }
+        } else if (settings.platform === 'soundcloud') {
+            if (nextTrack.platform === 'soundcloud') {
+                WSServer.WSSendToType({
+                    command: 'addTrack',
+                    data: { url: getQueueItemTrackId(nextTrack), forcePlay: true }
+                } as WSCommand, 'soundcloud');
+            }
         }
 
         Logger.info(`Auto-queued track: ${nextTrack.title} by ${nextTrack.artist}`);
@@ -295,6 +331,31 @@ async function autoQueueNextTrack(): Promise<void> {
         Logger.error('Error auto-queueing track:', error);
         sendToast('Failed to auto-queue next track', 'error', 3000);
     }
+}
+
+function scheduleSoundCloudQueueAdvance(): void {
+    if (!queueHandler || !WSServer || settings.platform !== 'soundcloud') return;
+    const queue = queueHandler.getQueue();
+    const hasPendingSoundCloud = queue.items.some(item => item.platform === 'soundcloud' && !item.isQueued);
+    if (!hasPendingSoundCloud) return;
+
+    if (soundCloudQueueTimer) {
+        clearTimeout(soundCloudQueueTimer);
+        soundCloudQueueTimer = null;
+    }
+
+    if (!currentSongInformation?.isPlaying || !currentSongInformation.duration || !currentSongInformation.progress) {
+        void autoQueueNextTrack();
+        return;
+    }
+
+    const remaining = currentSongInformation.duration - currentSongInformation.progress;
+    const delayMs = Math.max(0, remaining - 1000);
+    Logger.info(`Scheduling SoundCloud queue handoff in ${Math.ceil(delayMs / 1000)}s`);
+    soundCloudQueueTimer = setTimeout(() => {
+        soundCloudQueueTimer = null;
+        void autoQueueNextTrack();
+    }, delayMs);
 }
 
 async function checkCurrentlyPlayingTrack(trackData: TrackData): Promise<void> {
@@ -975,10 +1036,13 @@ async function requestTrackInfo(): Promise<void> {
     const info = await playbackHandler.getCurrentSong();
 
     if (!info) return;
-    const currentSongInformation: songInfo = { ...info };
+    currentSongInformation = { ...info };
     mainWindow?.webContents.send('song-info', currentSongInformation);
     monitorTrackProgress(currentSongInformation);
     checkCurrentlyPlayingTrack(currentSongInformation);
+    if (settings.platform === 'soundcloud' && !soundCloudQueueTimer) {
+        scheduleSoundCloudQueueAdvance();
+    }
 }
 
 function sendToast(message: string, type: 'info' | 'success' | 'error' | 'warning' = 'info', duration: number = 5000): void {
@@ -1130,6 +1194,11 @@ websocketManager.on('song-request', async (message) => {
 
 
 
+  if (isSoundCloudRequest(message) && settings.platform !== 'soundcloud') {
+      sendSongRequestResponse(message, 'ERR_SC_DISABLED');
+      return;
+  }
+
 
 
 
@@ -1236,6 +1305,39 @@ websocketManager.on('song-request', async (message) => {
             websocketManager.send({ type: 'song_request_response', message: 'ERR_YT_QUEUE_FAILED', username: message.username, msgID: message.messageId, platform: message.platform, channel: message.channel });
         }
     }
+  } else if (settings.platform === 'soundcloud') {
+    const soundCloudUrl = extractSoundCloudUrl(message.link || message.message);
+
+    if (!soundCloudUrl) {
+        sendSongRequestResponse(message, 'ERR_SC_IDENTIFIER_MISSING');
+        return;
+    }
+
+    if (!WSServer || WSServer.getClientsByType('soundcloud').length === 0) {
+        sendSongRequestResponse(message, 'ERR_SC_DISABLED');
+        return;
+    }
+
+    const songName = soundCloudUrl.split('/').filter(Boolean).pop()?.replace(/[-_]+/g, ' ') || 'SoundCloud track';
+    const artist = 'SoundCloud';
+
+    const queueItem: QueueItem = {
+        id: `${soundCloudUrl}-${message.username}`,
+        title: songName,
+        artist,
+        requestedBy: message.username,
+        album: 'SoundCloud',
+        duration: 0,
+        progress: 0,
+        cover: '',
+        platform: 'soundcloud',
+        iscurrentlyPlaying: false,
+    };
+    await queueHandler.addToQueue(queueItem);
+
+    scheduleSoundCloudQueueAdvance();
+
+    sendSongRequestResponse(message, 'OKAY_SC_QUEUED', { songName, artist });
   }
 });
 

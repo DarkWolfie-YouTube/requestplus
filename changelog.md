@@ -8,6 +8,14 @@ All notable changes to Request+ will be documented in this file.
 
 - Fixed the 502 unexpected error for the websocket, it now runs the reconnect code like the api is restarting. So now if I just kill it, the error shouldn't stop code from working at all.
 - Added Channel Point Support for Twitch. (Since Twitch is the main platform for chat.)
+- Changed Cider to use a plugin, so that websocket is better for preformance.
+  - This doesn't mean it won't work but it should fall back if the plugin ins't installed.
+- Added FULL sound cloud support, pulling track data isn't ready just yet for the queue.
+
+API Changes
+
+- Fixed a bug where the word "twitch" in the queue hyperlink was blocked by twitch global moderation.
+  - opened a Twitch support ticket to see why the fuck this wasn't working.
 
 
 ---

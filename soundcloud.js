@@ -384,9 +384,67 @@
     return true;
   }
 
-  async function addTrack(url) {
+  const PENDING_PLAY_KEY = "requestPlusSoundCloudPendingPlayUrl";
+
+  function clickTrackPlayButton(row) {
+    const playButton = row?.querySelector(".playButton, .sc-button-play, button[title='Play'], a[title='Play']");
+    if (!playButton) return false;
+    playButton.click();
+    return true;
+  }
+
+  function isCurrentSoundCloudUrl(url) {
+    return urlsMatch(window.location.href, url);
+  }
+
+  async function playTrackUrl(url) {
     const targetUrl = getAbsoluteSoundCloudUrl(url);
     if (!targetUrl) return false;
+
+    sessionStorage.setItem(PENDING_PLAY_KEY, targetUrl);
+    if (!isCurrentSoundCloudUrl(targetUrl)) {
+      window.location.href = targetUrl;
+      return true;
+    }
+
+    const trackRow = findTrackRow(targetUrl);
+    if (trackRow && clickTrackPlayButton(trackRow)) {
+      sessionStorage.removeItem(PENDING_PLAY_KEY);
+      return true;
+    }
+
+    await delay(250);
+    return clickSelector(".sound__coverArt .playButton, .listenEngagement .playButton, .playControls__elements .playControl, .playControl");
+  }
+
+  async function maybePlayPendingTrack() {
+    const pendingUrl = sessionStorage.getItem(PENDING_PLAY_KEY);
+    if (!pendingUrl) return false;
+
+    const trackRow = findTrackRow(pendingUrl);
+    if (trackRow && clickTrackPlayButton(trackRow)) {
+      sessionStorage.removeItem(PENDING_PLAY_KEY);
+      return true;
+    }
+
+    if (isCurrentSoundCloudUrl(pendingUrl)) {
+      const clicked = clickSelector(".sound__coverArt .playButton, .listenEngagement .playButton, .playControls__elements .playControl, .playControl");
+      if (clicked) {
+        sessionStorage.removeItem(PENDING_PLAY_KEY);
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  async function addTrack(url, options = {}) {
+    const targetUrl = getAbsoluteSoundCloudUrl(url);
+    if (!targetUrl) return false;
+
+    if (options.forcePlay) {
+      return playTrackUrl(targetUrl);
+    }
 
     const trackRow = findTrackRow(targetUrl);
     if (trackRow) {
@@ -508,12 +566,14 @@
 
       ws.onopen = () => {
         console.log("RequestPlus|Connected to WebSocket server");
+        maybePlayPendingTrack();
         sendCurrentTrack(ws);
         if (window.requestPlusSoundCloudInterval) {
           clearInterval(window.requestPlusSoundCloudInterval);
         }
         window.requestPlusSoundCloudInterval = setInterval(() => {
           if (ws.readyState === WebSocket.OPEN) {
+            maybePlayPendingTrack();
             sendCurrentTrack(ws);
           }
         }, 1000);
@@ -619,7 +679,9 @@
 
             case "addtrack":
               if (messageData.data?.url || messageData.data?.uri) {
-                const added = await addTrack(messageData.data.url || messageData.data.uri);
+                const added = await addTrack(messageData.data.url || messageData.data.uri, {
+                  forcePlay: Boolean(messageData.data?.forcePlay)
+                });
                 if (!added) {
                   ws.send(JSON.stringify({ command: "error", data: "Failed to add SoundCloud track to Next up." }));
                 }

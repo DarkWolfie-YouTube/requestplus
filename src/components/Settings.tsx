@@ -99,7 +99,7 @@ export function Settings({
     { value: 'spotify', label: 'Spotify', experimental: false },
     { value: 'youtube', label: 'YouTube (Pear)', experimental: false },
     { value: 'apple', label: 'Apple Music (Cider)', experimental: false },
-    { value: 'soundcloud', label: 'SoundCloud (EXPIRMENTAL)', experimental: true },
+    { value: 'soundcloud', label: 'SoundCloud', experimental: false },
     { value: 'spotube', label: 'Spotify and YouTube (EXPIRMENTAL)', experimental: true }
   ];
 
