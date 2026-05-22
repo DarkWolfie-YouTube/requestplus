@@ -59,6 +59,7 @@ class QueueHandler {
         if (index >= 0 && index < this.queue.items.length) {
             const removedItem = this.queue.items.splice(index, 1)[0];
             this.queue.currentCount = this.queue.items.length;
+            console.log(removedItem)
             
             // Adjust currently playing index if needed
             if (this.queue.currentlyPlayingIndex >= index) {
@@ -89,6 +90,11 @@ class QueueHandler {
         }
 
         const index = this.queue.items.findIndex(item => item.id === trimmed);
+        return this.removeFromQueue(index);
+    }
+
+    async removeFromQueueById(id: string): Promise<boolean> {
+        const index = this.queue.items.findIndex(item => item.id === id);
         return this.removeFromQueue(index);
     }
 

@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import { Queue } from './queueHandler';
 import { songData } from './ytManager';
+import { WebSocketMessage } from './websocketweb';
 
 // Define the API interface
 interface ElectronAPI {
@@ -17,6 +18,7 @@ interface ElectronAPI {
   seek: (position: number) => Promise<void>;
   shuffle: () => Promise<void>;
   repeat: () => Promise<void>;
+  probe: (payload: WebSocketMessage) => Promise<void>;
 
   // Queue controls
   getQueue: () => Promise<Queue>;
@@ -98,6 +100,7 @@ const electronAPI: ElectronAPI = {
   shuffle: () => ipcRenderer.invoke('song-shuffle'),
   repeat: () => ipcRenderer.invoke('song-repeat'),
   like: () => ipcRenderer.invoke('song-like'),
+  probe: (payload) => ipcRenderer.invoke('websocket-probe', payload),
 
   // Queue controls
   getQueue: () => {

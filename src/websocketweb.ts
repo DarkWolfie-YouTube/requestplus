@@ -20,6 +20,7 @@ class WebSocketManager extends EventEmitter {
   private token: string | null = null;
   private deviceId: string | null = null;
   private intentionalDisconnect: boolean = false;
+  private probed: boolean = false
 
   private constructor() {
     super();
@@ -46,6 +47,7 @@ class WebSocketManager extends EventEmitter {
     this.intentionalDisconnect = false;
 
     return new Promise((resolve, reject) => {
+      let restartHandled = false;
       (global as any).Logger.info('[WebSocket] Connecting to:', WS_URL);
 
       this.ws = new WebSocket(WS_URL);
@@ -89,14 +91,37 @@ class WebSocketManager extends EventEmitter {
         }
       });
 
+      this.ws.on('unexpected-response', (_request, response) => {
+        if (response.statusCode === 502) {
+          restartHandled = true;
+          (global as any).Logger.warn('[WebSocket] Cloudflare returned 502 during connection; treating as server restart');
+          this.handleRestartingConnection(10, true);
+          response.resume();
+          resolve();
+          return;
+        }
+
+        (global as any).Logger.error('[WebSocket] Unexpected server response:', response.statusCode);
+        response.resume();
+        reject(new Error(`Unexpected server response: ${response.statusCode}`));
+      });
+
       this.ws.on('error', (error) => {
+        if (this.isCloudflareRestartError(error)) {
+          restartHandled = true;
+          (global as any).Logger.warn('[WebSocket] Cloudflare 502 during connection; treating as server restart');
+          this.handleRestartingConnection(10, true);
+          resolve();
+          return;
+        }
+
         (global as any).Logger.error('[WebSocket] Error:', error);
-        this.emit('error', error);
+        this.emit('websocket-error', error);
       });
 
       // Timeout if connection takes too long
       setTimeout(() => {
-        if (!this.isAuth && !this.intentionalDisconnect) {
+        if (!this.isAuth && !this.intentionalDisconnect && !restartHandled) {
           reject(new Error('Connection timeout'));
           this.scheduleReconnect();
         }
@@ -189,11 +214,7 @@ class WebSocketManager extends EventEmitter {
       case 'restarting': {
         const delaySec = message.reconnectInSec ?? 10;
         (global as any).Logger.info(`[WebSocket] Server restarting — reconnecting in ${delaySec}s`);
-        // Reset reconnect state so we get a fresh run of attempts starting at the server-specified delay
-        this.reconnectAttempts = 0;
-        this.reconnectDelay = delaySec * 1000;
-        this.intentionalDisconnect = false;
-        this.emit('restarting', { reconnectInSec: delaySec });
+        this.handleRestartingConnection(delaySec);
         break;
       }
 
@@ -223,6 +244,11 @@ class WebSocketManager extends EventEmitter {
         break;
 
       default:
+        if (this.probed) {
+          this.emit('probe-response', message)
+          this.probed = false
+          return
+        }
         console.warn('[WebSocket] Unknown message type:', message.type);
         this.emit('message', message);
     }
@@ -244,6 +270,22 @@ class WebSocketManager extends EventEmitter {
 
     (global as any).Logger.info('[WebSocket] Sending message:', data.type);
     this.ws.send(JSON.stringify(data));
+  }
+
+  public sendProbe(data: WebSocketMessage) {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      console.error('[WebSocket] Cannot send, not connected');
+      throw new Error('WebSocket not connected');
+    }
+
+    if (!this.isAuth && data.type !== 'auth_desktop') {
+      console.error('[WebSocket] Cannot send, not authenticated');
+      throw new Error('WebSocket not authenticated');
+    }
+
+    (global as any).Logger.info('[WebSocket] Sending message:', data.type);
+    this.ws.send(JSON.stringify(data));
+    this.probed = true
   }
 
   /**
@@ -326,6 +368,22 @@ class WebSocketManager extends EventEmitter {
 
     // Exponential backoff
     this.reconnectDelay = Math.min(this.reconnectDelay * 2, 30000);
+  }
+
+  private handleRestartingConnection(delaySec: number, scheduleNow = false) {
+    this.reconnectAttempts = 0;
+    this.reconnectDelay = delaySec * 1000;
+    this.intentionalDisconnect = false;
+    this.isAuth = false;
+    this.stopPingInterval();
+    this.emit('restarting', { reconnectInSec: delaySec });
+    if (scheduleNow) {
+      this.scheduleReconnect();
+    }
+  }
+
+  private isCloudflareRestartError(error: Error) {
+    return /Unexpected server response:\s*502/i.test(error.message);
   }
 
   /**

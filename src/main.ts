@@ -16,7 +16,7 @@ import {
   setupDeepLinkHandling, 
   setupAuthEventListeners
 } from './authmanager';
-import { websocketManager } from './websocketweb';
+import { websocketManager, WebSocketMessage } from './websocketweb';
 import APIHandler from './apiHandler';
 import SettingsHandler from './settingsHandler';
 import { Settings } from './settingsHandler';
@@ -156,11 +156,33 @@ let ytManager: YTManager;
 let playbackHandler: PlaybackHandler;
 let gtsHandler: GTSHandler;
 let amHandler: AMHandler;
-let lastRequestQueueName: string;
 let songIntervalID: NodeJS.Timeout;
 let tray: Tray | null = null;
 let isQuitting: boolean = false;
 let tokenRefreshTimer: NodeJS.Timeout | null = null;
+
+function getQueueItemTrackId(item: QueueItem): string {
+    const requestedBySuffix = `-${item.requestedBy}`;
+    if (item.id.endsWith(requestedBySuffix)) {
+        return item.id.slice(0, -requestedBySuffix.length);
+    }
+
+    return item.id;
+}
+
+function getTrackIdFromTrackData(trackData: TrackData): string | null {
+    let trackId = trackData.id;
+    if (!trackId && trackData.uri) {
+        trackId = trackData.uri.replace('spotify:track:', '');
+    }
+    if (!trackId) return null;
+
+    if (trackId.includes('spotify:track:')) {
+        trackId = trackId.replace('spotify:track:', '');
+    }
+
+    return trackId;
+}
 
 function scheduleTokenRefresh(expiresAt: number): void {
   if (tokenRefreshTimer) clearTimeout(tokenRefreshTimer);
@@ -246,18 +268,16 @@ async function autoQueueNextTrack(): Promise<void> {
             if (nextTrack.platform === 'spotify') {
                 WSServer.WSSendToType({
                     command: 'addTrack',
-                    data: { uri: `spotify:track:${nextTrack.id.split('-')[0]}` }
+                    data: { uri: `spotify:track:${getQueueItemTrackId(nextTrack)}` }
                 }, 'spotify');
             }
         } else if (settings.platform === 'apple') {
             if (nextTrack.platform === 'apple') {
-                amHandler.queueTrack(nextTrack.id.split('-')[0]);
+                amHandler.queueTrack(getQueueItemTrackId(nextTrack));
             }
         } else if (settings.platform === 'youtube' && ytManager) {
             if (nextTrack.platform === 'youtube') {
-                // YouTube video IDs are always 11 chars — slice is safer than split('-')
-                const videoId = nextTrack.id.substring(0, 11);
-                await ytManager.addItemToQueueById(videoId);
+                await ytManager.addItemToQueueById(getQueueItemTrackId(nextTrack));
             }
         }
 
@@ -268,9 +288,6 @@ async function autoQueueNextTrack(): Promise<void> {
             'info',
             4000
         );
-
-        // await chatHandler.sendChatMessage(`Auto-queued: ${nextTrack.title} by ${nextTrack.artist}`);
-        lastRequestQueueName = nextTrack.requestedBy;
 
         await queueHandler.setTrackAsQueued(0);
 
@@ -286,20 +303,13 @@ async function checkCurrentlyPlayingTrack(trackData: TrackData): Promise<void> {
     const queue = queueHandler.getQueue();
     if (queue.items.length === 0) return;
 
-    let trackId = trackData.id;
-    if (!trackId && trackData.uri) {
-        trackId = trackData.uri.replace('spotify:track:', '');
-    }
+    const trackId = getTrackIdFromTrackData(trackData);
     if (!trackId) return;
 
-    if (trackId.includes('spotify:track:')) {
-        trackId = trackId.replace('spotify:track:', '');
-    }
-
-    const matchingQueueItemId = trackId + '-' + lastRequestQueueName;
-    const matchingTrackIndex = queue.items.findIndex(item => item.id === matchingQueueItemId);
+    const matchingTrackIndex = queue.items.findIndex(item => getQueueItemTrackId(item) === trackId);
 
     if (matchingTrackIndex !== -1) {
+        const matchingQueueItemId = queue.items[matchingTrackIndex].id;
         if (currentTrackId2 === matchingQueueItemId) {
             return;
         }
@@ -331,9 +341,9 @@ async function checkCurrentlyPlayingTrack(trackData: TrackData): Promise<void> {
         currentTrackId2 = matchingQueueItemId;
 
         setTimeout(async () => {
-            await queueHandler.removeFromQueue(matchingTrackIndex);
+            await queueHandler.removeFromQueueById(matchingQueueItemId);
             Logger.info(`Removed played track from queue: ${track.title}`);
-        }, 2000);
+        }, 10000);
     }
 }
 
@@ -777,6 +787,14 @@ ipcMain.handle('set-pre-release-check', (event: Electron.IpcMainInvokeEvent, ena
     const { setPreReleaseCheck } = require('./updateChecker.js');
     setPreReleaseCheck(enabled);
 });
+
+ipcMain.handle('websocket-probe', (event: Electron.IpcMainInvokeEvent, payload: WebSocketMessage): void => { 
+    websocketManager.sendProbe({...payload})
+})
+
+websocketManager.on('probe-response', (message) => {
+    console.log(message)
+})
 
 app.whenReady().then(async () => {
     if (!(global as any).ISAUTHING) {

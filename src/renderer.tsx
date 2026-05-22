@@ -263,6 +263,7 @@ const App = () => {
     });
 // Queue handling - fetch initial data
   const handleQueueUpdate = (updatedQueue: Queue) => {
+    console.log(updatedQueue)
     setQueue(updatedQueue);
   };
   const fetchInitialQueue = async () => {
