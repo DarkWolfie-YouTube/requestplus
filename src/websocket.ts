@@ -230,13 +230,6 @@ class WebSocketServer extends EventEmitter {
                         return;
                     }
 
-                    // Send message to all clients but not the client that sent the message
-                    this.clients.forEach((clientInfo, clientWs) => {
-                        if (clientWs !== ws && clientWs.readyState === WebSocket.OPEN) {
-                            clientWs.send(JSON.stringify(parsed));
-                        }
-                    });
-
                     if (client && client.type === 'cider') {
                         if (parsed.command === 'currentTrack') {
                             this.emit('cider-current-track', parsed);

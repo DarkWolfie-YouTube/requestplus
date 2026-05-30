@@ -38,7 +38,10 @@ interface SettingsState {
   gtsEnabled: boolean;
   subsOnly: boolean;
   appleMusicAppToken: string;
+  ciderApiVersion?: '3' | '4';
+  ciderV4AppToken?: string;
   primarySearchPlatform: string;
+  [key: string]: any;
 }
 
 interface SettingsProps {
@@ -71,6 +74,9 @@ export function Settings({
   const [channelPointId, setChannelPointId] = useState<string | null>(null);
   const [channelPointLoading, setChannelPointLoading] = useState(false);
   const [channelPointSaving, setChannelPointSaving] = useState(false);
+  const [ciderTokenLoading, setCiderTokenLoading] = useState(false);
+  const [ciderTokenRequested, setCiderTokenRequested] = useState(false);
+  const [showCiderVersionModal, setShowCiderVersionModal] = useState(false);
   const [channelPointForm, setChannelPointForm] = useState({
     title: 'Song Requests',
     prompt: 'Redeem this to request a song through Request+.',
@@ -134,6 +140,60 @@ export function Settings({
     if (typeof window !== 'undefined' && (window as any).api?.twitchLogout) {
       (window as any).api.twitchLogout();
       setUserd(null);
+    }
+  };
+
+  const requestCiderToken = async (baseSettings: SettingsState = settings) => {
+    if (typeof window === 'undefined' || !(window as any).api?.requestCiderToken) {
+      toast.error('Cider token request is not available.');
+      return;
+    }
+
+    setCiderTokenLoading(true);
+    try {
+      toast.info('Approve the Request+ token prompt in Cider 4.');
+      const token = await (window as any).api.requestCiderToken();
+      setCiderTokenRequested(true);
+      setSettings({
+        ...baseSettings,
+        platform: 'apple',
+        ciderApiVersion: '4',
+        ciderV4AppToken: token
+      });
+      toast.success('Cider 4 token connected.');
+    } catch (err) {
+      setCiderTokenRequested(true);
+      const message = err instanceof Error ? err.message : 'Failed to get a Cider 4 token.';
+      console.error('Failed to request Cider token:', err);
+      toast.error(message);
+    } finally {
+      setCiderTokenLoading(false);
+    }
+  };
+
+  const handlePlatformChange = (value: string) => {
+    if (value === 'apple' && settings.platform !== 'apple') {
+      setShowCiderVersionModal(true);
+      return;
+    }
+
+    setSettings({ ...settings, platform: value });
+  };
+
+  const selectCiderVersion = (version: '3' | '4') => {
+    const nextSettings = { ...settings, platform: 'apple', ciderApiVersion: version };
+    setShowCiderVersionModal(false);
+    setSettings(nextSettings);
+    if (version === '4' && !settings.ciderV4AppToken && !ciderTokenRequested) {
+      void requestCiderToken(nextSettings);
+    }
+  };
+
+  const handleCiderVersionChange = (value: '3' | '4') => {
+    const nextSettings = { ...settings, ciderApiVersion: value };
+    setSettings(nextSettings);
+    if (value === '4' && !settings.ciderV4AppToken && !ciderTokenRequested) {
+      void requestCiderToken(nextSettings);
     }
   };
 
@@ -290,6 +350,44 @@ export function Settings({
 
   return (
     <div className="relative w-full h-full bg-gradient-to-br from-slate-900 via-purple-900/20 to-slate-900 overflow-hidden">
+      {showCiderVersionModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-5">
+          <div className="w-full max-w-sm rounded-xl border border-purple-500/30 bg-slate-900 p-5 shadow-2xl">
+            <div className="space-y-2">
+              <h2 className="text-lg font-bold text-white">Which Cider version?</h2>
+              <p className="text-sm text-gray-300">
+                Cider 4 uses the new API token prompt. Cider 3 keeps using the existing plugin/websocket integration.
+              </p>
+            </div>
+
+            <div className="mt-5 grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => selectCiderVersion('3')}
+                className="rounded-lg bg-slate-700/70 px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-slate-600/80"
+              >
+                Cider 3
+              </button>
+              <button
+                type="button"
+                onClick={() => selectCiderVersion('4')}
+                className="rounded-lg bg-gradient-to-r from-purple-600 to-green-600 px-4 py-3 text-sm font-medium text-white transition-all hover:from-purple-500 hover:to-green-500"
+              >
+                Cider 4
+              </button>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setShowCiderVersionModal(false)}
+              className="mt-3 w-full rounded-lg bg-slate-800/80 px-4 py-2 text-sm font-medium text-gray-300 transition-colors hover:bg-slate-700/80"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Animated Background Blobs */}
       <div className="absolute inset-0 opacity-30">
         <div className="absolute top-0 -left-4 w-72 h-72 bg-purple-500 rounded-full mix-blend-multiply filter blur-xl animate-blob"></div>
@@ -653,7 +751,7 @@ export function Settings({
                 <Label className="text-white" htmlFor="platform">{t('CLIENT_MAIN_PLATFORM', locale)}</Label>
                 <Select
                   value={settings.platform}
-                  onValueChange={(value) => setSettings({...settings, platform: value})}
+                  onValueChange={handlePlatformChange}
                 >
                   <SelectTrigger className="bg-slate-900/50 border-purple-500/30 text-white">
                     <SelectValue placeholder="Select a platform" />
@@ -678,18 +776,61 @@ export function Settings({
                 </Select>
               </div>
               { settings.platform === 'apple' && (
-                <div className="space-y-2">
-                  <Label className="text-white" htmlFor="appleMusicToken">{t('CLIENT_CIDER_TOKEN', locale)}</Label>
-                  <Input
-                    id="appleMusicToken"
-                    type="text"
-                    placeholder={t('CLIENT_CIDER_TOKEN_PLACEHOLDER', locale)}
-                    value={settings.appleMusicAppToken || ''}
-                    onChange={(e) =>
-                      setSettings({...settings, appleMusicAppToken: e.target.value})
-                    }
-                    className="bg-slate-900/50 border-purple-500/30 text-white placeholder:text-gray-500"
-                  />
+                <div className="space-y-3">
+                  <div className="space-y-2">
+                    <Label className="text-white" htmlFor="ciderApiVersion">Cider Version</Label>
+                    <Select
+                      value={settings.ciderApiVersion || '3'}
+                      onValueChange={(value) => handleCiderVersionChange(value as '3' | '4')}
+                    >
+                      <SelectTrigger className="bg-slate-900/50 border-purple-500/30 text-white">
+                        <SelectValue placeholder="Select Cider version" />
+                      </SelectTrigger>
+                      <SelectContent position="item-aligned" className="bg-slate-800 border-purple-500/30">
+                        <SelectItem value="4" className="text-white hover:bg-purple-500/20">Cider 4 (API v2)</SelectItem>
+                        <SelectItem value="3" className="text-white hover:bg-purple-500/20">Cider 3 (API v1)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    {settings.ciderApiVersion === '4' ? (
+                      <>
+                        <Label className="text-white" htmlFor="ciderV4Token">Cider 4 API Token</Label>
+                        <Input
+                          id="ciderV4Token"
+                          type="text"
+                          placeholder="Use the button below to request a Cider 4 token"
+                          value={settings.ciderV4AppToken || ''}
+                          readOnly
+                          className="bg-slate-900/50 border-purple-500/30 text-white placeholder:text-gray-500"
+                        />
+                      </>
+                    ) : (
+                      <>
+                        <Label className="text-white" htmlFor="appleMusicToken">{t('CLIENT_CIDER_TOKEN', locale)}</Label>
+                        <Input
+                          id="appleMusicToken"
+                          type="text"
+                          placeholder={t('CLIENT_CIDER_TOKEN_PLACEHOLDER', locale)}
+                          value={settings.appleMusicAppToken || ''}
+                          onChange={(e) =>
+                            setSettings({...settings, appleMusicAppToken: e.target.value})
+                          }
+                          className="bg-slate-900/50 border-purple-500/30 text-white placeholder:text-gray-500"
+                        />
+                      </>
+                    )}
+                    {settings.ciderApiVersion === '4' && (
+                      <button
+                        type="button"
+                        onClick={() => void requestCiderToken()}
+                        disabled={ciderTokenLoading}
+                        className="w-full bg-gradient-to-r from-purple-600 to-green-600 hover:from-purple-500 hover:to-green-500 disabled:opacity-60 text-white px-4 py-2 rounded-lg transition-all"
+                      >
+                        {ciderTokenLoading ? 'Waiting for Cider approval...' : settings.ciderV4AppToken ? 'Refresh Cider 4 Token' : 'Connect Cider 4'}
+                      </button>
+                    )}
+                  </div>
                 </div>
               )}
 

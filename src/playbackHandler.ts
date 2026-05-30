@@ -56,16 +56,23 @@ class PlaybackHandler {
         } else if (this.platform === 'apple') {
             const isPlayingState = (await this.AMHandler.getIsPlayingState()).is_playing;
             const applemusicData: AMCurrentSongResponse = await this.AMHandler.getCurrentSong();
-            if (!isPlayingState) {
-                if (applemusicData === null) {
-                this.currentSong.isPlaying = false;
-                this.currentSong.progress = 0;
+            if (applemusicData.status === 'not_configured') {
+                this.currentSong = {
+                    ...this.currentSong,
+                    id: '',
+                    title: '',
+                    artist: '',
+                    album: '',
+                    duration: 0,
+                    progress: 0,
+                    isPlaying: false,
+                    cover: '',
+                    volume: 0,
+                    shuffle: false,
+                    repeat: 0,
+                    isLiked: false
+                };
                 return this.currentSong;
-                } else {
-                this.currentSong.isPlaying = false;
-                this.currentSong.progress = applemusicData.info.currentPlaybackTime * 1000 || 0;
-                return this.currentSong;
-                }
             }
             if (applemusicData) {
                 let repeatMode = 0;
@@ -76,15 +83,21 @@ class PlaybackHandler {
                 } else {
                     repeatMode = 0;
                 }
+
+                const songId = (applemusicData.info.playParams.catalogId ? applemusicData.info.playParams.catalogId : applemusicData.info.playParams.id) || '';
+                const sameSong = Boolean(
+                    songId && songId === this.currentSong.id ||
+                    (!songId && applemusicData.info.name === this.currentSong.title && applemusicData.info.artistName === this.currentSong.artist)
+                );
                 
                 this.currentSong = {
-                    id: (applemusicData.info.playParams.catalogId ? applemusicData.info.playParams.catalogId : applemusicData.info.playParams.id) || '',
+                    id: songId,
                     title: applemusicData.info.name || 'Unknown Title',
                     artist: applemusicData.info.artistName || 'Unknown Artist',
                     album: applemusicData.info.albumName || '',
-                    duration: applemusicData.info.durationInMillis || 0,
+                    duration: applemusicData.info.durationInMillis || (sameSong ? this.currentSong.duration : 0),
                     progress: applemusicData.info.currentPlaybackTime * 1000 || 0,
-                    isPlaying: (await this.AMHandler.getIsPlayingState()).is_playing || false,
+                    isPlaying: isPlayingState || false,
                     cover: (applemusicData.info.artwork.url.includes('{w}')? applemusicData.info.artwork.url.replace('{w}', applemusicData.info.artwork.width.toString()).replace('{h}', applemusicData.info.artwork.height.toString()) : applemusicData.info.artwork.url) || '',
                     volume: await this.AMHandler.getVolume(),
                     shuffle: applemusicData.info.shuffleMode === 1,

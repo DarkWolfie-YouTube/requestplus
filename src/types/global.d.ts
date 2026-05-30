@@ -58,6 +58,7 @@ interface ElectronAPI {
   loadSettings: () => Promise<Settings>;
   saveSettings: (settings: Settings) => Promise<void>;
   settingsUpdated: (settings: Settings) => void;
+  requestCiderToken: () => Promise<string>;
   getChannelPointReward: () => Promise<any>;
   createChannelPointReward: (payload: { title: string; description: string; color: string; cooldown: number }) => Promise<any>;
   deleteChannelPointReward: (id: string) => Promise<any>;

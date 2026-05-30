@@ -193,6 +193,46 @@ function getQueueItemTrackId(item: QueueItem): string {
     return item.id;
 }
 
+function normalizeTrackIdForQueueMatch(id: string | null | undefined): string {
+    let normalized = String(id || '').trim();
+    if (!normalized) return '';
+
+    if (normalized.includes('spotify:track:')) {
+        normalized = normalized.replace('spotify:track:', '');
+    }
+
+    if (normalized.includes('music.apple.com/') && normalized.includes('?i=')) {
+        normalized = normalized.split('?i=')[1]?.split('&')[0]?.split(' ')[0] || normalized;
+    }
+
+    return normalized;
+}
+
+function normalizeQueueText(value: string | null | undefined): string {
+    return String(value || '')
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, ' ');
+}
+
+function queueItemMatchesTrack(item: QueueItem, trackData: TrackData, trackId: string): boolean {
+    const queueTrackId = normalizeTrackIdForQueueMatch(getQueueItemTrackId(item));
+    if (queueTrackId && trackId && queueTrackId === trackId) {
+        return true;
+    }
+
+    if (item.platform !== settings.platform) {
+        return false;
+    }
+
+    const itemTitle = normalizeQueueText(item.title);
+    const itemArtist = normalizeQueueText(item.artist);
+    const trackTitle = normalizeQueueText(trackData.title || trackData.name);
+    const trackArtist = normalizeQueueText(trackData.artist || trackData.artistName || (trackData as any).artist_name);
+
+    return Boolean(itemTitle && itemArtist && itemTitle === trackTitle && itemArtist === trackArtist);
+}
+
 function getTrackIdFromTrackData(trackData: TrackData): string | null {
     let trackId = trackData.id;
     if (!trackId && trackData.uri) {
@@ -200,11 +240,7 @@ function getTrackIdFromTrackData(trackData: TrackData): string | null {
     }
     if (!trackId) return null;
 
-    if (trackId.includes('spotify:track:')) {
-        trackId = trackId.replace('spotify:track:', '');
-    }
-
-    return trackId;
+    return normalizeTrackIdForQueueMatch(trackId);
 }
 
 function scheduleTokenRefresh(expiresAt: number): void {
@@ -364,10 +400,8 @@ async function checkCurrentlyPlayingTrack(trackData: TrackData): Promise<void> {
     const queue = queueHandler.getQueue();
     if (queue.items.length === 0) return;
 
-    const trackId = getTrackIdFromTrackData(trackData);
-    if (!trackId) return;
-
-    const matchingTrackIndex = queue.items.findIndex(item => getQueueItemTrackId(item) === trackId);
+    const normalizedTrackId = normalizeTrackIdForQueueMatch(getTrackIdFromTrackData(trackData));
+    const matchingTrackIndex = queue.items.findIndex(item => queueItemMatchesTrack(item, trackData, normalizedTrackId));
 
     if (matchingTrackIndex !== -1) {
         const matchingQueueItemId = queue.items[matchingTrackIndex].id;
@@ -378,7 +412,7 @@ async function checkCurrentlyPlayingTrack(trackData: TrackData): Promise<void> {
         const duration = trackData.duration || 0;
         const restartWindow = Math.min(15000, Math.max(3000, duration * 0.25));
 
-        if (currentTrackId === trackId && currentTrackId2 && progress > restartWindow) {
+        if (currentTrackId === normalizedTrackId && currentTrackId2 && progress > restartWindow) {
             Logger.info(`Same track is still playing for ${currentTrackId2}; waiting before handling ${matchingQueueItemId}`);
             return;
         }
@@ -665,6 +699,17 @@ ipcMain.handle('save-settings', (event: Electron.IpcMainInvokeEvent, settinga: S
             reject(new Error('Failed to save settings'));
         }
     });
+});
+
+ipcMain.handle('cider:request-token', async (): Promise<string> => {
+    const token = await amHandler.requestCiderV2Token();
+    settings = { ...settings, platform: 'apple', ciderApiVersion: '4', ciderV4AppToken: token };
+    settingsHandler.save(settings);
+    amHandler.updateSettings(settings);
+    apiHandler.updateSettings(settings);
+    gtsHandler.updateSettings(settings);
+    mainWindow?.webContents.send('settings-updated-from-main', settings);
+    return token;
 });
 
 ipcMain.on('settings-updated', (event: Electron.IpcMainEvent, updatedSettings: Settings): void => {

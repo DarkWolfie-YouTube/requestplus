@@ -84,7 +84,11 @@ const App = () => {
     requestLimit: 10,
     autoAcceptSearchResults: false,
     useChannelPoints: false,
-    telemetryEnabled: true
+    telemetryEnabled: true,
+    platform: 'spotify',
+    appleMusicAppToken: '',
+    ciderApiVersion: '3',
+    ciderV4AppToken: ''
   });
   const [queue, setQueue] = useState<Queue>(emptyQueue);
   const [experimentalFeatureEnabled, setExperimentalFeatureEnabled] = useState<boolean>(false);

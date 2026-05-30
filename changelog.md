@@ -4,6 +4,26 @@ All notable changes to Request+ will be documented in this file.
 
 ---
 
+## [2.2.2] - 2026-05-30
+
+- Stopped the local client websocket from rebroadcasting one client’s messages to other local clients; integrations now communicate privately with the Request+ main process.
+### Cider Changes.
+
+Cider v3 (API V1) requires the plugin for it. Please go to this [video](https://youtu.be/3dnW_UvwEyA) to know how to install it.
+Cider v4 (API V2) now requires the API, since it's scoped and ratelimits are gone.
+
+If you use Cider v4, it will send a request to the client asking for authorization. This token is seperate from the v3 token so don't worry about any api issues.
+There will be a gif video showing that flow.
+
+
+### API Changes
+
+Channel point stuff is now fully implemented.
+
+- Added YouTube Chat handling and Youtube chat support for accounts who have Youtube accounts linked.
+
+---
+
 ## [2.2.1] - 2026-05-21
 
 - Fixed the 502 unexpected error for the websocket, it now runs the reconnect code like the api is restarting. So now if I just kill it, the error shouldn't stop code from working at all.

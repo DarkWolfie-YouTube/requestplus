@@ -21,6 +21,10 @@ interface Settings {
     platforms: string[];
     /** Which platform to search on when a request has no URL (multi-platform mode) */
     primarySearchPlatform: string;
+    /** Cider major version for Apple Music integration */
+    ciderApiVersion?: '3' | '4';
+    /** Scoped Cider 4 API token. Cider 3 keeps using appleMusicAppToken. */
+    ciderV4AppToken?: string;
     [key: string]: any; // Allow additional properties
 }
 
@@ -49,11 +53,18 @@ class SettingsHandler {
                 multiPlatform: false,
                 platforms: ['spotify'],
                 primarySearchPlatform: 'spotify',
+                ciderApiVersion: '3',
+                ciderV4AppToken: '',
             };
         }
         try {
             const data = fs.readFileSync(this.settingsFilePath, 'utf-8');
-            return JSON.parse(data) as Settings;
+            const parsed = JSON.parse(data) as Settings;
+            return {
+                ...parsed,
+                ciderApiVersion: parsed.ciderApiVersion || '3',
+                ciderV4AppToken: parsed.ciderV4AppToken || '',
+            };
         } catch (error) {
             console.error('Error loading settings:', error);
             return {
@@ -72,6 +83,8 @@ class SettingsHandler {
                 multiPlatform: false,
                 platforms: ['spotify'],
                 primarySearchPlatform: 'spotify',
+                ciderApiVersion: '3',
+                ciderV4AppToken: '',
             };
         }
     }
