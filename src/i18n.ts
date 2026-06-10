@@ -2,12 +2,13 @@ import en from './locales/en.json';
 import es from './locales/es.json';
 import fr from './locales/fr.json';
 import pt from './locales/pt.json';
+import de from './locales/de.json';
 
 type LocaleStrings = Record<string, string>;
 
-const locales: Record<string, LocaleStrings> = { en, es, fr, pt };
+const locales: Record<string, LocaleStrings> = { en, es, fr, pt, de };
 
-export type SupportedLocale = 'en' | 'es' | 'fr' | 'pt';
+export type SupportedLocale = 'en' | 'es' | 'fr' | 'pt' | 'de';
 
 /**
  * Translate a locale key, falling back to English if the key is missing
