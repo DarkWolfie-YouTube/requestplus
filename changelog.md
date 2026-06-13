@@ -4,6 +4,24 @@ All notable changes to Request+ will be documented in this file.
 
 ---
 
+## [2.3.0] - 2026-06-13 - After Furality Patch
+
+### Queue Updates
+
+- Apple Music and Youtube suffered from where the songs requested wouldn't play in order of requests.
+ - Changed to use the Moderation Queue even if the module is disabled. No other settings like the Expicit song check is used here.
+  - Spotify was never effect ed by this change since adding to the queue always put at the last item.
+
+### YouTube Chat Updates
+- YouTube Chat support now works in full, waiting for Google Verification to go through first before anything is released for Patreon/Experimental user access!
+
+
+### Language updates
+- Added German 
+  - Credit @AndrBel
+
+---
+
 ## [2.2.2] - 2026-05-30
 
 - Stopped the local client websocket from rebroadcasting one client’s messages to other local clients; integrations now communicate privately with the Request+ main process.

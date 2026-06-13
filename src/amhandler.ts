@@ -800,7 +800,7 @@ export default class AMHandler {
         const songInfo = await this.getCatalogSong(songID);
         if (!songInfo) return "ERR_AM_SONG_NOT_FOUND";
 
-        if (queueHandler && settings.autoPlay) {
+        if (queueHandler) {
             const queueItem: QueueItem = {
                 id: `${songID}-${username}`,
                 title: songInfo.attributes.name,

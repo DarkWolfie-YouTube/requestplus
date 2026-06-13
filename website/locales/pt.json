@@ -28,7 +28,7 @@
   "FOOTER_PRIVACY": "Política de privacidade",
   "FOOTER_TERMS": "Termos de serviço",
   "FOOTER_DOCS": "Documentação",
-  "FOOTER_COPYRIGHT": "© 2025 Quil DayTrack. Licenciado sob GNU GPLv3.",
+  "FOOTER_COPYRIGHT": "© 2026 Quil DayTrack. Licenciado sob GNU GPLv3.",
   "FOOTER_DISCLAIMER": "Não afiliado ao Twitch, Spotify ou Spicetify.",
   "HOME_HERO_SUBTITLE": "Um moderno overlay de pedidos de músicas para Twitch com integração ao Spotify.",
   "HOME_HERO_DESC": "Construído com React e Electron, o Request+ oferece uma experiência de desktop fluida para pedidos de músicas em tempo real integrados diretamente ao Spotify, YouTube Music e Apple Music.",

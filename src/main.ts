@@ -1325,8 +1325,9 @@ websocketManager.on('song-request', async (message) => {
     const artist   = songInfo?.author ?? 'YouTube Music';
     const cover    = `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
 
-    if (settings.autoPlay) {
-        // Moderation queue — hold for manual approval
+    if (settings.platform === 'youtube') {
+        // Pear inserts repeated "play next" requests in reverse order, so keep
+        // YouTube requests in Request+'s ordered queue and feed them one at a time.
         const queueItem: QueueItem = {
             id: videoId + '-' + message.username,
             title: songName,

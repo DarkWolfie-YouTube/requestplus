@@ -935,7 +935,7 @@ export function Settings({
             <div>
               <h3 className="text-white font-medium">{t('CLIENT_ABOUT_TITLE', locale)}</h3>
               <p className="text-sm text-gray-400">
-                Version 2.2.1 • Built for streamers by streamers
+                Version 2.3.0 • Built for streamers by streamers
               </p>
             </div>
 
