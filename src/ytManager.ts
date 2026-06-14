@@ -476,6 +476,42 @@ class YTManager extends EventEmitter {
         return null;
     }
 
+    /**
+     * Search YouTube Music (via Pear's API server) for a free-text query and
+     * return the first matching video ID, or null if nothing was found.
+     */
+    async searchVideoId(query: string): Promise<string | null> {
+        const trimmed = query.trim();
+        if (!trimmed) return null;
+        try {
+            const data = await this.makeAuthenticatedRequest<any>(() =>
+                this.instance.post(`/search`, JSON.stringify({ query: trimmed }), {
+                    headers: { 'Authorization': `Bearer ${this.token}`, 'Content-Type': 'application/json' }
+                }), `/search`
+            );
+            if (!data) return null;
+            return YTManager.findFirstVideoId(data);
+        } catch {
+            return null;
+        }
+    }
+
+    /**
+     * Walk an arbitrary YouTube Music search response (shape varies by Pear
+     * version) and return the first 11-character videoId found, depth-first.
+     */
+    private static findFirstVideoId(node: any): string | null {
+        if (!node || typeof node !== 'object') return null;
+        if (typeof node.videoId === 'string' && /^[A-Za-z0-9_-]{11}$/.test(node.videoId)) {
+            return node.videoId;
+        }
+        for (const key of Object.keys(node)) {
+            const found = YTManager.findFirstVideoId(node[key]);
+            if (found) return found;
+        }
+        return null;
+    }
+
     /** Extract an 11-character YouTube video ID from a URL or bare ID string. */
     static extractVideoId(text: string): string | null {
         const urlMatch = text.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|music\.youtube\.com\/watch\?v=)([A-Za-z0-9_-]{11})/);

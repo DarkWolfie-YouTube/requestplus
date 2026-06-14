@@ -765,12 +765,15 @@ ipcMain.handle('song-skip', async (): Promise<void> => {
     if (platform === 'spotify' && WSServer) {
         WSServer.WSSendToType({ command: 'Next' } as WSCommand, 'spotify');
     } else if (platform === 'youtube' && ytManager) {
-        // Push the next queued request into Pear before skipping so it plays immediately
+        // Push the next queued request into Pear before skipping so it plays immediately.
+        // Exclude the track that's currently playing — otherwise skip would re-add and
+        // replay the same song from the start.
         if (queueHandler) {
-            const nextTrack = queueHandler.getQueue().items.find(item => !item.isQueued);
+            const nextTrack = queueHandler.getQueue().items.find(
+                item => !item.isQueued && getQueueItemTrackId(item) !== currentTrackId
+            );
             if (nextTrack) {
-                const videoId = nextTrack.id.substring(0, 11);
-                await ytManager.addItemToQueueById(videoId);
+                await ytManager.addItemToQueueById(getQueueItemTrackId(nextTrack));
                 await queueHandler.setTrackAsQueued(queueHandler.getQueue().items.indexOf(nextTrack));
             }
         }
@@ -1213,6 +1216,45 @@ websocketManager.on('notification', (message) => {
     });
 });
 
+// Detect text that looks like a URL/link so we don't run a title search on it
+// (a broken/unsupported link should be rejected, not searched verbatim).
+function looksLikeUrl(text: string): boolean {
+    return /https?:\/\//i.test(text) || /\byoutu\.?be\b|youtube\.com/i.test(text);
+}
+
+// Add a YouTube video to Request+'s ordered queue by video ID and return its
+// resolved title/artist. Shared by the chat request, search and test paths.
+// (Pear inserts repeated "play next" requests in reverse order, so YouTube
+// requests stay in Request+'s ordered queue and are fed one at a time.)
+// When `requireExists` is set, the video's existence is verified first (via
+// getSongTitle); an unavailable/invalid video returns null instead of queueing
+// a broken entry — this guards against malformed links resolving to junk IDs.
+async function queueYouTubeVideo(videoId: string, username: string, requireExists = false): Promise<{ songName: string; artist: string } | null> {
+    const songInfo = await ytManager.getSongTitle(videoId);
+    if (requireExists && !songInfo) {
+        Logger.info(`[queueYouTubeVideo] Video "${videoId}" is unavailable — not queueing`);
+        return null;
+    }
+    const songName = songInfo?.title ?? videoId;
+    const artist = songInfo?.author ?? 'YouTube Music';
+    const cover = `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
+
+    const queueItem: QueueItem = {
+        id: videoId + '-' + username,
+        title: songName,
+        artist,
+        requestedBy: username,
+        album: 'YouTube Music',
+        duration: 0,
+        progress: 0,
+        cover,
+        platform: 'youtube',
+        iscurrentlyPlaying: false,
+    };
+    queueHandler.addToQueue(queueItem);
+    return { songName, artist };
+}
+
 websocketManager.on('song-request', async (message) => {
 
     if (settings.modsOnly) {
@@ -1314,43 +1356,28 @@ websocketManager.on('song-request', async (message) => {
     }
   } else if (settings.platform === 'youtube') {
     const videoId = YTManager.extractVideoId(message.message);
+    const fromLink = !!videoId;
 
-    if (!videoId) {
+    let resolvedId = videoId;
+    // No link/ID in the message? Always fall back to a text title search —
+    // but never "search" a URL string (a broken/unsupported link must be rejected).
+    if (!resolvedId && ytManager && !looksLikeUrl(message.message)) {
+        resolvedId = await ytManager.searchVideoId(message.message);
+    }
+
+    if (!resolvedId) {
         websocketManager.send({ type: 'song_request_response', message: 'ERR_YT_IDENTIFIER_MISSING', username: message.username, msgID: message.messageId, platform: message.platform, channel: message.channel });
         return;
     }
 
-    const songInfo = await ytManager.getSongTitle(videoId);
-    const songName = songInfo?.title ?? videoId;
-    const artist   = songInfo?.author ?? 'YouTube Music';
-    const cover    = `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
-
-    if (settings.platform === 'youtube') {
-        // Pear inserts repeated "play next" requests in reverse order, so keep
-        // YouTube requests in Request+'s ordered queue and feed them one at a time.
-        const queueItem: QueueItem = {
-            id: videoId + '-' + message.username,
-            title: songName,
-            artist,
-            requestedBy: message.username,
-            album: 'YouTube Music',
-            duration: 0,
-            progress: 0,
-            cover,
-            platform: 'youtube',
-            iscurrentlyPlaying: false,
-        };
-        queueHandler.addToQueue(queueItem);
-        websocketManager.send({ type: 'song_request_response', message: 'OKAY_YT_QUEUED', username: message.username, songName, artist, msgID: message.messageId, platform: message.platform, channel: message.channel });
-    } else {
-        // Add directly to Pear's playback queue
-        const ok = await ytManager.addItemToQueueById(videoId);
-        if (ok) {
-            websocketManager.send({ type: 'song_request_response', message: 'OKAY_YT_QUEUED', username: message.username, songName, artist, msgID: message.messageId, platform: message.platform, channel: message.channel });
-        } else {
-            websocketManager.send({ type: 'song_request_response', message: 'ERR_YT_QUEUE_FAILED', username: message.username, msgID: message.messageId, platform: message.platform, channel: message.channel });
-        }
+    // Verify the video actually exists for link/ID requests (search results are
+    // already known to exist), so a malformed link can't queue/play a junk video.
+    const result = await queueYouTubeVideo(resolvedId, message.username, fromLink);
+    if (!result) {
+        websocketManager.send({ type: 'song_request_response', message: 'ERR_YT_SONG_NOT_FOUND', username: message.username, msgID: message.messageId, platform: message.platform, channel: message.channel });
+        return;
     }
+    websocketManager.send({ type: 'song_request_response', message: 'OKAY_YT_QUEUED', username: message.username, songName: result.songName, artist: result.artist, msgID: message.messageId, platform: message.platform, channel: message.channel });
   } else if (settings.platform === 'soundcloud') {
     const soundCloudUrl = extractSoundCloudUrl(message.link || message.message);
 
@@ -1485,6 +1512,24 @@ websocketManager.on('song-search-request', async (message) => {
             })}catch (error) {
                 websocketManager.send({ type: 'song_search_response', message: 'ERR_AM_SEARCH_FAILED', username: message.username, msgID: message.messageId, platform: message.platform, channel: message.channel });
             }
+    } else if (settings.platform === 'youtube') {
+        if (!ytManager) {
+            websocketManager.send({ type: 'song_search_response', message: 'ERR_SEARCH_PLATFORM_NOT_SUPPORTED', username: message.username, msgID: message.messageId, platform: message.platform, channel: message.channel });
+            return;
+        }
+
+        const videoId = await ytManager.searchVideoId(newQuery);
+        if (!videoId) {
+            websocketManager.send({ type: 'song_search_response', message: 'ERR_YT_SEARCH_FAILED', username: message.username, msgID: message.messageId, platform: message.platform, channel: message.channel });
+            return;
+        }
+
+        const result = await queueYouTubeVideo(videoId, message.username);
+        if (!result) {
+            websocketManager.send({ type: 'song_search_response', message: 'ERR_YT_SEARCH_FAILED', username: message.username, msgID: message.messageId, platform: message.platform, channel: message.channel });
+            return;
+        }
+        websocketManager.send({ type: 'song_request_response', message: 'OKAY_YT_QUEUED', username: message.username, songName: result.songName, artist: result.artist, msgID: message.messageId, platform: message.platform, channel: message.channel });
     } else {
         websocketManager.send({ type: 'song_search_response', message: 'ERR_SEARCH_PLATFORM_NOT_SUPPORTED', username: message.username, msgID: message.messageId, platform: message.platform, channel: message.channel });
     }
