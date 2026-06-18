@@ -67,7 +67,7 @@ module.exports = {
       config: {
         build: [
           {
-            entry: 'src/main.js',
+            entry: 'src/main.ts',
             config: 'vite.main.config.ts',
             target: 'main',
           },
@@ -80,6 +80,10 @@ module.exports = {
         renderer: [
           {
             name: 'main_window',
+            config: 'vite.renderer.config.ts',
+          },
+          {
+            name: 'oobe_window',
             config: 'vite.renderer.config.ts',
           },
         ],

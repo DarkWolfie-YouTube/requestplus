@@ -29,6 +29,8 @@ interface ElectronAPI {
   removeQueueListener: () => void;
 
   // Twitch authentication
+  requestPlusLogin: () => Promise<void>;
+  requestPlusLogout: () => Promise<void>;
   twitchLogin: () => Promise<void>;
   twitchLogout: () => Promise<void>;
   authSuccess: (callback: (user: any) => void) => void;
@@ -59,6 +61,9 @@ interface ElectronAPI {
 
   // First time setup
   runFirstTime: () => Promise<void>;
+  completeOnboarding: (settings: any) => Promise<void>;
+  yes: () => Promise<String>;
+  yesnt: (url: string) => Promise<void>;
 
   // Toast notifications
   onToast: (callback: (event: any, toastData: any) => void) => void;
@@ -148,6 +153,8 @@ const electronAPI: ElectronAPI = {
   },
 
   // Twitch authentication
+  requestPlusLogin: () => ipcRenderer.invoke('login'),
+  requestPlusLogout: () => ipcRenderer.invoke('auth:logout'),
   twitchLogin: () => ipcRenderer.invoke('login'),
   twitchLogout: () => ipcRenderer.invoke('logout'),
   authSuccess: (callback) => {
@@ -184,6 +191,9 @@ const electronAPI: ElectronAPI = {
 
   // First time setup
   runFirstTime: () => ipcRenderer.invoke('runFirstTime'),
+  completeOnboarding: (settings) => ipcRenderer.invoke('oobe:complete', settings),
+  yes: () => {return ipcRenderer.invoke('oobe:overlay')},
+  yesnt: (url) => ipcRenderer.invoke('oobe:openURL', url),
 
   // Toast handling
   onToast: (callback) => {

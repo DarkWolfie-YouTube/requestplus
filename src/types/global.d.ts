@@ -28,6 +28,7 @@ interface Settings {
   theme?: string;
   enableRequests?: boolean;
   modsOnly?: boolean;
+  requestLimitEnabled?: boolean;
   requestLimit?: number;
   autoAcceptSearchResults?: boolean;
   useChannelPoints?: boolean;

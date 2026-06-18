@@ -17,6 +17,7 @@ class WebSocketManager extends EventEmitter {
   private reconnectDelay: number = 1000;
   private reconnectTimer: NodeJS.Timeout | null = null;
   private pingInterval: NodeJS.Timeout | null = null;
+  private connectPromise: Promise<void> | null = null;
   private token: string | null = null;
   private deviceId: string | null = null;
   private intentionalDisconnect: boolean = false;
@@ -37,16 +38,20 @@ class WebSocketManager extends EventEmitter {
    * Connect to WebSocket server with hardware token authentication
    */
   public async connect(token: string, deviceId: string): Promise<void> {
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN && this.isAuth) {
       (global as any).Logger.info('[WebSocket] Already connected');
       return;
+    }
+
+    if (this.connectPromise) {
+      return this.connectPromise;
     }
 
     this.token = token;
     this.deviceId = deviceId;
     this.intentionalDisconnect = false;
 
-    return new Promise((resolve, reject) => {
+    this.connectPromise = new Promise<void>((resolve, reject) => {
       let restartHandled = false;
       (global as any).Logger.info('[WebSocket] Connecting to:', WS_URL);
 
@@ -126,7 +131,11 @@ class WebSocketManager extends EventEmitter {
           this.scheduleReconnect();
         }
       }, 10000);
+    }).finally(() => {
+      this.connectPromise = null;
     });
+
+    return this.connectPromise;
   }
 
   /**

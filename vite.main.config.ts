@@ -1,28 +1,37 @@
 import { defineConfig } from 'vite';
 import copy from 'rollup-plugin-copy';
+import * as path from 'node:path';
+
+const nodeBuiltins = [
+  'fs',
+  'path',
+  'crypto',
+  'child_process',
+  'events',
+  'os',
+  'node:assert',
+  'node:child_process',
+  'node:crypto',
+  'node:events',
+  'node:fs',
+  'node:os',
+  'node:path',
+  'node:timers/promises',
+  'node:util',
+];
 
 // https://vitejs.dev/config
 export default defineConfig({
   build: {
+    target: 'node22',
     rollupOptions: {
-      external: ['electron'],
+      external: (id) => {
+        if (id === 'electron' || nodeBuiltins.includes(id)) return true;
+        if (id.startsWith('.') || id.startsWith('src/') || path.isAbsolute(id)) return false;
+        return true;
+      },
       input: {
         main: 'src/main.ts',
-        websocket: 'src/websocket.ts', // Add this
-        authManager: 'src/authmanager.ts',
-        gtsHandler: 'src/gtsHandler.ts',
-        amHandler: 'src/amhandler.ts',
-        websocketweb: 'src/websocketweb.ts',
-        logger: 'src/logger.ts',
-        queueHandler: 'src/queueHandler.ts',
-        apiHandler: 'src/apiHandler.ts',
-        settingsHandler: 'src/settingsHandler.ts',
-        updateChecker: 'src/updateChecker.ts',
-        ytManager: 'src/ytManager.ts',
-        playbackHandler: 'src/playbackHandler.ts',
-        packageInfo: 'package.json',
-        preload: 'src/preload.ts',
-        index: 'index.html'
       },
       output: {
         format: 'cjs'

@@ -8,6 +8,8 @@ interface Settings {
     enableRequests: boolean;
     modsOnly: boolean;
     subsOnly: boolean;
+    requestLimitEnabled: boolean;
+    requestLimit: number;
     autoPlay: boolean;
     autoAcceptSearchResults: boolean;
     useChannelPoints: boolean;
@@ -43,6 +45,8 @@ class SettingsHandler {
                 enableRequests: true,
                 modsOnly: false,
                 subsOnly: false,
+                requestLimitEnabled: false,
+                requestLimit: 10,
                 autoPlay: false,
                 autoAcceptSearchResults: false,
                 useChannelPoints: false,
@@ -62,6 +66,8 @@ class SettingsHandler {
             const parsed = JSON.parse(data) as Settings;
             return {
                 ...parsed,
+                requestLimitEnabled: parsed.requestLimitEnabled ?? false,
+                requestLimit: Math.max(1, Number(parsed.requestLimit || 10)),
                 ciderApiVersion: parsed.ciderApiVersion || '3',
                 ciderV4AppToken: parsed.ciderV4AppToken || '',
             };
@@ -73,6 +79,8 @@ class SettingsHandler {
                 enableRequests: true,
                 modsOnly: false,
                 subsOnly: false,
+                requestLimitEnabled: false,
+                requestLimit: 10,
                 autoPlay: false,
                 autoAcceptSearchResults: false,
                 useChannelPoints: false,

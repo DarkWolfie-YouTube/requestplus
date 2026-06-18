@@ -2,7 +2,7 @@ import { app, BrowserWindow, ipcMain, dialog, shell, MessageBoxOptions, MessageB
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { setTimeout as wait } from 'node:timers/promises';
-import { checkForUpdates, resolveModal } from './updateChecker';
+import { checkForUpdates, getSettings, resolveModal, setPreReleaseCheck } from './updateChecker';
 import QueueHandler, { Queue, QueueItem } from './queueHandler';
 import { updateElectronApp } from 'update-electron-app';
 
@@ -24,6 +24,7 @@ import { songData, YTManager } from './ytManager';
 import PlaybackHandler, { songInfo } from './playbackHandler';
 import GTSHandler from './gtsHandler';
 import AMHandler from './amhandler';
+import WindowHandler from './window';
 
 var handleStartupEvent = function() {
   if (process.platform !== 'win32') {
@@ -155,6 +156,44 @@ function sendSongRequestResponse(message: WebSocketMessage, code: string, extra:
     });
 }
 
+function sendSongSearchResponse(message: WebSocketMessage, code: string, extra: Record<string, any> = {}): void {
+    websocketManager.send({
+        type: 'song_search_response',
+        message: code,
+        username: message.username,
+        msgID: message.messageId,
+        platform: message.platform,
+        channel: message.channel,
+        ...extra
+    });
+}
+
+function getActiveRequestCountForUser(username: string | undefined): number {
+    if (!queueHandler || !username) return 0;
+
+    const normalizedUsername = username.trim().toLowerCase();
+    if (!normalizedUsername) return 0;
+
+    return queueHandler.getQueue().items.filter((item) => {
+        return String(item.requestedBy || '').trim().toLowerCase() === normalizedUsername;
+    }).length;
+}
+
+function getSongRequestRejection(username: string | undefined): { code: string; limit?: number } | null {
+    if (!settings.enableRequests) {
+        return { code: 'ERR_RP_DISABLED' };
+    }
+
+    if (!settings.requestLimitEnabled) return null;
+
+    const limit = Math.max(1, Number(settings.requestLimit || 1));
+    if (getActiveRequestCountForUser(username) >= limit) {
+        return { code: 'ERR_REQUEST_LIMIT', limit };
+    }
+
+    return null;
+}
+
 
 // Global variables with proper typing
 let WSServer: websocket;
@@ -183,6 +222,10 @@ let tray: Tray | null = null;
 let isQuitting: boolean = false;
 let tokenRefreshTimer: NodeJS.Timeout | null = null;
 let soundCloudQueueTimer: NodeJS.Timeout | null = null;
+let windowHandler: WindowHandler | null = null;
+let isCreatingMainWindow = false;
+let oobeAuthListenersRegistered = false;
+let pendingMainWindowAfterWebSocket = false;
 
 function getQueueItemTrackId(item: QueueItem): string {
     const requestedBySuffix = `-${item.requestedBy}`;
@@ -492,6 +535,29 @@ async function ensureOverlayFile(): Promise<string> {
 }
 
 async function createWindow(): Promise<void> {
+    if (isCreatingMainWindow) return;
+    isCreatingMainWindow = true;
+    try {
+    const currentSettings = settingsHandler.load();
+    if (currentSettings.oobeCompleted !== true) {
+        createStartupOobeWindow();
+        return;
+    }
+
+    if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.show();
+        mainWindow.focus();
+        return;
+    }
+
+    const apiConnected = await ensureApiWebSocketConnected();
+    if (!apiConnected) {
+        const token = await authManager.getValidAuthToken();
+        if (!token) {
+            createStartupOobeWindow();
+        }
+        return;
+    }
     
     const customSession = session.fromPartition('persist:api-session', { cache: false });
     
@@ -665,6 +731,50 @@ async function createWindow(): Promise<void> {
             mainWindow?.hide();
         }
     });
+    } finally {
+        isCreatingMainWindow = false;
+    }
+}
+
+async function ensureApiWebSocketConnected(): Promise<boolean> {
+    if (websocketManager.isAuthenticated()) {
+        return true;
+    }
+
+    await authManager.ready();
+    const token = await authManager.getValidAuthToken();
+    const hardwareInfo = authManager.getHardwareInfoPublic();
+
+    if (!token || !hardwareInfo) {
+        return false;
+    }
+
+    try {
+        await websocketManager.connect(token.token, hardwareInfo.deviceId);
+        scheduleTokenRefresh(token.expiresAt);
+        return websocketManager.isAuthenticated();
+    } catch (error) {
+        Logger?.error('[Main] API websocket connection failed before window creation:', error);
+        pendingMainWindowAfterWebSocket = true;
+        return false;
+    }
+}
+
+function createStartupOobeWindow(): BrowserWindow {
+    if (!windowHandler) {
+        windowHandler = new WindowHandler(app.getPath('userData'), async () => {
+            await createWindow();
+        });
+    }
+
+    const oobeWindow = windowHandler.createOobeWindow();
+    if (!oobeAuthListenersRegistered) {
+        setupAuthEventListeners(oobeWindow);
+        setupDeepLinkHandling(oobeWindow);
+        oobeAuthListenersRegistered = true;
+    }
+
+    return oobeWindow;
 }
 
 
@@ -887,12 +997,10 @@ ipcMain.on('modal-response', (_event, id: string, response: number) => {
 });
 
 ipcMain.handle('get-update-settings', (): UpdateSettings => {
-    const { getSettings } = require('./updateChecker.js');
     return getSettings();
 });
 
 ipcMain.handle('set-pre-release-check', (event: Electron.IpcMainInvokeEvent, enabled: boolean): void => {
-    const { setPreReleaseCheck } = require('./updateChecker.js');
     setPreReleaseCheck(enabled);
 });
 
@@ -1201,6 +1309,12 @@ authManager.on('auth-logout', () => {
   websocketManager.disconnect();
 });
 
+websocketManager.on('authenticated', () => {
+    if (!pendingMainWindowAfterWebSocket) return;
+    pendingMainWindowAfterWebSocket = false;
+    void createWindow();
+});
+
 
 websocketManager.on('notification', (message) => {
     dialog.showMessageBox({
@@ -1235,6 +1349,12 @@ websocketManager.on('song-request', async (message) => {
             websocketManager.send({ type: 'song_request_response', message: 'ERR_SUBS_ONLY', username: message.username, msgID: message.messageId, platform: message.platform, channel: message.channel });
             return;
         }
+    }
+
+    const rejection = getSongRequestRejection(message.username);
+    if (rejection) {
+        sendSongRequestResponse(message, rejection.code, rejection.limit ? { limit: rejection.limit } : {});
+        return;
     }
 
 
@@ -1390,6 +1510,12 @@ websocketManager.on('song-request', async (message) => {
 
 websocketManager.on('song-search-request', async (message) => {
     console.log('Received song search request:', message);
+    const rejection = getSongRequestRejection(message.username);
+    if (rejection) {
+        sendSongSearchResponse(message, rejection.code, rejection.limit ? { limit: rejection.limit } : {});
+        return;
+    }
+
     var newQuery = message.query
     if (settings.platform === 'spotify') { 
         try {

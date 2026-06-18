@@ -2,6 +2,7 @@
     "ERR_AM_NOLINK": "@{username} ¡Por favor, proporciona un enlace de Apple Music o un ID de canción!",
     "ERR_AM_IDENTIFIER_MISSING": "@{username} No elimines el ?i= al final del enlace — esos son los IDs de la canción. Vuelve a intentarlo con el enlace completo.",
     "ERR_RP_DISABLED": "@{username} Las solicitudes de canciones están desactivadas actualmente.",
+    "ERR_REQUEST_LIMIT": "@{username} Ya tienes {limit} solicitud(es) activa(s) en la cola.",
     "ERR_RP_SUBS_ONLY": "@{username} Las solicitudes de canciones solo están abiertas para suscriptores y moderadores.",
     "ERR_SUBS_ONLY": "@{username} Las solicitudes de canciones solo están abiertas para suscriptores y moderadores.",
     "ERR_RP_MODS_ONLY": "@{username} Solo los moderadores pueden hacer solicitudes de canciones.",

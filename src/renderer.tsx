@@ -54,6 +54,30 @@ interface UpdateSettings {
   checkPreReleases: boolean;
 }
 
+interface AppSettings {
+  showNotifications: boolean;
+  theme: string;
+  enableRequests: boolean;
+  modsOnly: boolean;
+  requestLimitEnabled: boolean;
+  requestLimit: number;
+  autoPlay: boolean;
+  autoAcceptSearchResults: boolean;
+  useChannelPoints: boolean;
+  telemetryEnabled: boolean;
+  platform: string;
+  filterExplicit: boolean;
+  gtsEnabled: boolean;
+  subsOnly: boolean;
+  appleMusicAppToken: string;
+  ciderApiVersion: '3' | '4';
+  ciderV4AppToken: string;
+  primarySearchPlatform: string;
+  multiPlatform: boolean;
+  platforms: string[];
+  [key: string]: any;
+}
+
 const App = () => {
   const [currentView, setCurrentView] = useState<'player' | 'settings' | 'queue'>('player');
   
@@ -76,19 +100,27 @@ const App = () => {
   const [userd, setUserd] = useState<User | null>(null);
   const [overlayPath, setOverlayPath] = useState('');
   const [updateSettings, setUpdateSettings] = useState<UpdateSettings>({ checkPreReleases: false });
-  const [settings, setSettings] = useState({
+  const [settings, setSettings] = useState<AppSettings>({
     showNotifications: true,
     theme: 'default',
     enableRequests: true,
     modsOnly: false,
+    requestLimitEnabled: false,
     requestLimit: 10,
+    autoPlay: false,
     autoAcceptSearchResults: false,
     useChannelPoints: false,
     telemetryEnabled: true,
     platform: 'spotify',
+    filterExplicit: false,
+    gtsEnabled: false,
+    subsOnly: false,
     appleMusicAppToken: '',
     ciderApiVersion: '3',
-    ciderV4AppToken: ''
+    ciderV4AppToken: '',
+    primarySearchPlatform: 'spotify',
+    multiPlatform: false,
+    platforms: ['spotify']
   });
   const [queue, setQueue] = useState<Queue>(emptyQueue);
   const [experimentalFeatureEnabled, setExperimentalFeatureEnabled] = useState<boolean>(false);
@@ -278,7 +310,7 @@ const App = () => {
     }
 
     // Modal listener
-    api.onModal?.((data) => {
+    api.onModal?.((data: { id: string; title: string; message: string; buttons: string[] }) => {
       setModal(data);
     });
 // Queue handling - fetch initial data
@@ -329,7 +361,12 @@ const handleTrackSelect = (track: QueueItem) => {
     const updatedTrack = {
       ...track,
       progress: 0,
-      isPlaying: true
+      isPlaying: true,
+      volume: track.volume ?? currentTrack.volume,
+      shuffle: track.shuffle ?? currentTrack.shuffle,
+      repeat: track.repeat ?? currentTrack.repeat,
+      isLiked: track.isLiked ?? currentTrack.isLiked,
+      cover: track.cover || 'styles/unknown.png'
     };
     setCurrentTrack(updatedTrack);
     
@@ -375,7 +412,14 @@ const handleTrackSelect = (track: QueueItem) => {
             updateSettings={updateSettings}
             setUpdateSettings={setUpdateSettings}
             settings={settings}
-            setSettings={setSettings}
+            setSettings={(nextSettings) =>
+              setSettings((current) => ({
+                ...current,
+                ...nextSettings,
+                ciderApiVersion: nextSettings.ciderApiVersion ?? current.ciderApiVersion,
+                ciderV4AppToken: nextSettings.ciderV4AppToken ?? current.ciderV4AppToken,
+              }))
+            }
             expermintalFeatureEnabled={experimentalFeatureEnabled}
             setExperimentalFeatureEnabled={setExperimentalFeatureEnabled}
             locale={locale}

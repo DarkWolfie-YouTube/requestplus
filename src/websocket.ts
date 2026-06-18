@@ -205,6 +205,9 @@ class WebSocketServer extends EventEmitter {
                     if (client && client.type === 'unknown' && parsed.type) {
                         client.type = parsed.type;
                         this.logger.info(`Client identified from packet as type: ${parsed.type}`);
+                        if (parsed.type === 'cider') {
+                            this.emit('cider-client-connected');
+                        }
                     }
 
                     // If client hasn't identified yet, ignore other messages
@@ -222,6 +225,9 @@ class WebSocketServer extends EventEmitter {
                                 client.version = parsed.version;
                             }
                             this.logger.info(`Client identified as type: ${parsed.type}, version: ${parsed.version || 'unknown'}`);
+                            if (parsed.type === 'cider') {
+                                this.emit('cider-client-connected');
+                            }
                             ws.send(JSON.stringify({
                                 acknowledged: true,
                                 type: parsed.type
@@ -377,6 +383,10 @@ class WebSocketServer extends EventEmitter {
             });
 
             ws.on('close', () => {
+                const client = this.clients.get(ws);
+                if (client?.type === 'cider') {
+                    this.emit('cider-client-disconnected');
+                }
                 this.clients.delete(ws);
                 this.logger.info('Client disconnected');
                 this.logger.info(`Total clients connected: ${this.clients.size}`);
@@ -384,6 +394,10 @@ class WebSocketServer extends EventEmitter {
 
             ws.on('error', (error: Error) => {
                 this.logger.error('WebSocket Client Error:', error);
+                const client = this.clients.get(ws);
+                if (client?.type === 'cider') {
+                    this.emit('cider-client-disconnected');
+                }
                 this.clients.delete(ws);
             });
         });

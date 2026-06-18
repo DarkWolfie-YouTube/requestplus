@@ -2,6 +2,11 @@
 
 All notable changes to Request+ will be documented in this file.
 
+
+---
+
+## [3.0.0] - 2026-06-18 - OOBE update.
+
 ---
 
 ## [2.3.0] - 2026-06-13 - After Furality Patch

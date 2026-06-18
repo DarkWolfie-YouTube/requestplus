@@ -116,8 +116,8 @@ export function QueuePage({
       </div>
 
       {/* Content */}
-      <div className="relative h-full px-8 flex flex-col overflow-hidden" style={{ paddingTop: '40px', paddingBottom: '70px' }}>
-        <div className="max-w-md mx-auto w-full flex flex-col flex-1 gap-4">
+      <div className="relative h-full min-h-0 px-8 flex flex-col overflow-hidden" style={{ paddingTop: '40px', paddingBottom: '70px' }}>
+        <div className="max-w-md mx-auto w-full min-h-0 flex flex-col flex-1 gap-4">
           {/* Header */}
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
@@ -134,7 +134,7 @@ export function QueuePage({
           </div>
 
           {/* Queue List */}
-          <div className="bg-slate-800/40 backdrop-blur-sm border border-purple-500/20 rounded-xl p-4 flex-1 min-h-0 flex flex-col">
+          <div className="bg-slate-800/40 backdrop-blur-sm border border-purple-500/20 rounded-xl p-4 flex-1 min-h-0 overflow-hidden flex flex-col">
             {queue.items.length === 0 ? (
               <div className="text-center py-12 space-y-3 flex-1 flex flex-col items-center justify-center">
                 <div className="size-16 bg-gradient-to-br from-purple-500/30 to-green-500/30 rounded-full flex items-center justify-center">
@@ -148,7 +148,7 @@ export function QueuePage({
                 </div>
               </div>
             ) : (
-              <ScrollArea className="flex-1 -mx-4 px-4">
+              <ScrollArea className="min-h-0 flex-1 -mx-4 px-4">
                 <div className="space-y-2">
                   {queue.items.map((track, index) => (
                     <div key={track.id}>
@@ -231,7 +231,7 @@ export function QueuePage({
           {queue.items.length > 0 && (
             <button
               onClick={clearQueue}
-              className="bg-slate-700/50 hover:bg-red-500/20 text-red-400 hover:text-red-300 px-4 py-3 rounded-lg transition-all flex items-center justify-center gap-2"
+              className="shrink-0 bg-slate-700/50 hover:bg-red-500/20 text-red-400 hover:text-red-300 px-4 py-3 rounded-lg transition-all flex items-center justify-center gap-2"
             >
               <Trash2 className="h-4 w-4" />
               {t('CLIENT_CLEAR_QUEUE', locale)}

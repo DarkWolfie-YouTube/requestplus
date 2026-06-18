@@ -2,6 +2,7 @@
     "ERR_AM_NOLINK": "@{username} Please provide an Apple Music link or song ID!",
     "ERR_AM_IDENTIFIER_MISSING": "@{username} Please don't remove the ?i= at the end of a link — those are the song IDs. Retry your request using the full song link.",
     "ERR_RP_DISABLED": "@{username} Song requests are currently disabled.",
+    "ERR_REQUEST_LIMIT": "@{username} You already have {limit} active request(s) in the queue.",
     "ERR_RP_SUBS_ONLY": "@{username} Song requests are only open to subscribers and moderators.",
     "ERR_SUBS_ONLY": "@{username} Song requests are only open to subscribers and moderators.",
     "ERR_RP_MODS_ONLY": "@{username} Only moderators can make song requests.",
