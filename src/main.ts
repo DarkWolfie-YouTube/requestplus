@@ -535,30 +535,6 @@ async function ensureOverlayFile(): Promise<string> {
 }
 
 async function createWindow(): Promise<void> {
-    if (isCreatingMainWindow) return;
-    isCreatingMainWindow = true;
-    try {
-    const currentSettings = settingsHandler.load();
-    if (currentSettings.oobeCompleted !== true) {
-        createStartupOobeWindow();
-        return;
-    }
-
-    if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.show();
-        mainWindow.focus();
-        return;
-    }
-
-    const apiConnected = await ensureApiWebSocketConnected();
-    if (!apiConnected) {
-        const token = await authManager.getValidAuthToken();
-        if (!token) {
-            createStartupOobeWindow();
-        }
-        return;
-    }
-    
     const customSession = session.fromPartition('persist:api-session', { cache: false });
     
     customSession.setCertificateVerifyProc((request, callback) => {
@@ -594,6 +570,30 @@ async function createWindow(): Promise<void> {
     });
 
     request.end();
+    if (isCreatingMainWindow) return;
+    isCreatingMainWindow = true;
+    try {
+    const currentSettings = settingsHandler.load();
+    if (currentSettings.oobeCompleted !== true) {
+        createStartupOobeWindow();
+        return;
+    }
+
+    if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.show();
+        mainWindow.focus();
+        return;
+    }
+
+    const apiConnected = await ensureApiWebSocketConnected();
+    if (!apiConnected) {
+        const token = await authManager.getValidAuthToken();
+        if (!token) {
+            createStartupOobeWindow();
+        }
+        return;
+    }
+    
 
     await ensureOverlayFile();
 
