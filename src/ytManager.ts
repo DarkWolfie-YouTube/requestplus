@@ -187,7 +187,7 @@ class YTManager extends EventEmitter {
                     const retryResponse = await requestFn();
                     if (retryResponse.status === 204) {
                         console.log(`[YTManager] ${endpoint || 'Request'} retry returned 204 No Content`);
-                        return null;
+                        return true as unknown as T;
                     }
                     return retryResponse.data;
                 } catch (retryError: any) {
