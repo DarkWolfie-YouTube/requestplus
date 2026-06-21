@@ -32,6 +32,7 @@ interface Settings {
   requestLimit?: number;
   autoAcceptSearchResults?: boolean;
   useChannelPoints?: boolean;
+  channelPointRequestsEnabled?: boolean;
   [key: string]: any;
 }
 

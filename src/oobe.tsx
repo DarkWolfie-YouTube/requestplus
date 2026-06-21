@@ -1,124 +1,77 @@
-import { createRoot } from 'react-dom/client';
-import { useEffect, useState } from 'react';
-import { Toaster } from './components/ui/sonner';
-import { Topbar } from './components/Topbar';
-import { Onboarding } from './components/Onboarding';
-import { t } from './i18n';
+import { createRoot } from "react-dom/client";
+import { useEffect, useState } from "react";
+import { Toaster } from "sonner";
+import { Onboarding } from "./components/redesign/Onboarding";
+import { Topbar } from "./components/redesign/Topbar";
+import type { AppUser } from "./components/redesign/shared";
+import { t } from "./i18n";
 
-type OobeUser = {
-  display_name: string;
-  profile_image_url: string;
-  email: string;
-};
-
-const defaultSettings = {
-  showNotifications: true,
-  theme: 'default',
-  enableRequests: true,
-  modsOnly: false,
-  requestLimitEnabled: false,
-  requestLimit: 10,
-  autoPlay: false,
-  autoAcceptSearchResults: false,
-  useChannelPoints: false,
-  telemetryEnabled: true,
-  platform: 'spotify',
-  filterExplicit: false,
-  gtsEnabled: false,
-  subsOnly: false,
-  appleMusicAppToken: '',
-  ciderApiVersion: '3' as const,
-  ciderV4AppToken: '',
-  primarySearchPlatform: 'spotify',
-};
+const onboardingCss = `
+  @keyframes blob {
+    0% { transform: translate(0, 0) scale(1); }
+    33% { transform: translate(28px, -46px) scale(1.08); }
+    66% { transform: translate(-18px, 18px) scale(0.93); }
+    100% { transform: translate(0, 0) scale(1); }
+  }
+  .blob { animation: blob 8s infinite ease-in-out; }
+  .d2 { animation-delay: 2.5s; }
+  .d4 { animation-delay: 4.5s; }
+`;
 
 function OobeApp() {
-  const [settings, setSettings] = useState(defaultSettings);
-  const [overlayPath, setOverlayPath] = useState('');
-  const [user, setUser] = useState<OobeUser | null>(null);
-  const [locale, setLocale] = useState('en');
+  const [user, setUser] = useState<AppUser | null>(null);
+  const [overlayPath, setOverlayPath] = useState("");
+  const [locale, setLocale] = useState("en");
 
   useEffect(() => {
     const api = (window as any).api;
+    if (!api) return;
+
     const loadUser = async () => {
-      const userData = await api?.fetchUserData?.();
-      setUser(userData || null);
+      try {
+        const account = await api.fetchUserData?.();
+        setUser(account || null);
+      } catch (error) {
+        console.error("Failed to load Request+ account:", error);
+        setUser(null);
+      }
     };
 
-    api?.loadSettings?.().then((loadedSettings: any) => {
-      if (loadedSettings) {
-        setSettings((current) => ({
-          ...current,
-          ...loadedSettings,
-          ciderApiVersion: loadedSettings.ciderApiVersion ?? current.ciderApiVersion,
-        }));
-      }
+    void loadUser();
+    void api.yes?.()
+      .then((path: string) => setOverlayPath(path || ""))
+      .catch((error: unknown) => console.error("Failed to load overlay URL:", error));
+    api.getLocale?.().then((nextLocale: string) => {
+      if (nextLocale) setLocale(nextLocale);
+    });
+    api.onLocaleUpdate?.((nextLocale: string) => {
+      if (nextLocale) setLocale(nextLocale);
     });
 
-    api?.yes?.().then((path: string) => {
-      if (path) setOverlayPath(path);
-    });
-
-    api?.getLocale?.().then((loadedLocale: string) => {
-      if (loadedLocale) setLocale(loadedLocale);
-    });
-
-    api?.onLocaleUpdate?.((loadedLocale: string) => {
-      if (loadedLocale) setLocale(loadedLocale);
-    });
-
-    api?.authSuccess?.((response: any) => {
-      if (response?.status === 'started') return;
-      if (response?.status === 'logged-out' || response?.status === 'error') {
+    api.authSuccess?.((response: any) => {
+      if (response?.status === "logged-out" || response?.status === "error") {
         setUser(null);
         return;
       }
-
-      if (response?.user) {
-        setUser(response.user);
-        return;
-      }
-
       void loadUser();
     });
-
-    api?.authCheck?.((isAuthenticated: boolean) => {
-      if (isAuthenticated) {
-        void loadUser();
-      } else {
-        setUser(null);
-      }
+    api.authCheck?.((authenticated: boolean) => {
+      if (authenticated) void loadUser();
+      else setUser(null);
     });
-
-    void api?.authChecker?.();
-    void loadUser();
+    void api.authChecker?.();
   }, []);
 
-  const completeOnboarding = async () => {
-    const nextSettings = { ...settings, oobeCompleted: true };
-    localStorage.setItem('settings', JSON.stringify(nextSettings));
-    localStorage.setItem('requestplus:v3:oobe-complete', 'true');
-
-    const api = (window as any).api;
-    if (api?.completeOnboarding) {
-      await api.completeOnboarding(nextSettings);
-      return;
-    }
-
-    await api?.saveSettings?.(nextSettings);
-  };
-
   return (
-    <div className="h-screen w-screen overflow-hidden bg-background">
-      <Topbar title={t('OOBE_TOPBAR_TITLE', locale)} />
+    <div className="h-screen w-screen overflow-hidden bg-slate-950 text-white">
+      <style>{onboardingCss}</style>
+      <Topbar title={t("OOBE_TOPBAR_TITLE", locale)} />
       <div className="h-full pt-8">
         <Onboarding
           user={user}
-          settings={settings}
-          setSettings={setSettings}
           overlayPath={overlayPath}
           locale={locale}
-          onComplete={() => void completeOnboarding()}
+          onComplete={() => window.close()}
         />
       </div>
       <Toaster position="top-right" richColors />
@@ -126,7 +79,7 @@ function OobeApp() {
   );
 }
 
-const container = document.getElementById('root');
+const container = document.getElementById("root");
 if (container) {
   createRoot(container).render(<OobeApp />);
 }

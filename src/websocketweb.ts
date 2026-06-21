@@ -244,6 +244,10 @@ class WebSocketManager extends EventEmitter {
         this.emit('queue-sync-request', message);
         break;
 
+      case 'client_settings_request':
+        this.emit('client-settings-request', message);
+        break;
+
       case 'moderation_command':
         this.emit('moderation-command', message);
         break;

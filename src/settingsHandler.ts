@@ -13,6 +13,7 @@ interface Settings {
     autoPlay: boolean;
     autoAcceptSearchResults: boolean;
     useChannelPoints: boolean;
+    channelPointRequestsEnabled: boolean;
     filterExplicit: boolean;
     platform: string;
     telemetryEnabled: boolean;
@@ -50,6 +51,7 @@ class SettingsHandler {
                 autoPlay: false,
                 autoAcceptSearchResults: false,
                 useChannelPoints: false,
+                channelPointRequestsEnabled: true,
                 filterExplicit: false,
                 platform: 'spotify',
                 telemetryEnabled: true,
@@ -68,6 +70,7 @@ class SettingsHandler {
                 ...parsed,
                 requestLimitEnabled: parsed.requestLimitEnabled ?? false,
                 requestLimit: Math.max(1, Number(parsed.requestLimit || 10)),
+                channelPointRequestsEnabled: parsed.channelPointRequestsEnabled ?? true,
                 ciderApiVersion: parsed.ciderApiVersion || '3',
                 ciderV4AppToken: parsed.ciderV4AppToken || '',
             };
@@ -84,6 +87,7 @@ class SettingsHandler {
                 autoPlay: false,
                 autoAcceptSearchResults: false,
                 useChannelPoints: false,
+                channelPointRequestsEnabled: true,
                 filterExplicit: false,
                 platform: 'spotify',
                 telemetryEnabled: true,

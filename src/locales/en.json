@@ -37,6 +37,8 @@
   "CLIENT_CHANNEL_POINTS_TITLE": "Use Channel Points",
   "CLIENT_CHANNEL_POINTS_DESC": "Let Twitch viewers request songs through a custom channel point reward",
   "CLIENT_CHANNEL_POINTS_CREATED_STATUS": "Channel point reward is connected.",
+  "CLIENT_CHANNEL_POINT_REQUESTS_TITLE": "Accept Channel Point Requests Only",
+  "CLIENT_CHANNEL_POINT_REQUESTS_DESC": "Allow the created reward to only be triggered when requesting a song (DISABLES COMMANDS).",
   "CLIENT_CHANNEL_POINTS_REWARD_TITLE": "Reward title",
   "CLIENT_CHANNEL_POINTS_REWARD_TITLE_PLACEHOLDER": "Song Requests",
   "CLIENT_CHANNEL_POINTS_PROMPT": "Prompt",
@@ -140,5 +142,8 @@
   "OOBE_RULE_FILTER_EXPLICIT_DESC": "Block explicit results when the selected platform supports it.",
   "OOBE_RULE_TELEMETRY_TITLE": "Share telemetry",
   "OOBE_RULE_TELEMETRY_DESC": "Send lightweight diagnostics to help improve Request+.",
-  "OOBE_GUIDE_TITLE": "Look at our Guide!"
+  "OOBE_GUIDE_TITLE": "Look at our Guide!",
+  "OOBE_STEP_GUIDE": "Guide",
+  "OOBE_GUIDE_CARD_TITLE": "Go to our guide to get more help for setup!",
+  "OOBE_GUIDE_BUTTON": "Open the Guide!"
 }

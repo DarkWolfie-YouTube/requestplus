@@ -37,6 +37,8 @@
   "CLIENT_CHANNEL_POINTS_TITLE": "Kanalpunkte verwenden",
   "CLIENT_CHANNEL_POINTS_DESC": "Songwünsche über Kanalpunkte erlauben",
   "CLIENT_CHANNEL_POINTS_CREATED_STATUS": "Kanalpunkte-Belohnung ist verbunden.",
+  "CLIENT_CHANNEL_POINT_REQUESTS_TITLE": "Nur Kanalpunkte-Anfragen akzeptieren",
+  "CLIENT_CHANNEL_POINT_REQUESTS_DESC": "Die erstellte Belohnung wird nur bei Songanfragen ausgelöst (DEAKTIVIERT BEFEHLE).",
   "CLIENT_CHANNEL_POINTS_REWARD_TITLE": "Belohnungsname",
   "CLIENT_CHANNEL_POINTS_REWARD_TITLE_PLACEHOLDER": "Songwunsch",
   "CLIENT_CHANNEL_POINTS_PROMPT": "Eingabeaufforderung",
@@ -139,5 +141,9 @@
   "OOBE_RULE_FILTER_EXPLICIT_TITLE": "Explizite Tracks filtern",
   "OOBE_RULE_FILTER_EXPLICIT_DESC": "Blockiere explizite Ergebnisse, wenn die gewaehlte Plattform dies unterstuetzt.",
   "OOBE_RULE_TELEMETRY_TITLE": "Telemetrie teilen",
-  "OOBE_RULE_TELEMETRY_DESC": "Sende leichte Diagnosedaten, um Request+ zu verbessern."
+  "OOBE_RULE_TELEMETRY_DESC": "Sende leichte Diagnosedaten, um Request+ zu verbessern.",
+  "OOBE_STEP_GUIDE": "Anleitung",
+  "OOBE_GUIDE_TITLE": "Sieh dir unsere Anleitung an!",
+  "OOBE_GUIDE_CARD_TITLE": "Oeffne unsere Anleitung, um mehr Hilfe bei der Einrichtung zu bekommen!",
+  "OOBE_GUIDE_BUTTON": "Anleitung oeffnen!"
 }

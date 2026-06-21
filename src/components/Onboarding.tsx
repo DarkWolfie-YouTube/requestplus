@@ -38,6 +38,7 @@ type SettingsState = {
   autoPlay: boolean;
   autoAcceptSearchResults: boolean;
   useChannelPoints: boolean;
+  channelPointRequestsEnabled: boolean;
   telemetryEnabled: boolean;
   platform: string;
   filterExplicit: boolean;
@@ -472,7 +473,7 @@ export function Onboarding({
                         <div className="flex items-center justify-between gap-4">
                           <div className="min-w-0">
                             <p className="font-semibold text-white">
-                              Go to our guide to get more help for setup!
+                              {t('OOBE_GUIDE_CARD_TITLE', locale)}
                             </p>
                             <p className="mt-1 truncate text-sm leading-6 text-slate-400">
                               https://docs.requestplus.xyz
@@ -483,7 +484,7 @@ export function Onboarding({
                             className="primary shrink-0"
                             title="yes"
                             onClick={() => window.api.yesnt('https://docs.requestplus.xyz')}
-                          >Open the Guide!</Button>
+                          >{t('OOBE_GUIDE_BUTTON', locale)}</Button>
                         </div>
                       </div>
                     

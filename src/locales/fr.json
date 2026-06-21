@@ -28,6 +28,8 @@
   "CLIENT_CHANNEL_POINTS_TITLE": "Utiliser les points de chaine",
   "CLIENT_CHANNEL_POINTS_DESC": "Permettre aux spectateurs Twitch de demander des chansons avec une recompense personnalisee",
   "CLIENT_CHANNEL_POINTS_CREATED_STATUS": "La recompense de points de chaine est connectee.",
+  "CLIENT_CHANNEL_POINT_REQUESTS_TITLE": "Accepter uniquement les demandes par points",
+  "CLIENT_CHANNEL_POINT_REQUESTS_DESC": "Permet a la recompense creee de se declencher uniquement lors d une demande de chanson (DESACTIVE LES COMMANDES).",
   "CLIENT_CHANNEL_POINTS_REWARD_TITLE": "Titre de la recompense",
   "CLIENT_CHANNEL_POINTS_REWARD_TITLE_PLACEHOLDER": "Demandes de chansons",
   "CLIENT_CHANNEL_POINTS_PROMPT": "Description",
@@ -139,5 +141,9 @@
   "OOBE_RULE_FILTER_EXPLICIT_TITLE": "Filtrer les pistes explicites",
   "OOBE_RULE_FILTER_EXPLICIT_DESC": "Bloquez les resultats explicites quand la plateforme selectionnee le prend en charge.",
   "OOBE_RULE_TELEMETRY_TITLE": "Partager la telemetrie",
-  "OOBE_RULE_TELEMETRY_DESC": "Envoyez des diagnostics legers pour aider a ameliorer Request+."
+  "OOBE_RULE_TELEMETRY_DESC": "Envoyez des diagnostics legers pour aider a ameliorer Request+.",
+  "OOBE_STEP_GUIDE": "Guide",
+  "OOBE_GUIDE_TITLE": "Consultez notre guide!",
+  "OOBE_GUIDE_CARD_TITLE": "Consultez notre guide pour obtenir plus d aide a la configuration!",
+  "OOBE_GUIDE_BUTTON": "Ouvrir le guide!"
 }

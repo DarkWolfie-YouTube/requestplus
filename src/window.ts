@@ -21,6 +21,7 @@ export interface RequestPlusSettings {
   autoPlay?: boolean;
   autoAcceptSearchResults?: boolean;
   useChannelPoints?: boolean;
+  channelPointRequestsEnabled?: boolean;
   filterExplicit?: boolean;
   platform?: string;
   telemetryEnabled?: boolean;
@@ -71,8 +72,8 @@ export class WindowHandler {
     const window = this.makeWindow({
       kind: 'main',
       title: 'Request+',
-      width: 600,
-      height: 1000,
+      width: 400,
+      height: 800,
     });
 
     this.mainWindow = window;
@@ -139,12 +140,12 @@ export class WindowHandler {
     }
   }
 
-  private makeWindow({ kind, title = 'Request+', width = 600, height = 1000 }: ManagedWindowOptions): BrowserWindow {
+  private makeWindow({ kind, title = 'Request+', width = 400, height = 800 }: ManagedWindowOptions): BrowserWindow {
     return new BrowserWindow({
       width,
       height,
-      minWidth: kind === 'oobe' ? 800 : 420,
-      minHeight: kind === 'oobe' ? 900 : 640,
+      minWidth: kind === 'oobe' ? 800 : 400,
+      minHeight: 800,
       frame: false,
       resizable: false,
       show: false,
@@ -214,9 +215,6 @@ export class WindowHandler {
         return overlayPath;
     });
 
-    ipcMain.handle('oobe:openURL', async (_e: any, url: string) => {
-      await shell.openExternal(url);
-    })
   }
 }
 

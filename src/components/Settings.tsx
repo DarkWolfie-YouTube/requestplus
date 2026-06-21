@@ -33,6 +33,7 @@ interface SettingsState {
   autoPlay: boolean;
   autoAcceptSearchResults: boolean;
   useChannelPoints: boolean;
+  channelPointRequestsEnabled: boolean;
   platform: string;
   filterExplicit: boolean;
   telemetryEnabled: boolean;
@@ -611,6 +612,22 @@ export function Settings({
                           <p className="text-sm text-green-200">{t('CLIENT_CHANNEL_POINTS_CREATED_STATUS', locale)}</p>
                           <p className="mt-1 break-all text-xs text-green-100/80">{channelPointId}</p>
                         </div>
+
+                        <div className="flex items-center justify-between gap-4 rounded-lg border border-slate-700/60 bg-slate-950/40 p-3">
+                          <div className="space-y-0.5">
+                            <Label className="text-white">{t('CLIENT_CHANNEL_POINT_REQUESTS_TITLE', locale)}</Label>
+                            <p className="text-xs text-gray-400">
+                              {t('CLIENT_CHANNEL_POINT_REQUESTS_DESC', locale)}
+                            </p>
+                          </div>
+                          <Switch
+                            checked={settings.channelPointRequestsEnabled ?? true}
+                            onCheckedChange={(checked) =>
+                              setSettings({...settings, channelPointRequestsEnabled: checked})
+                            }
+                          />
+                        </div>
+
                         <button
                           type="button"
                           onClick={deleteChannelPoint}

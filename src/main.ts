@@ -179,15 +179,35 @@ function getActiveRequestCountForUser(username: string | undefined): number {
     }).length;
 }
 
-function getSongRequestRejection(username: string | undefined): { code: string; limit?: number } | null {
+function isPrivilegedRequester(message: WebSocketMessage): boolean {
+    const tags = message.tags || {};
+    const badges = tags.badges || message.badges || {};
+
+    return Boolean(
+        tags.mod ||
+        tags.broadcaster ||
+        tags.isBroadcaster ||
+        tags.vip ||
+        badges.broadcaster ||
+        badges.moderator ||
+        badges.vip ||
+        message.isMod ||
+        message.isBroadcaster ||
+        message.isVip
+    );
+}
+
+function getSongRequestRejection(message: WebSocketMessage): { code: string; limit?: number } | null {
     if (!settings.enableRequests) {
         return { code: 'ERR_RP_DISABLED' };
     }
 
+    if (isPrivilegedRequester(message)) return null;
+
     if (!settings.requestLimitEnabled) return null;
 
     const limit = Math.max(1, Number(settings.requestLimit || 1));
-    if (getActiveRequestCountForUser(username) >= limit) {
+    if (getActiveRequestCountForUser(message.username) >= limit) {
         return { code: 'ERR_REQUEST_LIMIT', limit };
     }
 
@@ -580,6 +600,8 @@ async function createWindow(): Promise<void> {
     }
 
     if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.setMinimumSize(400, 800);
+        mainWindow.setSize(400, 800);
         mainWindow.show();
         mainWindow.focus();
         return;
@@ -598,8 +620,10 @@ async function createWindow(): Promise<void> {
     await ensureOverlayFile();
 
     mainWindow = new BrowserWindow({
-        width: 600,
-        height: 1000,
+        width: 400,
+        height: 800,
+        minWidth: 400,
+        minHeight: 800,
         webPreferences: {
             nodeIntegration: false,
             contextIsolation: true,
@@ -777,6 +801,17 @@ function createStartupOobeWindow(): BrowserWindow {
     return oobeWindow;
 }
 
+function applySettingsToRuntime(updatedSettings: Settings): void {
+    playbackHandler?.updateSettings(updatedSettings.platform);
+    apiHandler?.updateSettings(updatedSettings);
+    gtsHandler?.updateSettings(updatedSettings);
+    amHandler?.updateSettings(updatedSettings);
+
+    if (playbackHandler) {
+        updateIntervalForSongInfo();
+    }
+}
+
 
 
 // IPC Handlers
@@ -799,11 +834,7 @@ ipcMain.handle('save-settings', (event: Electron.IpcMainInvokeEvent, settinga: S
 
         if (saved) {
             settings = settinga;
-            playbackHandler.updateSettings(settings.platform);
-            apiHandler.updateSettings(settings);
-            gtsHandler.updateSettings(settings);
-            amHandler.updateSettings(settings);
-            updateIntervalForSongInfo();
+            applySettingsToRuntime(settings);
             resolve();
         } else {
             reject(new Error('Failed to save settings'));
@@ -815,9 +846,7 @@ ipcMain.handle('cider:request-token', async (): Promise<string> => {
     const token = await amHandler.requestCiderV2Token();
     settings = { ...settings, platform: 'apple', ciderApiVersion: '4', ciderV4AppToken: token };
     settingsHandler.save(settings);
-    amHandler.updateSettings(settings);
-    apiHandler.updateSettings(settings);
-    gtsHandler.updateSettings(settings);
+    applySettingsToRuntime(settings);
     mainWindow?.webContents.send('settings-updated-from-main', settings);
     return token;
 });
@@ -826,11 +855,7 @@ ipcMain.on('settings-updated', (event: Electron.IpcMainEvent, updatedSettings: S
     Logger?.info('Settings updated');
     settings = updatedSettings;
     settingsHandler.save(updatedSettings);
-    playbackHandler.updateSettings(updatedSettings.platform);
-    apiHandler.updateSettings(updatedSettings);
-    gtsHandler.updateSettings(updatedSettings);
-    amHandler.updateSettings(updatedSettings);
-    updateIntervalForSongInfo();
+    applySettingsToRuntime(updatedSettings);
 });
 
 ipcMain.handle('window-minimize', (): void => {
@@ -986,6 +1011,14 @@ ipcMain.handle('logout', async (): Promise<void> => {
 
 ipcMain.handle('get-overlay-path', (): string | null => {
     return overlayPath;
+});
+
+ipcMain.handle('oobe:openURL', async (_event, url: string): Promise<void> => {
+    const target = new URL(url);
+    if (target.protocol !== 'https:' && target.protocol !== 'http:') {
+        throw new Error('Only HTTP(S) URLs can be opened.');
+    }
+    await shell.openExternal(target.toString());
 });
 
 ipcMain.handle('check-for-updates', (): void => {
@@ -1351,7 +1384,7 @@ websocketManager.on('song-request', async (message) => {
         }
     }
 
-    const rejection = getSongRequestRejection(message.username);
+    const rejection = getSongRequestRejection(message);
     if (rejection) {
         sendSongRequestResponse(message, rejection.code, rejection.limit ? { limit: rejection.limit } : {});
         return;
@@ -1510,7 +1543,7 @@ websocketManager.on('song-request', async (message) => {
 
 websocketManager.on('song-search-request', async (message) => {
     console.log('Received song search request:', message);
-    const rejection = getSongRequestRejection(message.username);
+    const rejection = getSongRequestRejection(message);
     if (rejection) {
         sendSongSearchResponse(message, rejection.code, rejection.limit ? { limit: rejection.limit } : {});
         return;
@@ -1625,6 +1658,17 @@ websocketManager.on('queue-sync-request', (message) => {
     });
 });
 
+websocketManager.on('client-settings-request', (message) => {
+    const currentSettings = settings || settingsHandler.load();
+    websocketManager.send({
+        type: 'client_settings_response',
+        requestId: message.requestId,
+        platform: message.platform,
+        channel: message.channel,
+        settings: currentSettings
+    });
+});
+
 websocketManager.on('moderation-command', async (message) => {
     if (message.command === 'srremove') {
         if (!settings.autoPlay) {
@@ -1656,10 +1700,7 @@ websocketManager.on('moderation-command', async (message) => {
     if (message.command === 'srmod') {
         settings = { ...settings, modsOnly: message.action === 'disable' };
         settingsHandler.save(settings);
-        playbackHandler.updateSettings(settings.platform);
-        apiHandler.updateSettings(settings);
-        gtsHandler.updateSettings(settings);
-        amHandler.updateSettings(settings);
+        applySettingsToRuntime(settings);
         mainWindow?.webContents.send('settings-updated-from-main', settings);
         websocketManager.send({
             type: 'moderation_command_response',
