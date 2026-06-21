@@ -186,6 +186,23 @@ export function SettingsView({ settings, setSettings, user, setUser, overlayPath
             </div>
           )}
           <ToggleRow label="Auto-accept Search" desc="Accept first search result automatically" checked={!!settings.autoAcceptSearchResults} onChange={(v) => p({ autoAcceptSearchResults: v })} />
+          <ToggleRow
+            label={t("CLIENT_CHANNEL_POINTS_TITLE", locale)}
+            desc={t("CLIENT_CHANNEL_POINTS_DESC", locale)}
+            checked={!!settings.useChannelPoints}
+            onChange={(enabled) => p({
+              useChannelPoints: enabled,
+              channelPointRequestsEnabled: enabled ? settings.channelPointRequestsEnabled : false,
+            })}
+          />
+          {settings.useChannelPoints && (
+            <ToggleRow
+              label={t("CLIENT_CHANNEL_POINT_REQUESTS_TITLE", locale)}
+              desc={t("CLIENT_CHANNEL_POINT_REQUESTS_DESC", locale)}
+              checked={!!settings.channelPointRequestsEnabled}
+              onChange={(enabled) => p({ channelPointRequestsEnabled: enabled })}
+            />
+          )}
         </Section>
 
         {/* Modules */}

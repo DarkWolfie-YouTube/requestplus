@@ -3,9 +3,22 @@
 All notable changes to Request+ will be documented in this file.
 
 
+
 ---
 
-## [3.0.0] - 2026-06-18 - OOBE update.
+## [3.0.1] - 2026-06-21 - Quick Patch
+
+- Added back the channel point's settings in the UI
+
+---
+
+## [3.0.0] - 2026-06-21 - OOBE update.
+
+- Added a OOBE
+
+- UI redesign
+
+- Settings sync with API
 
 ---
 

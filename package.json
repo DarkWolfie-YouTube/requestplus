@@ -1,7 +1,7 @@
 {
   "name": "requestplus",
   "productName": "Request+",
-  "version": "3.0.0",
+  "version": "3.0.1",
   "description": "Supercharged Music Overlay for Streamers!",
   "main": ".vite/build/main.js",
   "scripts": {
