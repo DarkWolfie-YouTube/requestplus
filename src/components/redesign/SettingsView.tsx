@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Music, Settings, List, X, Minus, Play, Pause, SkipBack, SkipForward, Heart, Shuffle, Repeat, Repeat1, Volume2, Trash2, Check, Copy, Eye, Headphones, ListChecks, Lock, Radio, Shield, Sparkles, UserRound, ExternalLink, RefreshCw, LogOut, User as UserIcon, ArrowLeft, ArrowRight, Music2 } from "lucide-react";
 import { toast } from "sonner";
 import { Blobs, Switch } from "./shared";
@@ -38,6 +38,15 @@ export function SettingsView({ settings, setSettings, user, setUser, overlayPath
   overlayPath: string; locale: string;
 }) {
   const [copied, setCopied] = useState(false);
+  const [channelPointId, setChannelPointId] = useState<string | null>(null);
+  const [channelPointLoading, setChannelPointLoading] = useState(false);
+  const [channelPointSaving, setChannelPointSaving] = useState(false);
+  const [channelPointForm, setChannelPointForm] = useState({
+    title: "Song Requests",
+    prompt: "Redeem this to request a song through Request+.",
+    color: "#9146ff",
+    cooldown: 30,
+  });
   const api = () => (window as any).api;
   const p = (patch: Partial<AppSettings>) => {
     const next = { ...settings, ...patch };
@@ -61,6 +70,75 @@ export function SettingsView({ settings, setSettings, user, setUser, overlayPath
     setCopied(true);
     toast.success("Overlay URL copied!");
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const refreshChannelPoint = async () => {
+    if (!api()?.getChannelPointReward) return;
+    setChannelPointLoading(true);
+    try {
+      const response = await api().getChannelPointReward();
+      setChannelPointId(
+        response?.type === "channel_point_response" && response?.message === "ok" && response?.data
+          ? response.data
+          : null,
+      );
+    } catch (error) {
+      console.error("Failed to load channel point reward:", error);
+      setChannelPointId(null);
+      toast.error(t("CLIENT_CHANNEL_POINTS_LOAD_FAILED", locale));
+    } finally {
+      setChannelPointLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (settings.useChannelPoints) void refreshChannelPoint();
+  }, [settings.useChannelPoints]);
+
+  const createChannelPoint = async () => {
+    const title = channelPointForm.title.trim();
+    if (!title || !api()?.createChannelPointReward) {
+      if (!title) toast.error(t("CLIENT_CHANNEL_POINTS_TITLE_REQUIRED", locale));
+      return;
+    }
+
+    setChannelPointSaving(true);
+    try {
+      const response = await api().createChannelPointReward({
+        title,
+        description: channelPointForm.prompt.trim(),
+        color: channelPointForm.color || "#9146ff",
+        cooldown: Math.max(0, Number(channelPointForm.cooldown) || 0),
+      });
+      if (response?.type !== "channel_point_success" || response?.status !== "ok") {
+        throw new Error(response?.error || "Channel point create failed");
+      }
+      toast.success(t("CLIENT_CHANNEL_POINTS_CREATED", locale));
+      await refreshChannelPoint();
+    } catch (error) {
+      console.error("Failed to create channel point reward:", error);
+      toast.error(error instanceof Error ? error.message : t("CLIENT_CHANNEL_POINTS_CREATE_FAILED", locale));
+    } finally {
+      setChannelPointSaving(false);
+    }
+  };
+
+  const deleteChannelPoint = async () => {
+    if (!channelPointId || !api()?.deleteChannelPointReward) return;
+    setChannelPointSaving(true);
+    try {
+      const response = await api().deleteChannelPointReward(channelPointId);
+      if (response?.type !== "channel_point_success") {
+        throw new Error(response?.error || "Channel point delete failed");
+      }
+      setChannelPointId(null);
+      toast.success(t("CLIENT_CHANNEL_POINTS_DELETED", locale));
+    } catch (error) {
+      console.error("Failed to delete channel point reward:", error);
+      toast.error(error instanceof Error ? error.message : t("CLIENT_CHANNEL_POINTS_DELETE_FAILED", locale));
+    } finally {
+      setChannelPointSaving(false);
+    }
   };
 
   const platforms = [
@@ -196,12 +274,76 @@ export function SettingsView({ settings, setSettings, user, setUser, overlayPath
             })}
           />
           {settings.useChannelPoints && (
-            <ToggleRow
-              label={t("CLIENT_CHANNEL_POINT_REQUESTS_TITLE", locale)}
-              desc={t("CLIENT_CHANNEL_POINT_REQUESTS_DESC", locale)}
-              checked={!!settings.channelPointRequestsEnabled}
-              onChange={(enabled) => p({ channelPointRequestsEnabled: enabled })}
-            />
+            <>
+              <ToggleRow
+                label={t("CLIENT_CHANNEL_POINT_REQUESTS_TITLE", locale)}
+                desc={t("CLIENT_CHANNEL_POINT_REQUESTS_DESC", locale)}
+                checked={!!settings.channelPointRequestsEnabled}
+                onChange={(enabled) => p({ channelPointRequestsEnabled: enabled })}
+              />
+              <div className="border-t border-white/[0.04] p-4 space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-[13px] font-semibold text-white">
+                    {channelPointId ? t("CLIENT_CHANNEL_POINTS_CREATED_STATUS", locale) : t("CLIENT_CHANNEL_POINTS_CREATE", locale)}
+                  </p>
+                  {channelPointLoading && <span className="text-[11px] text-slate-500">{t("COMMON_LOADING", locale)}</span>}
+                </div>
+                {channelPointId ? (
+                  <button
+                    type="button"
+                    onClick={() => void deleteChannelPoint()}
+                    disabled={channelPointSaving}
+                    className="w-full rounded-xl bg-red-500/15 px-3 py-2 text-xs font-bold text-red-400 transition-colors hover:bg-red-500/25 disabled:opacity-50"
+                  >
+                    {t("CLIENT_CHANNEL_POINTS_DELETE", locale)}
+                  </button>
+                ) : (
+                  <>
+                    <input
+                      value={channelPointForm.title}
+                      onChange={(event) => setChannelPointForm((form) => ({ ...form, title: event.target.value }))}
+                      placeholder={t("CLIENT_CHANNEL_POINTS_REWARD_TITLE_PLACEHOLDER", locale)}
+                      className="h-9 w-full rounded-xl border border-violet-500/20 bg-slate-950/70 px-3 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:ring-1 focus:ring-violet-500"
+                    />
+                    <input
+                      value={channelPointForm.prompt}
+                      onChange={(event) => setChannelPointForm((form) => ({ ...form, prompt: event.target.value }))}
+                      placeholder={t("CLIENT_CHANNEL_POINTS_PROMPT_PLACEHOLDER", locale)}
+                      className="h-9 w-full rounded-xl border border-violet-500/20 bg-slate-950/70 px-3 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:ring-1 focus:ring-violet-500"
+                    />
+                    <div className="grid grid-cols-2 gap-2">
+                      <label className="space-y-1 text-[10px] font-bold uppercase tracking-widest text-slate-600">
+                        {t("CLIENT_CHANNEL_POINTS_COLOR", locale)}
+                        <input
+                          type="color"
+                          value={channelPointForm.color}
+                          onChange={(event) => setChannelPointForm((form) => ({ ...form, color: event.target.value }))}
+                          className="block h-9 w-full rounded-lg bg-slate-950"
+                        />
+                      </label>
+                      <label className="space-y-1 text-[10px] font-bold uppercase tracking-widest text-slate-600">
+                        {t("CLIENT_CHANNEL_POINTS_COOLDOWN", locale)}
+                        <input
+                          type="number"
+                          min={0}
+                          value={channelPointForm.cooldown}
+                          onChange={(event) => setChannelPointForm((form) => ({ ...form, cooldown: Math.max(0, Number(event.target.value) || 0) }))}
+                          className="block h-9 w-full rounded-xl border border-violet-500/20 bg-slate-950/70 px-3 text-xs text-white focus:outline-none focus:ring-1 focus:ring-violet-500"
+                        />
+                      </label>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void createChannelPoint()}
+                      disabled={channelPointSaving}
+                      className="w-full rounded-xl bg-gradient-to-r from-violet-600 to-emerald-600 px-3 py-2 text-xs font-bold text-white transition-all hover:from-violet-500 hover:to-emerald-500 disabled:opacity-50"
+                    >
+                      {channelPointSaving ? t("COMMON_LOADING", locale) : t("CLIENT_CHANNEL_POINTS_CREATE", locale)}
+                    </button>
+                  </>
+                )}
+              </div>
+            </>
           )}
         </Section>
 
