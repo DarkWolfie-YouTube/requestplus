@@ -770,11 +770,13 @@ ipcMain.handle('song-skip', async (): Promise<void> => {
         // replay the same song from the start.
         if (queueHandler) {
             const nextTrack = queueHandler.getQueue().items.find(
-                item => !item.isQueued && getQueueItemTrackId(item) !== currentTrackId
+                item => !item.isQueued && item.id !== currentTrackId2
             );
             if (nextTrack) {
-                await ytManager.addItemToQueueById(getQueueItemTrackId(nextTrack));
-                await queueHandler.setTrackAsQueued(queueHandler.getQueue().items.indexOf(nextTrack));
+                const queued = await ytManager.addItemToQueueById(getQueueItemTrackId(nextTrack));
+                if (queued) {
+                    await queueHandler.setTrackAsQueued(queueHandler.getQueue().items.indexOf(nextTrack));
+                }
             }
         }
         await ytManager.next();

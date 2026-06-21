@@ -450,16 +450,14 @@ class YTManager extends EventEmitter {
         );
     }
     async addItemToQueueById(videoId: string): Promise<boolean> {
-        try {
-            await this.makeAuthenticatedRequest<songData>(() =>
-                this.instance.post(`/queue`, JSON.stringify({ videoId: videoId, insertPosition: "INSERT_AFTER_CURRENT_VIDEO" }), {
-                    headers: { 'Authorization': `Bearer ${this.token}`, 'Content-Type': 'application/json' }
-                }), `/queue/${videoId}`
-            );
-            return true;
-        } catch {
-            return false;
-        }
+        // makeAuthenticatedRequest swallows request failures and returns null,
+        // so treat a null/undefined result as a rejected insert rather than success.
+        const result = await this.makeAuthenticatedRequest<songData>(() =>
+            this.instance.post(`/queue`, JSON.stringify({ videoId: videoId, insertPosition: "INSERT_AFTER_CURRENT_VIDEO" }), {
+                headers: { 'Authorization': `Bearer ${this.token}`, 'Content-Type': 'application/json' }
+            }), `/queue/${videoId}`
+        );
+        return result !== null && result !== undefined;
     }
 
     /** Fetch title + author for a video ID via YouTube's public oEmbed API (no auth needed). */
