@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, shell, MessageBoxOptions, MessageBoxReturnValue, net, session, Tray, Menu} from 'electron';
+import { app, BrowserWindow, ipcMain, shell, MessageBoxOptions, MessageBoxReturnValue, net, session, Tray, Menu} from 'electron';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { setTimeout as wait } from 'node:timers/promises';
@@ -1032,6 +1032,9 @@ ipcMain.handle('check-for-updates', (): void => {
 
 ipcMain.on('modal-response', (_event, id: string, response: number) => {
     resolveModal(id, response);
+    if (id.startsWith('websocket-notification-')) {
+        mainWindow?.flashFrame(false);
+    }
 });
 
 ipcMain.handle('get-update-settings', (): UpdateSettings => {
@@ -1355,13 +1358,19 @@ websocketManager.on('authenticated', () => {
 
 
 websocketManager.on('notification', (message) => {
-    dialog.showMessageBox({
-        type: 'info',
+    if (!mainWindow || mainWindow.isDestroyed()) {
+        Logger?.warn('[WebSocket] Dropped notification because the main window is unavailable.');
+        return;
+    }
+
+    const id = `websocket-notification-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    mainWindow.flashFrame(true);
+    mainWindow.once('focus', () => mainWindow?.flashFrame(false));
+    mainWindow.webContents.send('show-modal', {
+        id,
+        title: String(message.title || 'Notification'),
+        message: String(message.message || 'You have a new notification.'),
         buttons: ['OK'],
-        defaultId: 0,
-        cancelId: 0,
-        title: 'Notification',
-        message: message.message || 'You have a new notification.',
     });
 });
 
