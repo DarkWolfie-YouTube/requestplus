@@ -121,11 +121,16 @@ export class WindowHandler {
 
   loadSettings(): RequestPlusSettings {
     try {
-      if (!fs.existsSync(this.settingsFilePath)) return {};
-      return JSON.parse(fs.readFileSync(this.settingsFilePath, 'utf-8')) as RequestPlusSettings;
+      if (!fs.existsSync(this.settingsFilePath)) return { oobeCompleted: false };
+      const settings = JSON.parse(fs.readFileSync(this.settingsFilePath, 'utf-8')) as RequestPlusSettings;
+      return {
+        ...settings,
+        // Treat every settings file without the explicit completion marker as new.
+        oobeCompleted: settings.oobeCompleted === true,
+      };
     } catch (error) {
       console.error('Failed to load Request+ settings:', error);
-      return {};
+      return { oobeCompleted: false };
     }
   }
 
@@ -172,7 +177,8 @@ export class WindowHandler {
       const url = new URL(kind === 'oobe' ? 'oobe.html' : 'index.html', devServerUrl);
       window.loadURL(url.toString());
     } else {
-      window.loadFile(path.join(__dirname, `../renderer/${rendererName}/index.html`));
+      const entryFile = kind === 'oobe' ? 'oobe.html' : 'index.html';
+      window.loadFile(path.join(__dirname, `../renderer/${rendererName}/${entryFile}`));
     }
 
     window.once('ready-to-show', () => window.show());

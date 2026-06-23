@@ -3,6 +3,8 @@ import * as path from 'node:path';
 
 // Type definitions for settings structure
 interface Settings {
+    /** Set only after the user finishes the v3 setup flow. */
+    oobeCompleted: boolean;
     theme: string;
     showNotifications: boolean;
     enableRequests: boolean;
@@ -38,36 +40,44 @@ class SettingsHandler {
         this.settingsFilePath = path.join(userDataPath, 'settings.json');
     }
 
+    private getDefaultSettings(): Settings {
+        return {
+            oobeCompleted: false,
+            theme: 'default',
+            showNotifications: true,
+            enableRequests: true,
+            modsOnly: false,
+            subsOnly: false,
+            requestLimitEnabled: false,
+            requestLimit: 10,
+            autoPlay: false,
+            autoAcceptSearchResults: false,
+            useChannelPoints: false,
+            channelPointRequestsEnabled: true,
+            filterExplicit: false,
+            platform: 'spotify',
+            telemetryEnabled: true,
+            gtsEnabled: false,
+            multiPlatform: false,
+            platforms: ['spotify'],
+            primarySearchPlatform: 'spotify',
+            ciderApiVersion: '3',
+            ciderV4AppToken: '',
+        };
+    }
+
     load(): Settings {
         if (!fs.existsSync(this.settingsFilePath)) {
-            return {
-                theme: 'default',
-                showNotifications: true,
-                enableRequests: true,
-                modsOnly: false,
-                subsOnly: false,
-                requestLimitEnabled: false,
-                requestLimit: 10,
-                autoPlay: false,
-                autoAcceptSearchResults: false,
-                useChannelPoints: false,
-                channelPointRequestsEnabled: true,
-                filterExplicit: false,
-                platform: 'spotify',
-                telemetryEnabled: true,
-                gtsEnabled: false,
-                multiPlatform: false,
-                platforms: ['spotify'],
-                primarySearchPlatform: 'spotify',
-                ciderApiVersion: '3',
-                ciderV4AppToken: '',
-            };
+            return this.getDefaultSettings();
         }
         try {
             const data = fs.readFileSync(this.settingsFilePath, 'utf-8');
             const parsed = JSON.parse(data) as Settings;
             return {
+                ...this.getDefaultSettings(),
                 ...parsed,
+                // Legacy settings files must always run through the v3 OOBE.
+                oobeCompleted: parsed.oobeCompleted === true,
                 requestLimitEnabled: parsed.requestLimitEnabled ?? false,
                 requestLimit: Math.max(1, Number(parsed.requestLimit || 10)),
                 channelPointRequestsEnabled: parsed.channelPointRequestsEnabled ?? true,
@@ -76,28 +86,7 @@ class SettingsHandler {
             };
         } catch (error) {
             console.error('Error loading settings:', error);
-            return {
-                theme: 'default',
-                showNotifications: true,
-                enableRequests: true,
-                modsOnly: false,
-                subsOnly: false,
-                requestLimitEnabled: false,
-                requestLimit: 10,
-                autoPlay: false,
-                autoAcceptSearchResults: false,
-                useChannelPoints: false,
-                channelPointRequestsEnabled: true,
-                filterExplicit: false,
-                platform: 'spotify',
-                telemetryEnabled: true,
-                gtsEnabled: false,
-                multiPlatform: false,
-                platforms: ['spotify'],
-                primarySearchPlatform: 'spotify',
-                ciderApiVersion: '3',
-                ciderV4AppToken: '',
-            };
+            return this.getDefaultSettings();
         }
     }
 
