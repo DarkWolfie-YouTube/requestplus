@@ -20,10 +20,6 @@ interface Settings {
     platform: string;
     telemetryEnabled: boolean;
     gtsEnabled: boolean;
-    /** Enable multi-platform mode */
-    multiPlatform: boolean;
-    /** Platforms active in multi-platform mode */
-    platforms: string[];
     /** Which platform to search on when a request has no URL (multi-platform mode) */
     primarySearchPlatform: string;
     /** Cider major version for Apple Music integration */
@@ -58,8 +54,6 @@ class SettingsHandler {
             platform: 'spotify',
             telemetryEnabled: true,
             gtsEnabled: false,
-            multiPlatform: false,
-            platforms: ['spotify'],
             primarySearchPlatform: 'spotify',
             ciderApiVersion: '3',
             ciderV4AppToken: '',
@@ -73,9 +67,10 @@ class SettingsHandler {
         try {
             const data = fs.readFileSync(this.settingsFilePath, 'utf-8');
             const parsed = JSON.parse(data) as Settings;
-            return {
+            const { multiPlatform: _multiPlatform, platforms: _platforms, ...normalized } = parsed;
+            const loadedSettings: Settings = {
                 ...this.getDefaultSettings(),
-                ...parsed,
+                ...normalized,
                 // Legacy settings files must always run through the v3 OOBE.
                 oobeCompleted: parsed.oobeCompleted === true,
                 requestLimitEnabled: parsed.requestLimitEnabled ?? false,
@@ -84,6 +79,14 @@ class SettingsHandler {
                 ciderApiVersion: parsed.ciderApiVersion || '3',
                 ciderV4AppToken: parsed.ciderV4AppToken || '',
             };
+
+            // These fields were briefly written by an incomplete multi-platform
+            // migration. The playback handler only needs the selected platform.
+            if ('multiPlatform' in parsed || 'platforms' in parsed) {
+                this.save(loadedSettings);
+            }
+
+            return loadedSettings;
         } catch (error) {
             console.error('Error loading settings:', error);
             return this.getDefaultSettings();
@@ -92,7 +95,8 @@ class SettingsHandler {
 
     save(settings: Settings): boolean {
         try {
-            fs.writeFileSync(this.settingsFilePath, JSON.stringify(settings, null, 2), 'utf-8');
+            const { multiPlatform: _multiPlatform, platforms: _platforms, ...persistedSettings } = settings;
+            fs.writeFileSync(this.settingsFilePath, JSON.stringify(persistedSettings, null, 2), 'utf-8');
             return true;
         } catch (error) {
             console.error('Error saving settings:', error);

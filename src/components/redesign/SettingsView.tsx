@@ -41,6 +41,7 @@ export function SettingsView({ settings, setSettings, user, setUser, overlayPath
   const [channelPointId, setChannelPointId] = useState<string | null>(null);
   const [channelPointLoading, setChannelPointLoading] = useState(false);
   const [channelPointSaving, setChannelPointSaving] = useState(false);
+  const [ciderTokenLoading, setCiderTokenLoading] = useState(false);
   const [channelPointForm, setChannelPointForm] = useState({
     title: "Song Requests",
     prompt: "Redeem this to request a song through Request+.",
@@ -63,6 +64,27 @@ export function SettingsView({ settings, setSettings, user, setUser, overlayPath
       toast.error("Could not save settings");
     });
     api()?.settingsUpdated?.(next);
+  };
+
+  const requestCiderV4Token = async () => {
+    if (!api()?.requestCiderToken) {
+      toast.error("Cider 4 token requests are not available.");
+      return;
+    }
+
+    setCiderTokenLoading(true);
+    try {
+      toast.info("Approve the Request+ connection prompt in Cider 4.");
+      const token = await api().requestCiderToken();
+      if (!token) throw new Error("Cider did not return a token.");
+      p({ platform: "apple", ciderApiVersion: "4", ciderV4AppToken: token });
+      toast.success("Cider 4 connected.");
+    } catch (error) {
+      console.error("Failed to request Cider 4 token:", error);
+      toast.error(error instanceof Error ? error.message : "Failed to connect Cider 4.");
+    } finally {
+      setCiderTokenLoading(false);
+    }
   };
 
   const copy = async () => {
@@ -400,7 +422,12 @@ export function SettingsView({ settings, setSettings, user, setUser, overlayPath
                   {(["3", "4"] as const).map((v) => (
                     <button
                       key={v}
-                      onClick={() => p({ ciderApiVersion: v })}
+                      onClick={() => {
+                        p({ ciderApiVersion: v });
+                        if (v === "4" && !settings.ciderV4AppToken) {
+                          void requestCiderV4Token();
+                        }
+                      }}
                       className={`rounded-xl px-4 py-2 text-sm font-bold transition-all ${
                         settings.ciderApiVersion === v
                           ? "bg-gradient-to-r from-violet-600 to-emerald-600 text-white"
@@ -411,6 +438,34 @@ export function SettingsView({ settings, setSettings, user, setUser, overlayPath
                     </button>
                   ))}
                 </div>
+                {settings.ciderApiVersion === "3" ? (
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-slate-600" htmlFor="ciderV3Token">Cider 3 API Token</label>
+                    <input
+                      id="ciderV3Token"
+                      type="password"
+                      autoComplete="off"
+                      placeholder="Paste your Cider 3 API token"
+                      value={settings.appleMusicAppToken || ""}
+                      onChange={(event) => p({ appleMusicAppToken: event.target.value })}
+                      className="w-full rounded-xl border border-violet-500/20 bg-slate-950/70 px-3 py-2 text-sm text-white placeholder:text-slate-600 focus:outline-none focus:ring-1 focus:ring-violet-500"
+                    />
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <p className="text-[11px] leading-4 text-slate-600">
+                      Request+ asks Cider 4 for a scoped token. Approve the prompt in Cider to connect it.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => void requestCiderV4Token()}
+                      disabled={ciderTokenLoading}
+                      className="w-full rounded-xl bg-gradient-to-r from-violet-600 to-emerald-600 px-3 py-2 text-xs font-bold text-white transition-all hover:from-violet-500 hover:to-emerald-500 disabled:cursor-wait disabled:opacity-60"
+                    >
+                      {ciderTokenLoading ? "Waiting for Cider approval..." : settings.ciderV4AppToken ? "Refresh Cider 4 Connection" : "Connect Cider 4"}
+                    </button>
+                  </div>
+                )}
               </div>
             )}
           </div>
