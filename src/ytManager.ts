@@ -187,7 +187,7 @@ class YTManager extends EventEmitter {
                     const retryResponse = await requestFn();
                     if (retryResponse.status === 204) {
                         console.log(`[YTManager] ${endpoint || 'Request'} retry returned 204 No Content`);
-                        return null;
+                        return true as unknown as T;
                     }
                     return retryResponse.data;
                 } catch (retryError: any) {
@@ -450,16 +450,14 @@ class YTManager extends EventEmitter {
         );
     }
     async addItemToQueueById(videoId: string): Promise<boolean> {
-        try {
-            await this.makeAuthenticatedRequest<songData>(() =>
-                this.instance.post(`/queue`, JSON.stringify({ videoId: videoId, insertPosition: "INSERT_AFTER_CURRENT_VIDEO" }), {
-                    headers: { 'Authorization': `Bearer ${this.token}`, 'Content-Type': 'application/json' }
-                }), `/queue/${videoId}`
-            );
-            return true;
-        } catch {
-            return false;
-        }
+        // makeAuthenticatedRequest swallows request failures and returns null,
+        // so treat a null/undefined result as a rejected insert rather than success.
+        const result = await this.makeAuthenticatedRequest<songData>(() =>
+            this.instance.post(`/queue`, JSON.stringify({ videoId: videoId, insertPosition: "INSERT_AFTER_CURRENT_VIDEO" }), {
+                headers: { 'Authorization': `Bearer ${this.token}`, 'Content-Type': 'application/json' }
+            }), `/queue/${videoId}`
+        );
+        return result !== null && result !== undefined;
     }
 
     /** Fetch title + author for a video ID via YouTube's public oEmbed API (no auth needed). */
@@ -472,6 +470,42 @@ class YTManager extends EventEmitter {
             }
         } catch {
             // private/unavailable video — fall through
+        }
+        return null;
+    }
+
+    /**
+     * Search YouTube Music (via Pear's API server) for a free-text query and
+     * return the first matching video ID, or null if nothing was found.
+     */
+    async searchVideoId(query: string): Promise<string | null> {
+        const trimmed = query.trim();
+        if (!trimmed) return null;
+        try {
+            const data = await this.makeAuthenticatedRequest<any>(() =>
+                this.instance.post(`/search`, JSON.stringify({ query: trimmed }), {
+                    headers: { 'Authorization': `Bearer ${this.token}`, 'Content-Type': 'application/json' }
+                }), `/search`
+            );
+            if (!data) return null;
+            return YTManager.findFirstVideoId(data);
+        } catch {
+            return null;
+        }
+    }
+
+    /**
+     * Walk an arbitrary YouTube Music search response (shape varies by Pear
+     * version) and return the first 11-character videoId found, depth-first.
+     */
+    private static findFirstVideoId(node: any): string | null {
+        if (!node || typeof node !== 'object') return null;
+        if (typeof node.videoId === 'string' && /^[A-Za-z0-9_-]{11}$/.test(node.videoId)) {
+            return node.videoId;
+        }
+        for (const key of Object.keys(node)) {
+            const found = YTManager.findFirstVideoId(node[key]);
+            if (found) return found;
         }
         return null;
     }
