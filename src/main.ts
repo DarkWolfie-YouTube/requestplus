@@ -278,6 +278,23 @@ function normalizeQueueText(value: string | null | undefined): string {
         .replace(/\s+/g, ' ');
 }
 
+// YouTube Music labels its auto-generated audio uploads with a "- Topic" artist
+// suffix; strip it so "The Butcher Sisters - Topic" matches "The Butcher Sisters".
+function stripTopicSuffix(value: string): string {
+    return value.replace(/\s*-\s*topic$/, '').trim();
+}
+
+// Drop decoration noise ("(Offizielles Musikvideo)", "[Official Video]", etc.)
+// and punctuation so a requested music-video title can be compared against the
+// cleaned-up title YouTube Music reports for the same song.
+function stripTitleDecorations(value: string): string {
+    return value
+        .replace(/[([{][^)\]}]*[)\]}]/g, ' ')
+        .replace(/\b(official|offiziell|offizielles|music|musikvideo|video|audio|lyric|lyrics|visualizer|hd|hq|4k|mv)\b/g, ' ')
+        .replace(/[^a-z0-9]+/g, ' ')
+        .trim();
+}
+
 function queueItemMatchesTrack(item: QueueItem, trackData: TrackData, trackId: string): boolean {
     const queueTrackId = normalizeTrackIdForQueueMatch(getQueueItemTrackId(item));
     if (queueTrackId && trackId && queueTrackId === trackId) {
@@ -293,7 +310,43 @@ function queueItemMatchesTrack(item: QueueItem, trackData: TrackData, trackId: s
     const trackTitle = normalizeQueueText(trackData.title || trackData.name);
     const trackArtist = normalizeQueueText(trackData.artist || trackData.artistName || (trackData as any).artist_name);
 
-    return Boolean(itemTitle && itemArtist && itemTitle === trackTitle && itemArtist === trackArtist);
+    if (itemTitle && itemArtist && itemTitle === trackTitle && itemArtist === trackArtist) {
+        return true;
+    }
+
+    // YouTube Music swaps a requested "official video" for its own "- Topic"
+    // upload, which carries a DIFFERENT videoId and a cleaned-up title/artist.
+    // Without this lenient fallback the playing track never maps back to the
+    // queued request, so it's never marked playing or removed and the queue
+    // fills up with stuck "Queued" entries.
+    if (item.platform === 'youtube') {
+        const qTitle = stripTitleDecorations(itemTitle);
+        const tTitle = stripTitleDecorations(trackTitle);
+        const qArtist = stripTopicSuffix(itemArtist);
+        const tArtist = stripTopicSuffix(trackArtist);
+
+        const artistMatches = Boolean(qArtist && tArtist &&
+            (qArtist === tArtist || qArtist.includes(tArtist) || tArtist.includes(qArtist)));
+
+        // Compare titles by tokens: every word of the shorter title must appear
+        // in the longer one (so "Party Sahne" matches "Ski Aggu - Party Sahne
+        // (prod. ...)"). oEmbed reports the uploader's channel handle as the
+        // "artist" (e.g. "aggu31"), which almost never equals YTM's real artist
+        // field — so a solid title match alone counts; the artist match only
+        // serves to let very short titles through.
+        const qTokens = qTitle.split(' ').filter(Boolean);
+        const tTokens = tTitle.split(' ').filter(Boolean);
+        const [fewTokens, manyTokens] = qTokens.length <= tTokens.length ? [qTokens, tTokens] : [tTokens, qTokens];
+        const manySet = new Set(manyTokens);
+        const titleTokensMatch = fewTokens.length > 0 && fewTokens.every(tok => manySet.has(tok));
+        const shorterTitleLen = fewTokens.join('').length;
+
+        if (titleTokensMatch && (shorterTitleLen >= 6 || artistMatches)) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 function getTrackIdFromTrackData(trackData: TrackData): string | null {
@@ -355,7 +408,11 @@ async function monitorTrackProgress(trackData: songInfo): Promise<void> {
 
     if (currentTrackId !== trackId) {
         currentTrackId = trackId;
-        currentTrackId2 = null;
+        // Note: we deliberately do NOT reset currentTrackId2 here. YouTube Music
+        // sometimes swaps a song's videoId mid-playback (official video → "- Topic"
+        // audio), which counts as a new track. Keeping currentTrackId2 lets the
+        // "already handled" guard in checkCurrentlyPlayingTrack suppress a second
+        // "Now Playing" toast for the same queued item across that swap.
         autoQueueTriggered = false;
         lastTrackProgress = progress;
         Logger.info(`New track detected: ${trackId}`);
@@ -389,7 +446,14 @@ async function autoQueueNextTrack(): Promise<void> {
         return;
     }
 
-    const nextTrack = queue.items[0];
+    // Pick the first request that hasn't already been handed to the player and
+    // isn't the track currently playing. Taking items[0] blindly re-queued a
+    // song that was already on its way, so it got added — and played — twice.
+    const nextTrack = queueHandler.getNextTrackToQueue();
+    if (!nextTrack) {
+        Logger.info('No un-queued tracks left to auto-add');
+        return;
+    }
 
     try {
         if (settings.platform === 'spotify') {
@@ -424,7 +488,7 @@ async function autoQueueNextTrack(): Promise<void> {
             4000
         );
 
-        await queueHandler.setTrackAsQueued(0);
+        await queueHandler.setTrackAsQueued(queueHandler.findTrackById(nextTrack.id));
 
     } catch (error) {
         Logger.error('Error auto-queueing track:', error);
@@ -481,27 +545,29 @@ async function checkCurrentlyPlayingTrack(trackData: TrackData): Promise<void> {
         }
 
         Logger.info(`Currently playing track matches queue item at index ${matchingTrackIndex}`);
-        if (matchingTrackIndex !== 0) {
-          Logger.info('Song is not at the top of the queue. Stopping.') 
-          return; 
-        }
-        
-        await queueHandler.setCurrentlyPlaying(matchingTrackIndex);
-        
+
+        // Claim this track synchronously, before any await, so the WS ticks that
+        // fire while setCurrentlyPlaying() is pending don't all pass the guard
+        // above and show the "Now Playing" toast three or four times.
+        currentTrackId2 = matchingQueueItemId;
+
         const track = queue.items[matchingTrackIndex];
+        await queueHandler.setCurrentlyPlaying(matchingTrackIndex);
+
         sendToast(
             `Now Playing from Queue: ${track.title}`,
             'success',
             3000
         );
         Logger.info(`Now playing from queue: ${track.title} by ${track.artist}`);
-        
-        currentTrackId2 = matchingQueueItemId;
 
+        // Drop it from the pending queue shortly after it starts playing. The
+        // long 10s delay made finished songs look like they were "stuck" in the
+        // queue; a short grace still lets the "Now Playing" highlight register.
         setTimeout(async () => {
             await queueHandler.removeFromQueueById(matchingQueueItemId);
             Logger.info(`Removed played track from queue: ${track.title}`);
-        }, 10000);
+        }, 2500);
     }
 }
 
@@ -901,16 +967,23 @@ ipcMain.handle('song-skip', async (): Promise<void> => {
         WSServer.WSSendToType({ command: 'Next' } as WSCommand, 'spotify');
     } else if (platform === 'youtube' && ytManager) {
         // Push the next queued request into Pear before skipping so it plays immediately.
-        // Exclude the track that's currently playing — otherwise skip would re-add and
-        // replay the same song from the start.
+        // Take the next item in queue order (skip only the track playing right now);
+        // if it was already handed to Pear we just advance, otherwise we feed it first.
+        // Re-feeding an already-queued track would add a duplicate and replay it later.
         if (queueHandler) {
             const nextTrack = queueHandler.getQueue().items.find(
-                item => !item.isQueued && item.id !== currentTrackId2
+                item => item.id !== currentTrackId2 && !item.iscurrentlyPlaying
             );
-            if (nextTrack) {
+            if (nextTrack && !nextTrack.isQueued) {
                 const queued = await ytManager.addItemToQueueById(getQueueItemTrackId(nextTrack));
                 if (queued) {
-                    await queueHandler.setTrackAsQueued(queueHandler.getQueue().items.indexOf(nextTrack));
+                    await queueHandler.setTrackAsQueued(queueHandler.findTrackById(nextTrack.id));
+                    Logger.info(`Skip: fed "${nextTrack.title}" to the player before advancing`);
+                    // Pear/YTM returns 200 from POST /queue before it actually applies
+                    // the insert. Without this pause, the next() below fires against the
+                    // OLD up-next (YouTube Music autoplay/radio), so the radio song plays
+                    // and our request only lands afterwards. Give the insert time to take.
+                    await wait(1200);
                 }
             }
         }
@@ -922,9 +995,46 @@ ipcMain.handle('song-skip', async (): Promise<void> => {
     }
 });
 
-ipcMain.handle('play-track-at-index', async (event: Electron.IpcMainInvokeEvent, index: number): Promise<void> => {
-    const platform = settings.platform
-    autoQueueNextTrack();
+ipcMain.handle('play-track-at-index', async (event: Electron.IpcMainInvokeEvent, index: number): Promise<boolean> => {
+    if (!queueHandler) return false;
+
+    const queue = queueHandler.getQueue();
+    if (index < 0 || index >= queue.items.length) {
+        Logger.warn(`play-track-at-index: invalid index ${index}`);
+        return false;
+    }
+
+    const track = queue.items[index];
+
+    // Don't re-feed a track that's already playing or already handed to the
+    // player — clicking it again would add a duplicate to the playlist.
+    if (track.iscurrentlyPlaying || track.isQueued) {
+        Logger.info(`play-track-at-index: ${track.title} is already ${track.iscurrentlyPlaying ? 'playing' : 'queued'}; ignoring`);
+        return true;
+    }
+
+    const platform = settings.platform;
+    try {
+        if (platform === 'youtube' && ytManager) {
+            const queued = await ytManager.addItemToQueueById(getQueueItemTrackId(track));
+            if (!queued) return false;
+        } else if (platform === 'spotify' && WSServer) {
+            WSServer.WSSendToType({ command: 'addTrack', data: { uri: `spotify:track:${getQueueItemTrackId(track)}` } } as WSCommand, 'spotify');
+        } else if (platform === 'apple' && amHandler) {
+            await amHandler.queueTrack(getQueueItemTrackId(track));
+        } else if (platform === 'soundcloud' && WSServer) {
+            WSServer.WSSendToType({ command: 'addTrack', data: { url: getQueueItemTrackId(track), forcePlay: true } } as WSCommand, 'soundcloud');
+        } else {
+            return false;
+        }
+
+        await queueHandler.setTrackAsQueued(index);
+        Logger.info(`play-track-at-index: queued ${track.title} by ${track.artist}`);
+        return true;
+    } catch (error) {
+        Logger.error('play-track-at-index: failed to queue track', error);
+        return false;
+    }
 });
 
 ipcMain.handle('song-previous', async (): Promise<void> => {
