@@ -341,7 +341,13 @@ function queueItemMatchesTrack(item: QueueItem, trackData: TrackData, trackId: s
         const titleTokensMatch = fewTokens.length > 0 && fewTokens.every(tok => manySet.has(tok));
         const shorterTitleLen = fewTokens.join('').length;
 
-        if (titleTokensMatch && (shorterTitleLen >= 6 || artistMatches)) {
+        // A single shared title word (e.g. "Perfect", "Holiday") is too weak to
+        // claim a queue item on its own — two unrelated songs could share it. So
+        // a multi-word title can match on title alone, but a single-word title
+        // additionally needs a corroborating artist match.
+        const multiWordTitle = fewTokens.length >= 2 && shorterTitleLen >= 6;
+
+        if (titleTokensMatch && (multiWordTitle || artistMatches)) {
             return true;
         }
     }
@@ -539,7 +545,16 @@ async function checkCurrentlyPlayingTrack(trackData: TrackData): Promise<void> {
         const duration = trackData.duration || 0;
         const restartWindow = Math.min(15000, Math.max(3000, duration * 0.25));
 
-        if (currentTrackId === normalizedTrackId && currentTrackId2 && progress > restartWindow) {
+        // Only defer if the track we already claimed is the one actually playing
+        // right now (same song, well past its start). currentTrackId2 is no longer
+        // reset on every videoId change, so without this check a genuinely new
+        // queued song that's first seen mid-progress would be wrongly suppressed
+        // and left stuck as "Queued".
+        const claimedItem = currentTrackId2 ? queue.items.find(it => it.id === currentTrackId2) : undefined;
+        const claimedTrackIsPlaying = Boolean(claimedItem &&
+            normalizeTrackIdForQueueMatch(getQueueItemTrackId(claimedItem)) === normalizedTrackId);
+
+        if (claimedTrackIsPlaying && progress > restartWindow) {
             Logger.info(`Same track is still playing for ${currentTrackId2}; waiting before handling ${matchingQueueItemId}`);
             return;
         }
@@ -1005,6 +1020,7 @@ ipcMain.handle('play-track-at-index', async (event: Electron.IpcMainInvokeEvent,
     }
 
     const track = queue.items[index];
+    const trackId = track.id;
 
     // Don't re-feed a track that's already playing or already handed to the
     // player — clicking it again would add a duplicate to the playlist.
@@ -1028,7 +1044,15 @@ ipcMain.handle('play-track-at-index', async (event: Electron.IpcMainInvokeEvent,
             return false;
         }
 
-        await queueHandler.setTrackAsQueued(index);
+        // The queue may have been spliced (e.g. a delayed removeFromQueueById)
+        // while we awaited the player call, so re-locate by ID before marking.
+        const currentIndex = queueHandler.findTrackById(trackId);
+        if (currentIndex === -1) {
+            Logger.warn(`play-track-at-index: track disappeared before it could be marked queued: ${track.title}`);
+            return false;
+        }
+
+        await queueHandler.setTrackAsQueued(currentIndex);
         Logger.info(`play-track-at-index: queued ${track.title} by ${track.artist}`);
         return true;
     } catch (error) {
