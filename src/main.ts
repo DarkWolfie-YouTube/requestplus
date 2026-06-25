@@ -545,6 +545,14 @@ async function checkCurrentlyPlayingTrack(trackData: TrackData): Promise<void> {
         if (currentTrackId2 === matchingQueueItemId) {
             return;
         }
+        // currentTrackId2 can be cleared spuriously — e.g. the progress-rewind
+        // guard firing when YouTube Music swaps a song's videoId mid-play (MV ->
+        // "- Topic"). If this item is already flagged as playing, just re-sync the
+        // claim instead of toasting and scheduling its removal a second time.
+        if (queue.items[matchingTrackIndex].iscurrentlyPlaying) {
+            currentTrackId2 = matchingQueueItemId;
+            return;
+        }
         const progress = trackData.progress || 0;
         const duration = trackData.duration || 0;
         const restartWindow = Math.min(15000, Math.max(3000, duration * 0.25));
@@ -985,25 +993,28 @@ ipcMain.handle('song-skip', async (): Promise<void> => {
     if (platform === 'spotify' && WSServer) {
         WSServer.WSSendToType({ command: 'Next' } as WSCommand, 'spotify');
     } else if (platform === 'youtube' && ytManager) {
-        // Push the next queued request into Pear before skipping so it plays immediately.
-        // Take the next item in queue order (skip only the track playing right now);
-        // if it was already handed to Pear we just advance, otherwise we feed it first.
-        // Re-feeding an already-queued track would add a duplicate and replay it later.
+        // Advance to the next request in queue order (skip only the track playing
+        // right now). A hard next() jumps straight to YouTube Music's autoplay
+        // up-next, which wins the race against our freshly-inserted song. So feed
+        // the request, then actively wait until Pear's queue actually shows it as
+        // the track right after the current one before calling next(). POST /queue
+        // returns before YTM applies the insert, so polling the queue (instead of
+        // a blind delay) makes next() reliably land on our request.
         if (queueHandler) {
             const nextTrack = queueHandler.getQueue().items.find(
                 item => item.id !== currentTrackId2 && !item.iscurrentlyPlaying
             );
-            if (nextTrack && !nextTrack.isQueued) {
-                const queued = await ytManager.addItemToQueueById(getQueueItemTrackId(nextTrack));
-                if (queued) {
-                    await queueHandler.setTrackAsQueued(queueHandler.findTrackById(nextTrack.id));
-                    Logger.info(`Skip: fed "${nextTrack.title}" to the player before advancing`);
-                    // Pear/YTM returns 200 from POST /queue before it actually applies
-                    // the insert. Without this pause, the next() below fires against the
-                    // OLD up-next (YouTube Music autoplay/radio), so the radio song plays
-                    // and our request only lands afterwards. Give the insert time to take.
-                    await wait(1200);
+            if (nextTrack) {
+                const videoId = getQueueItemTrackId(nextTrack);
+                if (!nextTrack.isQueued) {
+                    const queued = await ytManager.addItemToQueueById(videoId);
+                    if (queued) {
+                        await queueHandler.setTrackAsQueued(queueHandler.findTrackById(nextTrack.id));
+                        Logger.info(`Skip: fed "${nextTrack.title}" to the player`);
+                    }
                 }
+                const ready = await ytManager.waitUntilQueuedNext(videoId, 5000);
+                Logger.info(`Skip: "${nextTrack.title}" ${ready ? 'is now the next track in Pear' : 'did not become next within timeout; advancing anyway'}`);
             }
         }
         await ytManager.next();
