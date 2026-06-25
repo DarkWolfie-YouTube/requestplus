@@ -462,32 +462,36 @@ async function autoQueueNextTrack(): Promise<void> {
     }
 
     try {
-        if (settings.platform === 'spotify') {
-            if (nextTrack.platform === 'spotify') {
-                WSServer.WSSendToType({
-                    command: 'addTrack',
-                    data: { uri: `spotify:track:${getQueueItemTrackId(nextTrack)}` }
-                }, 'spotify');
-            }
-        } else if (settings.platform === 'apple') {
-            if (nextTrack.platform === 'apple') {
-                amHandler.queueTrack(getQueueItemTrackId(nextTrack));
-            }
-        } else if (settings.platform === 'youtube' && ytManager) {
-            if (nextTrack.platform === 'youtube') {
-                await ytManager.addItemToQueueById(getQueueItemTrackId(nextTrack));
-            }
-        } else if (settings.platform === 'soundcloud') {
-            if (nextTrack.platform === 'soundcloud') {
-                WSServer.WSSendToType({
-                    command: 'addTrack',
-                    data: { url: getQueueItemTrackId(nextTrack), forcePlay: true }
-                } as WSCommand, 'soundcloud');
-            }
+        // Only mark the request as queued once it was actually handed to the
+        // player. Marking on failure (or when no platform branch matched) would
+        // leave it stuck on the "Queued" badge while it never reaches playback.
+        let dispatched = false;
+        if (settings.platform === 'spotify' && nextTrack.platform === 'spotify') {
+            WSServer.WSSendToType({
+                command: 'addTrack',
+                data: { uri: `spotify:track:${getQueueItemTrackId(nextTrack)}` }
+            }, 'spotify');
+            dispatched = true;
+        } else if (settings.platform === 'apple' && nextTrack.platform === 'apple') {
+            await amHandler.queueTrack(getQueueItemTrackId(nextTrack));
+            dispatched = true;
+        } else if (settings.platform === 'youtube' && ytManager && nextTrack.platform === 'youtube') {
+            dispatched = await ytManager.addItemToQueueById(getQueueItemTrackId(nextTrack));
+        } else if (settings.platform === 'soundcloud' && nextTrack.platform === 'soundcloud') {
+            WSServer.WSSendToType({
+                command: 'addTrack',
+                data: { url: getQueueItemTrackId(nextTrack), forcePlay: true }
+            } as WSCommand, 'soundcloud');
+            dispatched = true;
+        }
+
+        if (!dispatched) {
+            Logger.warn(`Auto-queue: could not hand "${nextTrack.title}" to the player; leaving it pending`);
+            return;
         }
 
         Logger.info(`Auto-queued track: ${nextTrack.title} by ${nextTrack.artist}`);
-        
+
         sendToast(
             `Auto-queued: ${nextTrack.title} by ${nextTrack.artist}`,
             'info',
