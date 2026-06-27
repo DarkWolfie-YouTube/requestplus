@@ -245,7 +245,7 @@ let soundCloudQueueTimer: NodeJS.Timeout | null = null;
 let windowHandler: WindowHandler | null = null;
 let isCreatingMainWindow = false;
 let oobeAuthListenersRegistered = false;
-let pendingMainWindowAfterWebSocket = false;
+let revealMainWindowAfterCloudAuth = false;
 
 function getQueueItemTrackId(item: QueueItem): string {
     const requestedBySuffix = `-${item.requestedBy}`;
@@ -647,9 +647,17 @@ async function ensureOverlayFile(): Promise<string> {
     return targetPath;
 }
 
-async function createWindow(): Promise<void> {
+async function checkHardwareBanStatus(): Promise<void> {
+    await authManager.ready();
+
+    const hardwareInfo = authManager.getHardwareInfoPublic();
+    if (!hardwareInfo?.deviceId) {
+        Logger?.warn('[Main] Skipping hardware ban check because device ID is unavailable.');
+        return;
+    }
+
     const customSession = session.fromPartition('persist:api-session', { cache: false });
-    
+
     customSession.setCertificateVerifyProc((request, callback) => {
         if (request.hostname === 'api.requestplus.xyz') {
             callback(0); // 0 = success, bypass verification
@@ -657,35 +665,55 @@ async function createWindow(): Promise<void> {
             callback(-3); // -3 = use default verification
         }
     });
-    const request = net.request({
-        method: 'GET',
-        url: 'https://api.requestplus.xyz/hardware/check?id=' + authManager.getHardwareInfoPublic()?.deviceId,
-        session: customSession
-    });
 
-    request.on('response', (response) => {
-        let body = '';
-        response.on('data', (chunk) => { body += chunk; });
-        response.on('end', () => {
-            try {
-                const data = JSON.parse(body);
-                if (data.banned) app.quit();
-            } catch (e) {
-                if (Logger) Logger.error('Error parsing response:', e);
-                app.quit();
-            }
+    await new Promise<void>((resolve) => {
+        let settled = false;
+        const finish = () => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timeout);
+            resolve();
+        };
+        const timeout = setTimeout(() => {
+            Logger?.warn('[Main] Hardware ban check timed out; continuing startup.');
+            request.abort();
+            finish();
+        }, 5000);
+        const request = net.request({
+            method: 'GET',
+            url: 'https://api.requestplus.xyz/hardware/check?id=' + encodeURIComponent(hardwareInfo.deviceId),
+            session: customSession
         });
-    });
 
-    request.on('error', (error) => {
-        if (Logger) Logger.error('Error checking hardware ban status:', error);
-        app.quit();
-    });
+        request.on('response', (response) => {
+            let body = '';
+            response.on('data', (chunk) => { body += chunk; });
+            response.on('end', () => {
+                try {
+                    const data = JSON.parse(body);
+                    if (data.banned) app.quit();
+                } catch (e) {
+                    Logger?.error('[Main] Error parsing hardware ban response:', e);
+                } finally {
+                    finish();
+                }
+            });
+        });
 
-    request.end();
+        request.on('error', (error) => {
+            Logger?.error('[Main] Error checking hardware ban status:', error);
+            finish();
+        });
+
+        request.end();
+    });
+}
+
+async function createWindow(): Promise<void> {
     if (isCreatingMainWindow) return;
     isCreatingMainWindow = true;
     try {
+    await checkHardwareBanStatus();
     const currentSettings = settingsHandler.load();
     if (currentSettings.oobeCompleted !== true) {
         createStartupOobeWindow();
@@ -695,20 +723,9 @@ async function createWindow(): Promise<void> {
     if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.setMinimumSize(400, 800);
         mainWindow.setSize(400, 800);
-        mainWindow.show();
-        mainWindow.focus();
+        revealMainWindowWhenCloudAuthenticated();
         return;
     }
-
-    const apiConnected = await ensureApiWebSocketConnected();
-    if (!apiConnected) {
-        const token = await authManager.getValidAuthToken();
-        if (!token) {
-            createStartupOobeWindow();
-        }
-        return;
-    }
-    
 
     await ensureOverlayFile();
 
@@ -730,6 +747,7 @@ async function createWindow(): Promise<void> {
         titleBarStyle: 'hidden',
         titleBarOverlay: false,
         resizable: false,
+        show: false,
         icon: path.join(__dirname, 'assets', 'the_letter.png'),
     });
     
@@ -756,7 +774,7 @@ async function createWindow(): Promise<void> {
     queueHandler = new QueueHandler(Logger, mainWindow, settings);
 
         
-    if (!WSServer && !(global as any).ISAUTHING) {
+    if (!WSServer) {
         WSServer = new websocket(443, mainWindow, Logger);
     }
     
@@ -780,21 +798,27 @@ async function createWindow(): Promise<void> {
         playbackHandler = new PlaybackHandler(settings.platform, WSServer, Logger, ytManager, amHandler);
     }
     
-    const token = await authManager.getValidAuthToken();
-    const hardwareInfo = authManager.getHardwareInfoPublic();
-    
-    if (token && hardwareInfo) {
-      websocketManager.connect(token.token, hardwareInfo.deviceId);
-      scheduleTokenRefresh(token.expiresAt);
-    }
-
-  if (!apiHandler && !(global as any).ISAUTHING) {
+  if (!apiHandler) {
         apiHandler = new APIHandler(mainWindow, playbackHandler, Logger, settings);
     }
     
 
     if (!gtsHandler) {
         gtsHandler = new GTSHandler(app, mainWindow, apiHandler, playbackHandler, Logger, settings);
+    }
+
+    const token = await authManager.getValidAuthToken();
+    const hardwareInfo = authManager.getHardwareInfoPublic();
+
+    if (token && hardwareInfo) {
+      revealMainWindowAfterCloudAuth = true;
+      websocketManager.connect(token.token, hardwareInfo.deviceId).catch((error) => {
+        Logger?.warn('[Main] Cloud websocket connection failed after local startup; reconnect will continue in the background:', error);
+      });
+      scheduleTokenRefresh(token.expiresAt);
+      revealMainWindowWhenCloudAuthenticated();
+    } else {
+      Logger?.info('[Main] No auth token available; local API server is running without cloud websocket.');
     }
     
     updateIntervalForSongInfo();
@@ -812,8 +836,7 @@ async function createWindow(): Promise<void> {
             {
                 label: 'Show Request+',
                 click: () => {
-                    mainWindow?.show();
-                    mainWindow?.focus();
+                    revealMainWindowWhenCloudAuthenticated();
                 }
             },
             { type: 'separator' },
@@ -834,7 +857,7 @@ async function createWindow(): Promise<void> {
             if (mainWindow?.isVisible()) {
                 mainWindow.focus();
             } else {
-                mainWindow?.show();
+                revealMainWindowWhenCloudAuthenticated();
             }
         });
     } catch (error) {
@@ -853,30 +876,6 @@ async function createWindow(): Promise<void> {
     }
 }
 
-async function ensureApiWebSocketConnected(): Promise<boolean> {
-    if (websocketManager.isAuthenticated()) {
-        return true;
-    }
-
-    await authManager.ready();
-    const token = await authManager.getValidAuthToken();
-    const hardwareInfo = authManager.getHardwareInfoPublic();
-
-    if (!token || !hardwareInfo) {
-        return false;
-    }
-
-    try {
-        await websocketManager.connect(token.token, hardwareInfo.deviceId);
-        scheduleTokenRefresh(token.expiresAt);
-        return websocketManager.isAuthenticated();
-    } catch (error) {
-        Logger?.error('[Main] API websocket connection failed before window creation:', error);
-        pendingMainWindowAfterWebSocket = true;
-        return false;
-    }
-}
-
 function createStartupOobeWindow(): BrowserWindow {
     if (!windowHandler) {
         windowHandler = new WindowHandler(app.getPath('userData'), async () => {
@@ -892,6 +891,24 @@ function createStartupOobeWindow(): BrowserWindow {
     }
 
     return oobeWindow;
+}
+
+function revealMainWindowWhenCloudAuthenticated(): boolean {
+    if (!mainWindow || mainWindow.isDestroyed()) {
+        return false;
+    }
+
+    if (!websocketManager.isAuthenticated()) {
+        revealMainWindowAfterCloudAuth = true;
+        mainWindow.hide();
+        Logger?.info('[Main] Main window reveal deferred until cloud websocket authentication completes.');
+        return false;
+    }
+
+    revealMainWindowAfterCloudAuth = false;
+    mainWindow.show();
+    mainWindow.focus();
+    return true;
 }
 
 function applySettingsToRuntime(updatedSettings: Settings): void {
@@ -1456,7 +1473,10 @@ authManager.on('auth-success', async (token) => {
   (global as any).Logger.info('[Main] Auth success, connecting WebSocket...');
   const hardwareInfo = authManager.getHardwareInfoPublic();
   if (hardwareInfo) {
-    websocketManager.connect(token.token, hardwareInfo.deviceId);
+    revealMainWindowAfterCloudAuth = true;
+    websocketManager.connect(token.token, hardwareInfo.deviceId).catch((error) => {
+      Logger?.warn('[Main] Cloud websocket connection failed after auth success; reconnect will continue in the background:', error);
+    });
   }
   scheduleTokenRefresh(token.expiresAt);
   const isExperimentalUser = await authManager.checkExperimentalUser();
@@ -1497,14 +1517,13 @@ authManager.on('auth-refreshed', (token) => {
 authManager.on('auth-logout', () => {
   console.log('[Main] Auth logout, disconnecting WebSocket...');
   websocketManager.disconnect();
+  mainWindow?.hide();
 });
 
 websocketManager.on('authenticated', () => {
-    if (!pendingMainWindowAfterWebSocket) return;
-    pendingMainWindowAfterWebSocket = false;
-    void createWindow();
+    if (!revealMainWindowAfterCloudAuth) return;
+    revealMainWindowWhenCloudAuthenticated();
 });
-
 
 websocketManager.on('notification', (message) => {
     if (!mainWindow || mainWindow.isDestroyed()) {
