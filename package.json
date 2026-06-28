@@ -90,5 +90,12 @@
   },
   "overrides": {
     "@electron/rebuild": "^4.0.4"
+  },
+  "allowScripts": {
+    "bufferutil@4.1.0": true,
+    "electron@37.3.1": true,
+    "electron-winstaller@5.4.0": true,
+    "esbuild@0.25.12": true,
+    "utf-8-validate@6.0.6": true
   }
 }

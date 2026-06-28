@@ -460,6 +460,54 @@ class YTManager extends EventEmitter {
         return result !== null && result !== undefined;
     }
 
+    /** Pull the per-item renderer out of YTM's nested queue item shape. */
+    private static queueItemRenderer(item: any): any {
+        return item?.playlistPanelVideoRenderer
+            ?? item?.playlistPanelVideoWrapperRenderer?.primaryRenderer?.playlistPanelVideoRenderer
+            ?? null;
+    }
+
+    /**
+     * Read Pear's live play queue. Returns the ordered videoIds and the index of
+     * the track currently playing (the one flagged `selected`), or null on error.
+     */
+    async getQueueState(): Promise<{ selectedIndex: number; videoIds: string[] } | null> {
+        const data = await this.makeAuthenticatedRequest<any>(() =>
+            this.instance.get('/queue', {
+                headers: { 'Authorization': `Bearer ${this.token}` }
+            }), '/queue'
+        );
+        if (!data || !Array.isArray(data.items)) return null;
+
+        const videoIds: string[] = [];
+        let selectedIndex = -1;
+        data.items.forEach((item: any, i: number) => {
+            const renderer = YTManager.queueItemRenderer(item);
+            videoIds.push(renderer?.videoId ?? '');
+            if (renderer?.selected) selectedIndex = i;
+        });
+        return { selectedIndex, videoIds };
+    }
+
+    /**
+     * Poll the queue until `videoId` sits immediately after the currently playing
+     * track. POST /queue returns 200 before YTM actually applies the insert, so
+     * waiting for the queue to reflect it (instead of a blind delay) lets a
+     * following next() reliably land on our request rather than YTM autoplay.
+     * Returns true once confirmed, false if it didn't appear within the timeout.
+     */
+    async waitUntilQueuedNext(videoId: string, timeoutMs = 5000): Promise<boolean> {
+        const start = Date.now();
+        while (Date.now() - start < timeoutMs) {
+            const state = await this.getQueueState();
+            if (state && state.selectedIndex >= 0 && state.videoIds[state.selectedIndex + 1] === videoId) {
+                return true;
+            }
+            await new Promise(resolve => setTimeout(resolve, 300));
+        }
+        return false;
+    }
+
     /** Fetch title + author for a video ID via YouTube's public oEmbed API (no auth needed). */
     async getSongTitle(videoId: string): Promise<{ title: string; author: string } | null> {
         try {
