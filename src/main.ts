@@ -1017,6 +1017,7 @@ ipcMain.handle('song-skip', async (): Promise<void> => {
         // the track right after the current one before calling next(). POST /queue
         // returns before YTM applies the insert, so polling the queue (instead of
         // a blind delay) makes next() reliably land on our request.
+        let advanceToNext = true; // empty queue: let YouTube Music advance normally
         if (queueHandler) {
             const nextTrack = queueHandler.getQueue().items.find(
                 item => item.id !== currentTrackId2 && !item.iscurrentlyPlaying
@@ -1030,11 +1031,22 @@ ipcMain.handle('song-skip', async (): Promise<void> => {
                         Logger.info(`Skip: fed "${nextTrack.title}" to the player`);
                     }
                 }
-                const ready = await ytManager.waitUntilQueuedNext(videoId, 5000);
-                Logger.info(`Skip: "${nextTrack.title}" ${ready ? 'is now the next track in Pear' : 'did not become next within timeout; advancing anyway'}`);
+                let ready = await ytManager.waitUntilQueuedNext(videoId, 5000);
+                if (!ready) {
+                    // The first insert may not have landed; re-feed once and re-check.
+                    await ytManager.addItemToQueueById(videoId);
+                    ready = await ytManager.waitUntilQueuedNext(videoId, 3000);
+                }
+                // Only advance once our request is actually next. A blind next() on
+                // timeout can fall through to YouTube Music's autoplay/radio — the very
+                // race this guards against — so skip next() and let the user retry.
+                advanceToNext = ready;
+                Logger.info(`Skip: "${nextTrack.title}" ${ready ? 'is now the next track in Pear' : 'did not become next within timeout; not advancing (would risk YouTube radio)'}`);
             }
         }
-        await ytManager.next();
+        if (advanceToNext) {
+            await ytManager.next();
+        }
     } else if (platform === 'apple' && amHandler) {
         await amHandler.nextTrack();
     } else if (platform === 'soundcloud' && WSServer) {
