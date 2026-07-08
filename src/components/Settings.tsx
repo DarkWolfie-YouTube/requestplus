@@ -535,7 +535,7 @@ export function Settings({
               <div className="space-y-3 p-3 bg-slate-900/30 rounded-lg">
                 <div className="flex items-center justify-between gap-4">
                   <div className="space-y-0.5">
-                    <Label className="text-white">{t('CLIENT_LIMIT_PER_USER', locale)}</Label>
+                    <Label className="text-white">ahthth{t('test', locale)}</Label>
                     <p className="text-xs text-gray-400">
                       {t('CLIENT_LIMIT_PER_USER_DESC', locale)}
                     </p>

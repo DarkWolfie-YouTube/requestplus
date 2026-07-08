@@ -656,16 +656,6 @@ async function checkHardwareBanStatus(): Promise<void> {
         return;
     }
 
-    const customSession = session.fromPartition('persist:api-session', { cache: false });
-
-    customSession.setCertificateVerifyProc((request, callback) => {
-        if (request.hostname === 'api.requestplus.xyz') {
-            callback(0); // 0 = success, bypass verification
-        } else {
-            callback(-3); // -3 = use default verification
-        }
-    });
-
     await new Promise<void>((resolve) => {
         let settled = false;
         const finish = () => {
@@ -681,8 +671,7 @@ async function checkHardwareBanStatus(): Promise<void> {
         }, 5000);
         const request = net.request({
             method: 'GET',
-            url: 'https://api.requestplus.xyz/hardware/check?id=' + encodeURIComponent(hardwareInfo.deviceId),
-            session: customSession
+            url: 'https://api.requestplus.xyz/hardware/check?id=' + encodeURIComponent(hardwareInfo.deviceId)
         });
 
         request.on('response', (response) => {
@@ -898,7 +887,7 @@ function revealMainWindowWhenCloudAuthenticated(): boolean {
         return false;
     }
 
-    if (!websocketManager.isAuthenticated()) {
+    if (revealMainWindowAfterCloudAuth && !websocketManager.isAuthenticated()) {
         revealMainWindowAfterCloudAuth = true;
         mainWindow.hide();
         Logger?.info('[Main] Main window reveal deferred until cloud websocket authentication completes.');
