@@ -209,9 +209,12 @@ class YTManager extends EventEmitter {
         }
 
         try {
-            this.ws = new WebSocket(this.wsBaseUrl, {
-                headers: { 'Authorization': `Bearer ${this.token}` }
-            });
+            // Pear authenticates the WS handshake via a ?token= query param, NOT the
+            // Authorization header — sending the header alone makes Pear accept the
+            // upgrade and then immediately close the socket with 1008 Unauthorized.
+            // (The same token still works as a Bearer header for the REST endpoints.)
+            const wsUrl = `${this.wsBaseUrl}?token=${encodeURIComponent(this.token)}`;
+            this.ws = new WebSocket(wsUrl);
 
             this.ws.on('open', () => {
                 this.wsConnected = true;
@@ -225,9 +228,19 @@ class YTManager extends EventEmitter {
             this.ws.on('message', (data: WebSocket.Data) => {
                 try {
                     const msg = JSON.parse(data.toString()) as { type: string; [key: string]: any };
-                    console.log('[YTManager] WS message received:', msg);
 
                     switch (msg.type) {
+                        case 'PLAYER_INFO':
+                            // Pear's full-state snapshot: song + transport state in one frame.
+                            // This is the event Pear actually emits on song/state changes.
+                            if (msg.song) {
+                                this.cachedSong = { ...msg.song, elapsedSeconds: msg.position ?? msg.song.elapsedSeconds ?? 0 };
+                            }
+                            if (typeof msg.repeat === 'string') this.cachedRepeat = msg.repeat as 'NONE' | 'ALL' | 'ONE';
+                            if (typeof msg.shuffle === 'boolean') this.cachedShuffle = msg.shuffle;
+                            this.emit('state-update', this.cachedSong);
+                            break;
+
                         case 'VIDEO_CHANGED':
                             // Full song object provided — replace cache entirely
                             this.cachedSong = { ...msg.song, elapsedSeconds: msg.position ?? 0 };
@@ -280,10 +293,14 @@ class YTManager extends EventEmitter {
                 }
             });
 
-            this.ws.on('close', () => {
+            this.ws.on('close', (code: number, reason: Buffer) => {
                 this.wsConnected = false;
-                this.logger.warn('[YTManager] WebSocket disconnected, reconnecting in 5s');
+                this.logger.warn(`[YTManager] WebSocket disconnected (code=${code} reason=${JSON.stringify(reason?.toString() || '')}), reconnecting in 5s`);
                 this.scheduleWSReconnect();
+            });
+
+            this.ws.on('unexpected-response', (_req, res: any) => {
+                this.logger.warn(`[YTManager] WebSocket upgrade rejected: HTTP ${res?.statusCode}`);
             });
 
             this.ws.on('error', (err: Error) => {
@@ -387,6 +404,7 @@ class YTManager extends EventEmitter {
                 headers: { 'Authorization': `Bearer ${this.token}` }
             }), '/next'
         );
+        this.refreshCurrentSongSoon();
     }
 
     async previous(): Promise<void> {
@@ -395,6 +413,23 @@ class YTManager extends EventEmitter {
                 headers: { 'Authorization': `Bearer ${this.token}` }
             }), '/previous'
         );
+        this.refreshCurrentSongSoon();
+    }
+
+    /**
+     * After a track-changing command, the WS VIDEO_CHANGED event may be missing
+     * (e.g. Pear closed the socket). Pull the fresh song via REST so the cache and
+     * any listeners reflect the new track without waiting for the next poll tick.
+     */
+    private refreshCurrentSongSoon(): void {
+        setTimeout(() => {
+            this.getCurrentSong().then(song => {
+                if (song) {
+                    this.cachedSong = song;
+                    this.emit('state-update', this.cachedSong);
+                }
+            }).catch(() => {});
+        }, 500);
     }
 
     async toggleLike(): Promise<void> {

@@ -712,7 +712,7 @@ async function createWindow(): Promise<void> {
     if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.setMinimumSize(400, 800);
         mainWindow.setSize(400, 800);
-        revealMainWindowWhenCloudAuthenticated();
+        showMainWindow();
         return;
     }
 
@@ -739,7 +739,7 @@ async function createWindow(): Promise<void> {
         show: false,
         icon: path.join(__dirname, 'assets', 'the_letter.png'),
     });
-    
+
     if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
         mainWindow.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL);
         mainWindow.webContents.on('did-finish-load', () => {
@@ -753,7 +753,10 @@ async function createWindow(): Promise<void> {
     // mainWindow.webContents.openDevTools();
     
     if (!(global as any).ISAUTHING) {
-        await checkForUpdates(mainWindow, Logger);
+        // Run the update/terms check in the background — it does unbounded network
+        // fetches (GitHub releases + api.requestplus.xyz/termsUpdate) and must never
+        // block the window/local API from starting if an endpoint stalls.
+        void checkForUpdates(mainWindow, Logger).catch((err) => Logger?.error('[Main] checkForUpdates failed:', err));
     }
 
     // Setup auth event listeners BEFORE deep link handling so events aren't missed
@@ -766,7 +769,7 @@ async function createWindow(): Promise<void> {
     if (!WSServer) {
         WSServer = new websocket(443, mainWindow, Logger);
     }
-    
+
     if (!ytManager) {
         ytManager = new YTManager(Logger);
 
@@ -790,7 +793,7 @@ async function createWindow(): Promise<void> {
   if (!apiHandler) {
         apiHandler = new APIHandler(mainWindow, playbackHandler, Logger, settings);
     }
-    
+
 
     if (!gtsHandler) {
         gtsHandler = new GTSHandler(app, mainWindow, apiHandler, playbackHandler, Logger, settings);
@@ -806,8 +809,16 @@ async function createWindow(): Promise<void> {
       });
       scheduleTokenRefresh(token.expiresAt);
       revealMainWindowWhenCloudAuthenticated();
+      // Safety net: never leave the window hidden if cloud auth is slow or
+      // unreachable (e.g. an API outage). Show it after a short grace period.
+      setTimeout(() => {
+        if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.isVisible()) {
+          showMainWindow();
+        }
+      }, 8000);
     } else {
       Logger?.info('[Main] No auth token available; local API server is running without cloud websocket.');
+      showMainWindow();
     }
     
     updateIntervalForSongInfo();
@@ -825,7 +836,7 @@ async function createWindow(): Promise<void> {
             {
                 label: 'Show Request+',
                 click: () => {
-                    revealMainWindowWhenCloudAuthenticated();
+                    showMainWindow();
                 }
             },
             { type: 'separator' },
@@ -846,7 +857,7 @@ async function createWindow(): Promise<void> {
             if (mainWindow?.isVisible()) {
                 mainWindow.focus();
             } else {
-                revealMainWindowWhenCloudAuthenticated();
+                showMainWindow();
             }
         });
     } catch (error) {
@@ -898,6 +909,18 @@ function revealMainWindowWhenCloudAuthenticated(): boolean {
     mainWindow.show();
     mainWindow.focus();
     return true;
+}
+
+/**
+ * Show the window unconditionally. Used for explicit user actions (tray, re-open)
+ * and the no-token/offline path — there deferring on cloud auth would otherwise
+ * leave the UI permanently unreachable.
+ */
+function showMainWindow(): void {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    revealMainWindowAfterCloudAuth = false;
+    mainWindow.show();
+    mainWindow.focus();
 }
 
 function applySettingsToRuntime(updatedSettings: Settings): void {
@@ -1022,8 +1045,13 @@ ipcMain.handle('song-skip', async (): Promise<void> => {
                 }
                 let ready = await ytManager.waitUntilQueuedNext(videoId, 5000);
                 if (!ready) {
-                    // The first insert may not have landed; re-feed once and re-check.
-                    await ytManager.addItemToQueueById(videoId);
+                    // The first insert may not have landed. Only re-feed if the
+                    // request isn't already in the player queue, otherwise we'd add
+                    // a duplicate copy.
+                    const state = await ytManager.getQueueState();
+                    if (!state?.videoIds.includes(videoId)) {
+                        await ytManager.addItemToQueueById(videoId);
+                    }
                     ready = await ytManager.waitUntilQueuedNext(videoId, 3000);
                 }
                 // Only advance once our request is actually next. A blind next() on

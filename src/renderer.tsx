@@ -122,6 +122,9 @@ const CSS = `
 
 function TrackArt({ cover, title, artist, className = "" }: { cover: string; title: string; artist: string; className?: string }) {
   const [err, setErr] = useState(false);
+  // Reset the error latch when the cover changes, otherwise one failed load
+  // pins the placeholder for every subsequent track (the component isn't remounted).
+  useEffect(() => { setErr(false); }, [cover]);
   const hue = ((title.charCodeAt(0) || 65) * 47 + (artist.charCodeAt(0) || 65) * 19) % 360;
 
   if (cover && !err) {
