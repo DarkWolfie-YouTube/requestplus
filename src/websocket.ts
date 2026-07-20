@@ -153,6 +153,36 @@ class WebSocketServer extends EventEmitter {
         return [];
     }
 
+    /** Store incoming search results and wake anyone waiting for them. */
+    private setSearchResults(data: any): void {
+        this.SearchResults = this.normalizeSearchResults(data);
+        this.emit('search-results', this.SearchResults);
+    }
+
+    /**
+     * Resolve as soon as the connected client actually returns search results, or
+     * with null once `timeoutMs` elapses. This replaces fixed-interval polling,
+     * which gave up after a hard 2s budget and reported "search failed" while a
+     * slow connection was still delivering the answer.
+     */
+    public waitForSearchResults(timeoutMs = 15000): Promise<Array<SearchAPITrackData> | null> {
+        if (this.SearchResults.length > 0) {
+            return Promise.resolve(this.SearchResults);
+        }
+        return new Promise((resolve) => {
+            let timer: NodeJS.Timeout;
+            const onResults = (results: Array<SearchAPITrackData>) => {
+                clearTimeout(timer);
+                resolve(results);
+            };
+            timer = setTimeout(() => {
+                this.off('search-results', onResults);
+                resolve(null);
+            }, timeoutMs);
+            this.once('search-results', onResults);
+        });
+    }
+
     private initServer(): void {
         // First, check if the port is available
         const server = net.createServer();
@@ -306,7 +336,7 @@ class WebSocketServer extends EventEmitter {
 
                     if (parsed.command === "searchResults") {
                         console.log('Search Results:', parsed.data);
-                        this.SearchResults = this.normalizeSearchResults(parsed.data);
+                        this.setSearchResults(parsed.data);
                         return;
                     }
                     } else if (client && client.type === 'soundcloud') {
@@ -372,7 +402,7 @@ class WebSocketServer extends EventEmitter {
 
                         if (parsed.command === "searchResults") {
                             console.log('Search Results:', parsed.data);
-                            this.SearchResults = this.normalizeSearchResults(parsed.data);
+                            this.setSearchResults(parsed.data);
                             return;
                         }
                     }

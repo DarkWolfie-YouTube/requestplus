@@ -247,6 +247,14 @@ let isCreatingMainWindow = false;
 let oobeAuthListenersRegistered = false;
 let revealMainWindowAfterCloudAuth = false;
 
+/**
+ * How long to wait for a connected client to return song search results.
+ * Generous on purpose: the lookup goes out to the streaming service, so on a slow
+ * connection it can take several seconds. Giving up early makes Request+ answer
+ * the viewer before the music app has responded.
+ */
+const SEARCH_RESULT_TIMEOUT_MS = 15000;
+
 function getQueueItemTrackId(item: QueueItem): string {
     const requestedBySuffix = `-${item.requestedBy}`;
     if (item.id.endsWith(requestedBySuffix)) {
@@ -1795,12 +1803,12 @@ websocketManager.on('song-search-request', async (message) => {
             WSServer.SearchResults = [];
             WSServer.WSSendToType({ command: 'searchRequest', data: { query: newQuery } } as WSCommand, 'spotify');
 
-            let firstResult: any = null;
-            for (let attempt = 0; attempt < 20; attempt++) {
-                await wait(100);
-                firstResult = WSServer.SearchResults?.[0];
-                if (firstResult) break;
-            }
+            // Wait for the client's actual answer instead of polling for a fixed 2s.
+            // On a slow connection the lookup regularly takes longer than that, and
+            // the old loop replied "search failed" while the result was still in
+            // flight — the request then silently never made it into the queue.
+            const searchResults = await WSServer.waitForSearchResults(SEARCH_RESULT_TIMEOUT_MS);
+            const firstResult: any = searchResults?.[0] ?? null;
 
             if (!firstResult) {
                 websocketManager.send({ type: 'song_search_response', message: 'ERR_SP_SEARCH_FAILED', username: message.username, msgID: message.messageId, platform: message.platform, channel: message.channel });
