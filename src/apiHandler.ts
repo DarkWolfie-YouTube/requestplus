@@ -563,6 +563,9 @@ class APIHandler {
     public updateSettings(settings: Settings): void {
         this.theme = settings.theme;
         this.refresh = true;
+        setTimeout(() => {
+            this.refresh = false;
+        }, 1000);
     }
     public gtsHideSongFromView(): void {
         this.hideSongFromView = true;

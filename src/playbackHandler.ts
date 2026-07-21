@@ -119,8 +119,13 @@ class PlaybackHandler {
 
     private async getYouTubeSong(): Promise<songInfo | null> {
         try {
-            // Prefer the cached WebSocket state; fall back to REST only if WS hasn't fired yet
-            const ytSongData = this.YTManager.getCachedSong() ?? await this.YTManager.getCurrentSong();
+            // Prefer the cached WebSocket state only while the WS is actually connected
+            // and delivering live events. If the WS is down (e.g. Pear closed the socket),
+            // the cache goes stale and never clears, so fall back to a fresh REST read —
+            // this is what keeps Now Playing updating on track change / next / auto-advance.
+            const ytSongData = this.YTManager.isWSConnected()
+                ? (this.YTManager.getCachedSong() ?? await this.YTManager.getCurrentSong())
+                : await this.YTManager.getCurrentSong();
 
             // Fetch ancillary state that isn't included in the WS message
             const [ytVolume, ytRepeat, ytShuffle, ytLiked] = await Promise.all([

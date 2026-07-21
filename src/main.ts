@@ -245,7 +245,15 @@ let soundCloudQueueTimer: NodeJS.Timeout | null = null;
 let windowHandler: WindowHandler | null = null;
 let isCreatingMainWindow = false;
 let oobeAuthListenersRegistered = false;
-let pendingMainWindowAfterWebSocket = false;
+let revealMainWindowAfterCloudAuth = false;
+
+/**
+ * How long to wait for a connected client to return song search results.
+ * Generous on purpose: the lookup goes out to the streaming service, so on a slow
+ * connection it can take several seconds. Giving up early makes Request+ answer
+ * the viewer before the music app has responded.
+ */
+const SEARCH_RESULT_TIMEOUT_MS = 15000;
 
 function getQueueItemTrackId(item: QueueItem): string {
     const requestedBySuffix = `-${item.requestedBy}`;
@@ -278,6 +286,23 @@ function normalizeQueueText(value: string | null | undefined): string {
         .replace(/\s+/g, ' ');
 }
 
+// YouTube Music labels its auto-generated audio uploads with a "- Topic" artist
+// suffix; strip it so "The Butcher Sisters - Topic" matches "The Butcher Sisters".
+function stripTopicSuffix(value: string): string {
+    return value.replace(/\s*-\s*topic$/, '').trim();
+}
+
+// Drop decoration noise ("(Offizielles Musikvideo)", "[Official Video]", etc.)
+// and punctuation so a requested music-video title can be compared against the
+// cleaned-up title YouTube Music reports for the same song.
+function stripTitleDecorations(value: string): string {
+    return value
+        .replace(/[([{][^)\]}]*[)\]}]/g, ' ')
+        .replace(/\b(official|offiziell|offizielles|music|musikvideo|video|audio|lyric|lyrics|visualizer|hd|hq|4k|mv)\b/g, ' ')
+        .replace(/[^a-z0-9]+/g, ' ')
+        .trim();
+}
+
 function queueItemMatchesTrack(item: QueueItem, trackData: TrackData, trackId: string): boolean {
     const queueTrackId = normalizeTrackIdForQueueMatch(getQueueItemTrackId(item));
     if (queueTrackId && trackId && queueTrackId === trackId) {
@@ -293,7 +318,49 @@ function queueItemMatchesTrack(item: QueueItem, trackData: TrackData, trackId: s
     const trackTitle = normalizeQueueText(trackData.title || trackData.name);
     const trackArtist = normalizeQueueText(trackData.artist || trackData.artistName || (trackData as any).artist_name);
 
-    return Boolean(itemTitle && itemArtist && itemTitle === trackTitle && itemArtist === trackArtist);
+    if (itemTitle && itemArtist && itemTitle === trackTitle && itemArtist === trackArtist) {
+        return true;
+    }
+
+    // YouTube Music swaps a requested "official video" for its own "- Topic"
+    // upload, which carries a DIFFERENT videoId and a cleaned-up title/artist.
+    // Without this lenient fallback the playing track never maps back to the
+    // queued request, so it's never marked playing or removed and the queue
+    // fills up with stuck "Queued" entries.
+    if (item.platform === 'youtube') {
+        const qTitle = stripTitleDecorations(itemTitle);
+        const tTitle = stripTitleDecorations(trackTitle);
+        const qArtist = stripTopicSuffix(itemArtist);
+        const tArtist = stripTopicSuffix(trackArtist);
+
+        const artistMatches = Boolean(qArtist && tArtist &&
+            (qArtist === tArtist || qArtist.includes(tArtist) || tArtist.includes(qArtist)));
+
+        // Compare titles by tokens: every word of the shorter title must appear
+        // in the longer one (so "Party Sahne" matches "Ski Aggu - Party Sahne
+        // (prod. ...)"). oEmbed reports the uploader's channel handle as the
+        // "artist" (e.g. "aggu31"), which almost never equals YTM's real artist
+        // field — so a solid title match alone counts; the artist match only
+        // serves to let very short titles through.
+        const qTokens = qTitle.split(' ').filter(Boolean);
+        const tTokens = tTitle.split(' ').filter(Boolean);
+        const [fewTokens, manyTokens] = qTokens.length <= tTokens.length ? [qTokens, tTokens] : [tTokens, qTokens];
+        const manySet = new Set(manyTokens);
+        const titleTokensMatch = fewTokens.length > 0 && fewTokens.every(tok => manySet.has(tok));
+        const shorterTitleLen = fewTokens.join('').length;
+
+        // A single shared title word (e.g. "Perfect", "Holiday") is too weak to
+        // claim a queue item on its own — two unrelated songs could share it. So
+        // a multi-word title can match on title alone, but a single-word title
+        // additionally needs a corroborating artist match.
+        const multiWordTitle = fewTokens.length >= 2 && shorterTitleLen >= 6;
+
+        if (titleTokensMatch && (multiWordTitle || artistMatches)) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 function getTrackIdFromTrackData(trackData: TrackData): string | null {
@@ -355,7 +422,11 @@ async function monitorTrackProgress(trackData: songInfo): Promise<void> {
 
     if (currentTrackId !== trackId) {
         currentTrackId = trackId;
-        currentTrackId2 = null;
+        // Note: we deliberately do NOT reset currentTrackId2 here. YouTube Music
+        // sometimes swaps a song's videoId mid-playback (official video → "- Topic"
+        // audio), which counts as a new track. Keeping currentTrackId2 lets the
+        // "already handled" guard in checkCurrentlyPlayingTrack suppress a second
+        // "Now Playing" toast for the same queued item across that swap.
         autoQueueTriggered = false;
         lastTrackProgress = progress;
         Logger.info(`New track detected: ${trackId}`);
@@ -389,42 +460,53 @@ async function autoQueueNextTrack(): Promise<void> {
         return;
     }
 
-    const nextTrack = queue.items[0];
+    // Pick the first request that hasn't already been handed to the player and
+    // isn't the track currently playing. Taking items[0] blindly re-queued a
+    // song that was already on its way, so it got added — and played — twice.
+    const nextTrack = queueHandler.getNextTrackToQueue();
+    if (!nextTrack) {
+        Logger.info('No un-queued tracks left to auto-add');
+        return;
+    }
 
     try {
-        if (settings.platform === 'spotify') {
-            if (nextTrack.platform === 'spotify') {
-                WSServer.WSSendToType({
-                    command: 'addTrack',
-                    data: { uri: `spotify:track:${getQueueItemTrackId(nextTrack)}` }
-                }, 'spotify');
-            }
-        } else if (settings.platform === 'apple') {
-            if (nextTrack.platform === 'apple') {
-                amHandler.queueTrack(getQueueItemTrackId(nextTrack));
-            }
-        } else if (settings.platform === 'youtube' && ytManager) {
-            if (nextTrack.platform === 'youtube') {
-                await ytManager.addItemToQueueById(getQueueItemTrackId(nextTrack));
-            }
-        } else if (settings.platform === 'soundcloud') {
-            if (nextTrack.platform === 'soundcloud') {
-                WSServer.WSSendToType({
-                    command: 'addTrack',
-                    data: { url: getQueueItemTrackId(nextTrack), forcePlay: true }
-                } as WSCommand, 'soundcloud');
-            }
+        // Only mark the request as queued once it was actually handed to the
+        // player. Marking on failure (or when no platform branch matched) would
+        // leave it stuck on the "Queued" badge while it never reaches playback.
+        let dispatched = false;
+        if (settings.platform === 'spotify' && nextTrack.platform === 'spotify') {
+            WSServer.WSSendToType({
+                command: 'addTrack',
+                data: { uri: `spotify:track:${getQueueItemTrackId(nextTrack)}` }
+            }, 'spotify');
+            dispatched = true;
+        } else if (settings.platform === 'apple' && nextTrack.platform === 'apple') {
+            await amHandler.queueTrack(getQueueItemTrackId(nextTrack));
+            dispatched = true;
+        } else if (settings.platform === 'youtube' && ytManager && nextTrack.platform === 'youtube') {
+            dispatched = await ytManager.addItemToQueueById(getQueueItemTrackId(nextTrack));
+        } else if (settings.platform === 'soundcloud' && nextTrack.platform === 'soundcloud') {
+            WSServer.WSSendToType({
+                command: 'addTrack',
+                data: { url: getQueueItemTrackId(nextTrack), forcePlay: true }
+            } as WSCommand, 'soundcloud');
+            dispatched = true;
+        }
+
+        if (!dispatched) {
+            Logger.warn(`Auto-queue: could not hand "${nextTrack.title}" to the player; leaving it pending`);
+            return;
         }
 
         Logger.info(`Auto-queued track: ${nextTrack.title} by ${nextTrack.artist}`);
-        
+
         sendToast(
             `Auto-queued: ${nextTrack.title} by ${nextTrack.artist}`,
             'info',
             4000
         );
 
-        await queueHandler.setTrackAsQueued(0);
+        await queueHandler.setTrackAsQueued(queueHandler.findTrackById(nextTrack.id));
 
     } catch (error) {
         Logger.error('Error auto-queueing track:', error);
@@ -471,37 +553,56 @@ async function checkCurrentlyPlayingTrack(trackData: TrackData): Promise<void> {
         if (currentTrackId2 === matchingQueueItemId) {
             return;
         }
+        // currentTrackId2 can be cleared spuriously — e.g. the progress-rewind
+        // guard firing when YouTube Music swaps a song's videoId mid-play (MV ->
+        // "- Topic"). If this item is already flagged as playing, just re-sync the
+        // claim instead of toasting and scheduling its removal a second time.
+        if (queue.items[matchingTrackIndex].iscurrentlyPlaying) {
+            currentTrackId2 = matchingQueueItemId;
+            return;
+        }
         const progress = trackData.progress || 0;
         const duration = trackData.duration || 0;
         const restartWindow = Math.min(15000, Math.max(3000, duration * 0.25));
 
-        if (currentTrackId === normalizedTrackId && currentTrackId2 && progress > restartWindow) {
+        // Only defer if the track we already claimed is the one actually playing
+        // right now (same song, well past its start). currentTrackId2 is no longer
+        // reset on every videoId change, so without this check a genuinely new
+        // queued song that's first seen mid-progress would be wrongly suppressed
+        // and left stuck as "Queued".
+        const claimedItem = currentTrackId2 ? queue.items.find(it => it.id === currentTrackId2) : undefined;
+        const claimedTrackIsPlaying = Boolean(claimedItem &&
+            normalizeTrackIdForQueueMatch(getQueueItemTrackId(claimedItem)) === normalizedTrackId);
+
+        if (claimedTrackIsPlaying && progress > restartWindow) {
             Logger.info(`Same track is still playing for ${currentTrackId2}; waiting before handling ${matchingQueueItemId}`);
             return;
         }
 
         Logger.info(`Currently playing track matches queue item at index ${matchingTrackIndex}`);
-        if (matchingTrackIndex !== 0) {
-          Logger.info('Song is not at the top of the queue. Stopping.') 
-          return; 
-        }
-        
-        await queueHandler.setCurrentlyPlaying(matchingTrackIndex);
-        
+
+        // Claim this track synchronously, before any await, so the WS ticks that
+        // fire while setCurrentlyPlaying() is pending don't all pass the guard
+        // above and show the "Now Playing" toast three or four times.
+        currentTrackId2 = matchingQueueItemId;
+
         const track = queue.items[matchingTrackIndex];
+        await queueHandler.setCurrentlyPlaying(matchingTrackIndex);
+
         sendToast(
             `Now Playing from Queue: ${track.title}`,
             'success',
             3000
         );
         Logger.info(`Now playing from queue: ${track.title} by ${track.artist}`);
-        
-        currentTrackId2 = matchingQueueItemId;
 
+        // Drop it from the pending queue shortly after it starts playing. The
+        // long 10s delay made finished songs look like they were "stuck" in the
+        // queue; a short grace still lets the "Now Playing" highlight register.
         setTimeout(async () => {
             await queueHandler.removeFromQueueById(matchingQueueItemId);
             Logger.info(`Removed played track from queue: ${track.title}`);
-        }, 10000);
+        }, 2500);
     }
 }
 
@@ -554,45 +655,62 @@ async function ensureOverlayFile(): Promise<string> {
     return targetPath;
 }
 
-async function createWindow(): Promise<void> {
-    const customSession = session.fromPartition('persist:api-session', { cache: false });
-    
-    customSession.setCertificateVerifyProc((request, callback) => {
-        if (request.hostname === 'api.requestplus.xyz') {
-            callback(0); // 0 = success, bypass verification
-        } else {
-            callback(-3); // -3 = use default verification
-        }
-    });
-    const request = net.request({
-        method: 'GET',
-        url: 'https://api.requestplus.xyz/hardware/check?id=' + authManager.getHardwareInfoPublic()?.deviceId,
-        session: customSession
-    });
+async function checkHardwareBanStatus(): Promise<void> {
+    await authManager.ready();
 
-    request.on('response', (response) => {
-        let body = '';
-        response.on('data', (chunk) => { body += chunk; });
-        response.on('end', () => {
-            try {
-                const data = JSON.parse(body);
-                if (data.banned) app.quit();
-            } catch (e) {
-                if (Logger) Logger.error('Error parsing response:', e);
-                app.quit();
-            }
+    const hardwareInfo = authManager.getHardwareInfoPublic();
+    if (!hardwareInfo?.deviceId) {
+        Logger?.warn('[Main] Skipping hardware ban check because device ID is unavailable.');
+        return;
+    }
+
+    await new Promise<void>((resolve) => {
+        let settled = false;
+        const finish = () => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timeout);
+            resolve();
+        };
+        const timeout = setTimeout(() => {
+            Logger?.warn('[Main] Hardware ban check timed out; continuing startup.');
+            request.abort();
+            finish();
+        }, 5000);
+        const request = net.request({
+            method: 'GET',
+            url: 'https://api.requestplus.xyz/hardware/check?id=' + encodeURIComponent(hardwareInfo.deviceId)
         });
-    });
 
-    request.on('error', (error) => {
-        if (Logger) Logger.error('Error checking hardware ban status:', error);
-        app.quit();
-    });
+        request.on('response', (response) => {
+            let body = '';
+            response.on('data', (chunk) => { body += chunk; });
+            response.on('end', () => {
+                try {
+                    const data = JSON.parse(body);
+                    if (data.banned) app.quit();
+                } catch (e) {
+                    Logger?.error('[Main] Error parsing hardware ban response:', e);
+                } finally {
+                    finish();
+                }
+            });
+        });
 
-    request.end();
+        request.on('error', (error) => {
+            Logger?.error('[Main] Error checking hardware ban status:', error);
+            finish();
+        });
+
+        request.end();
+    });
+}
+
+async function createWindow(): Promise<void> {
     if (isCreatingMainWindow) return;
     isCreatingMainWindow = true;
     try {
+    await checkHardwareBanStatus();
     const currentSettings = settingsHandler.load();
     if (currentSettings.oobeCompleted !== true) {
         createStartupOobeWindow();
@@ -602,20 +720,9 @@ async function createWindow(): Promise<void> {
     if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.setMinimumSize(400, 800);
         mainWindow.setSize(400, 800);
-        mainWindow.show();
-        mainWindow.focus();
+        showMainWindow();
         return;
     }
-
-    const apiConnected = await ensureApiWebSocketConnected();
-    if (!apiConnected) {
-        const token = await authManager.getValidAuthToken();
-        if (!token) {
-            createStartupOobeWindow();
-        }
-        return;
-    }
-    
 
     await ensureOverlayFile();
 
@@ -637,9 +744,10 @@ async function createWindow(): Promise<void> {
         titleBarStyle: 'hidden',
         titleBarOverlay: false,
         resizable: false,
+        show: false,
         icon: path.join(__dirname, 'assets', 'the_letter.png'),
     });
-    
+
     if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
         mainWindow.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL);
         mainWindow.webContents.on('did-finish-load', () => {
@@ -653,7 +761,10 @@ async function createWindow(): Promise<void> {
     // mainWindow.webContents.openDevTools();
     
     if (!(global as any).ISAUTHING) {
-        await checkForUpdates(mainWindow, Logger);
+        // Run the update/terms check in the background — it does unbounded network
+        // fetches (GitHub releases + api.requestplus.xyz/termsUpdate) and must never
+        // block the window/local API from starting if an endpoint stalls.
+        void checkForUpdates(mainWindow, Logger).catch((err) => Logger?.error('[Main] checkForUpdates failed:', err));
     }
 
     // Setup auth event listeners BEFORE deep link handling so events aren't missed
@@ -663,10 +774,10 @@ async function createWindow(): Promise<void> {
     queueHandler = new QueueHandler(Logger, mainWindow, settings);
 
         
-    if (!WSServer && !(global as any).ISAUTHING) {
+    if (!WSServer) {
         WSServer = new websocket(443, mainWindow, Logger);
     }
-    
+
     if (!ytManager) {
         ytManager = new YTManager(Logger);
 
@@ -687,21 +798,35 @@ async function createWindow(): Promise<void> {
         playbackHandler = new PlaybackHandler(settings.platform, WSServer, Logger, ytManager, amHandler);
     }
     
-    const token = await authManager.getValidAuthToken();
-    const hardwareInfo = authManager.getHardwareInfoPublic();
-    
-    if (token && hardwareInfo) {
-      websocketManager.connect(token.token, hardwareInfo.deviceId);
-      scheduleTokenRefresh(token.expiresAt);
-    }
-
-  if (!apiHandler && !(global as any).ISAUTHING) {
+  if (!apiHandler) {
         apiHandler = new APIHandler(mainWindow, playbackHandler, Logger, settings);
     }
-    
+
 
     if (!gtsHandler) {
         gtsHandler = new GTSHandler(app, mainWindow, apiHandler, playbackHandler, Logger, settings);
+    }
+
+    const token = await authManager.getValidAuthToken();
+    const hardwareInfo = authManager.getHardwareInfoPublic();
+
+    if (token && hardwareInfo) {
+      revealMainWindowAfterCloudAuth = true;
+      websocketManager.connect(token.token, hardwareInfo.deviceId).catch((error) => {
+        Logger?.warn('[Main] Cloud websocket connection failed after local startup; reconnect will continue in the background:', error);
+      });
+      scheduleTokenRefresh(token.expiresAt);
+      revealMainWindowWhenCloudAuthenticated();
+      // Safety net: never leave the window hidden if cloud auth is slow or
+      // unreachable (e.g. an API outage). Show it after a short grace period.
+      setTimeout(() => {
+        if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.isVisible()) {
+          showMainWindow();
+        }
+      }, 8000);
+    } else {
+      Logger?.info('[Main] No auth token available; local API server is running without cloud websocket.');
+      showMainWindow();
     }
     
     updateIntervalForSongInfo();
@@ -719,8 +844,7 @@ async function createWindow(): Promise<void> {
             {
                 label: 'Show Request+',
                 click: () => {
-                    mainWindow?.show();
-                    mainWindow?.focus();
+                    showMainWindow();
                 }
             },
             { type: 'separator' },
@@ -741,7 +865,7 @@ async function createWindow(): Promise<void> {
             if (mainWindow?.isVisible()) {
                 mainWindow.focus();
             } else {
-                mainWindow?.show();
+                showMainWindow();
             }
         });
     } catch (error) {
@@ -760,30 +884,6 @@ async function createWindow(): Promise<void> {
     }
 }
 
-async function ensureApiWebSocketConnected(): Promise<boolean> {
-    if (websocketManager.isAuthenticated()) {
-        return true;
-    }
-
-    await authManager.ready();
-    const token = await authManager.getValidAuthToken();
-    const hardwareInfo = authManager.getHardwareInfoPublic();
-
-    if (!token || !hardwareInfo) {
-        return false;
-    }
-
-    try {
-        await websocketManager.connect(token.token, hardwareInfo.deviceId);
-        scheduleTokenRefresh(token.expiresAt);
-        return websocketManager.isAuthenticated();
-    } catch (error) {
-        Logger?.error('[Main] API websocket connection failed before window creation:', error);
-        pendingMainWindowAfterWebSocket = true;
-        return false;
-    }
-}
-
 function createStartupOobeWindow(): BrowserWindow {
     if (!windowHandler) {
         windowHandler = new WindowHandler(app.getPath('userData'), async () => {
@@ -799,6 +899,36 @@ function createStartupOobeWindow(): BrowserWindow {
     }
 
     return oobeWindow;
+}
+
+function revealMainWindowWhenCloudAuthenticated(): boolean {
+    if (!mainWindow || mainWindow.isDestroyed()) {
+        return false;
+    }
+
+    if (revealMainWindowAfterCloudAuth && !websocketManager.isAuthenticated()) {
+        revealMainWindowAfterCloudAuth = true;
+        mainWindow.hide();
+        Logger?.info('[Main] Main window reveal deferred until cloud websocket authentication completes.');
+        return false;
+    }
+
+    revealMainWindowAfterCloudAuth = false;
+    mainWindow.show();
+    mainWindow.focus();
+    return true;
+}
+
+/**
+ * Show the window unconditionally. Used for explicit user actions (tray, re-open)
+ * and the no-token/offline path — there deferring on cloud auth would otherwise
+ * leave the UI permanently unreachable.
+ */
+function showMainWindow(): void {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    revealMainWindowAfterCloudAuth = false;
+    mainWindow.show();
+    mainWindow.focus();
 }
 
 function applySettingsToRuntime(updatedSettings: Settings): void {
@@ -900,21 +1030,48 @@ ipcMain.handle('song-skip', async (): Promise<void> => {
     if (platform === 'spotify' && WSServer) {
         WSServer.WSSendToType({ command: 'Next' } as WSCommand, 'spotify');
     } else if (platform === 'youtube' && ytManager) {
-        // Push the next queued request into Pear before skipping so it plays immediately.
-        // Exclude the track that's currently playing — otherwise skip would re-add and
-        // replay the same song from the start.
+        // Advance to the next request in queue order (skip only the track playing
+        // right now). A hard next() jumps straight to YouTube Music's autoplay
+        // up-next, which wins the race against our freshly-inserted song. So feed
+        // the request, then actively wait until Pear's queue actually shows it as
+        // the track right after the current one before calling next(). POST /queue
+        // returns before YTM applies the insert, so polling the queue (instead of
+        // a blind delay) makes next() reliably land on our request.
+        let advanceToNext = true; // empty queue: let YouTube Music advance normally
         if (queueHandler) {
             const nextTrack = queueHandler.getQueue().items.find(
-                item => !item.isQueued && item.id !== currentTrackId2
+                item => item.id !== currentTrackId2 && !item.iscurrentlyPlaying
             );
             if (nextTrack) {
-                const queued = await ytManager.addItemToQueueById(getQueueItemTrackId(nextTrack));
-                if (queued) {
-                    await queueHandler.setTrackAsQueued(queueHandler.getQueue().items.indexOf(nextTrack));
+                const videoId = getQueueItemTrackId(nextTrack);
+                if (!nextTrack.isQueued) {
+                    const queued = await ytManager.addItemToQueueById(videoId);
+                    if (queued) {
+                        await queueHandler.setTrackAsQueued(queueHandler.findTrackById(nextTrack.id));
+                        Logger.info(`Skip: fed "${nextTrack.title}" to the player`);
+                    }
                 }
+                let ready = await ytManager.waitUntilQueuedNext(videoId, 5000);
+                if (!ready) {
+                    // The first insert may not have landed. Only re-feed if the
+                    // request isn't already in the player queue, otherwise we'd add
+                    // a duplicate copy.
+                    const state = await ytManager.getQueueState();
+                    if (!state?.videoIds.includes(videoId)) {
+                        await ytManager.addItemToQueueById(videoId);
+                    }
+                    ready = await ytManager.waitUntilQueuedNext(videoId, 3000);
+                }
+                // Only advance once our request is actually next. A blind next() on
+                // timeout can fall through to YouTube Music's autoplay/radio — the very
+                // race this guards against — so skip next() and let the user retry.
+                advanceToNext = ready;
+                Logger.info(`Skip: "${nextTrack.title}" ${ready ? 'is now the next track in Pear' : 'did not become next within timeout; not advancing (would risk YouTube radio)'}`);
             }
         }
-        await ytManager.next();
+        if (advanceToNext) {
+            await ytManager.next();
+        }
     } else if (platform === 'apple' && amHandler) {
         await amHandler.nextTrack();
     } else if (platform === 'soundcloud' && WSServer) {
@@ -922,9 +1079,55 @@ ipcMain.handle('song-skip', async (): Promise<void> => {
     }
 });
 
-ipcMain.handle('play-track-at-index', async (event: Electron.IpcMainInvokeEvent, index: number): Promise<void> => {
-    const platform = settings.platform
-    autoQueueNextTrack();
+ipcMain.handle('play-track-at-index', async (event: Electron.IpcMainInvokeEvent, index: number): Promise<boolean> => {
+    if (!queueHandler) return false;
+
+    const queue = queueHandler.getQueue();
+    if (index < 0 || index >= queue.items.length) {
+        Logger.warn(`play-track-at-index: invalid index ${index}`);
+        return false;
+    }
+
+    const track = queue.items[index];
+    const trackId = track.id;
+
+    // Don't re-feed a track that's already playing or already handed to the
+    // player — clicking it again would add a duplicate to the playlist.
+    if (track.iscurrentlyPlaying || track.isQueued) {
+        Logger.info(`play-track-at-index: ${track.title} is already ${track.iscurrentlyPlaying ? 'playing' : 'queued'}; ignoring`);
+        return true;
+    }
+
+    const platform = settings.platform;
+    try {
+        if (platform === 'youtube' && ytManager) {
+            const queued = await ytManager.addItemToQueueById(getQueueItemTrackId(track));
+            if (!queued) return false;
+        } else if (platform === 'spotify' && WSServer) {
+            WSServer.WSSendToType({ command: 'addTrack', data: { uri: `spotify:track:${getQueueItemTrackId(track)}` } } as WSCommand, 'spotify');
+        } else if (platform === 'apple' && amHandler) {
+            await amHandler.queueTrack(getQueueItemTrackId(track));
+        } else if (platform === 'soundcloud' && WSServer) {
+            WSServer.WSSendToType({ command: 'addTrack', data: { url: getQueueItemTrackId(track), forcePlay: true } } as WSCommand, 'soundcloud');
+        } else {
+            return false;
+        }
+
+        // The queue may have been spliced (e.g. a delayed removeFromQueueById)
+        // while we awaited the player call, so re-locate by ID before marking.
+        const currentIndex = queueHandler.findTrackById(trackId);
+        if (currentIndex === -1) {
+            Logger.warn(`play-track-at-index: track disappeared before it could be marked queued: ${track.title}`);
+            return false;
+        }
+
+        await queueHandler.setTrackAsQueued(currentIndex);
+        Logger.info(`play-track-at-index: queued ${track.title} by ${track.artist}`);
+        return true;
+    } catch (error) {
+        Logger.error('play-track-at-index: failed to queue track', error);
+        return false;
+    }
 });
 
 ipcMain.handle('song-previous', async (): Promise<void> => {
@@ -1307,7 +1510,10 @@ authManager.on('auth-success', async (token) => {
   (global as any).Logger.info('[Main] Auth success, connecting WebSocket...');
   const hardwareInfo = authManager.getHardwareInfoPublic();
   if (hardwareInfo) {
-    websocketManager.connect(token.token, hardwareInfo.deviceId);
+    revealMainWindowAfterCloudAuth = true;
+    websocketManager.connect(token.token, hardwareInfo.deviceId).catch((error) => {
+      Logger?.warn('[Main] Cloud websocket connection failed after auth success; reconnect will continue in the background:', error);
+    });
   }
   scheduleTokenRefresh(token.expiresAt);
   const isExperimentalUser = await authManager.checkExperimentalUser();
@@ -1351,11 +1557,9 @@ authManager.on('auth-logout', () => {
 });
 
 websocketManager.on('authenticated', () => {
-    if (!pendingMainWindowAfterWebSocket) return;
-    pendingMainWindowAfterWebSocket = false;
-    void createWindow();
+    if (!revealMainWindowAfterCloudAuth) return;
+    revealMainWindowWhenCloudAuthenticated();
 });
-
 
 websocketManager.on('notification', (message) => {
     if (!mainWindow || mainWindow.isDestroyed()) {
@@ -1373,6 +1577,8 @@ websocketManager.on('notification', (message) => {
         buttons: ['OK'],
     });
 });
+
+
 
 // Detect text that looks like a URL/link so we don't run a title search on it
 // (a broken/unsupported link should be rejected, not searched verbatim).
@@ -1598,12 +1804,12 @@ websocketManager.on('song-search-request', async (message) => {
             WSServer.SearchResults = [];
             WSServer.WSSendToType({ command: 'searchRequest', data: { query: newQuery } } as WSCommand, 'spotify');
 
-            let firstResult: any = null;
-            for (let attempt = 0; attempt < 20; attempt++) {
-                await wait(100);
-                firstResult = WSServer.SearchResults?.[0];
-                if (firstResult) break;
-            }
+            // Wait for the client's actual answer instead of polling for a fixed 2s.
+            // On a slow connection the lookup regularly takes longer than that, and
+            // the old loop replied "search failed" while the result was still in
+            // flight — the request then silently never made it into the queue.
+            const searchResults = await WSServer.waitForSearchResults(SEARCH_RESULT_TIMEOUT_MS);
+            const firstResult: any = searchResults?.[0] ?? null;
 
             if (!firstResult) {
                 websocketManager.send({ type: 'song_search_response', message: 'ERR_SP_SEARCH_FAILED', username: message.username, msgID: message.messageId, platform: message.platform, channel: message.channel });
