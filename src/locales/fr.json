@@ -35,7 +35,7 @@
   "CLIENT_PLATFORM_PRIMARY_SEARCH": "Plateforme de recherche principale",
   "CLIENT_PLATFORM_PRIMARY_SEARCH_DESC": "Utilisez ce service lorsqu'une demande n'inclut pas d'URL directe.",
   "CLIENT_CIDER_VERSION": "Version de Cider",
-  "CLIENT_ABOUT_VERSION": "Version 3.0.0 • Conçu pour les streamers par des streamers",
+  "CLIENT_ABOUT_VERSION": "Version 3.1.0 • Conçu pour les streamers par des streamers",
   "CLIENT_UPDATE_CHECK_UNAVAILABLE": "La vérification des mises à jour n'est pas disponible en mode web",
   "CLIENT_OVERLAY_URL_TITLE": "URL de superposition OBS",
   "CLIENT_OVERLAY_URL_DESC": "Ajoutez ceci comme source de navigateur dans OBS",

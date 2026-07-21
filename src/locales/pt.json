@@ -35,7 +35,7 @@
   "CLIENT_PLATFORM_PRIMARY_SEARCH": "Plataforma principal de busca",
   "CLIENT_PLATFORM_PRIMARY_SEARCH_DESC": "Use este serviço quando um pedido não tiver uma URL direta.",
   "CLIENT_CIDER_VERSION": "Versão do Cider",
-  "CLIENT_ABOUT_VERSION": "Versão 3.0.0 • Feito para streamers por streamers",
+  "CLIENT_ABOUT_VERSION": "Versão 3.1.0 • Feito para streamers por streamers",
   "CLIENT_UPDATE_CHECK_UNAVAILABLE": "A verificação de atualizações não está disponível no modo web",
   "CLIENT_OVERLAY_URL_TITLE": "URL do overlay OBS",
   "CLIENT_OVERLAY_URL_DESC": "Adicione isso como fonte de navegador no OBS",

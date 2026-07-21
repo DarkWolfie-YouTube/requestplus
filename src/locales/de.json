@@ -35,7 +35,7 @@
   "CLIENT_PLATFORM_PRIMARY_SEARCH": "Primäre Suchplattform",
   "CLIENT_PLATFORM_PRIMARY_SEARCH_DESC": "Verwende diesen Dienst, wenn eine Anfrage keine direkte URL enthält.",
   "CLIENT_CIDER_VERSION": "Cider-Version",
-  "CLIENT_ABOUT_VERSION": "Version 3.0.0 • Für Streamer von Streamern entwickelt",
+  "CLIENT_ABOUT_VERSION": "Version 3.1.0 • Für Streamer von Streamern entwickelt",
   "CLIENT_UPDATE_CHECK_UNAVAILABLE": "Die Update-Prüfung ist im Webmodus nicht verfügbar",
   "CLIENT_OVERLAY_URL_TITLE": "OBS Overlay URL",
   "CLIENT_OVERLAY_URL_DESC": "Füge dies als Browserquelle in OBS hinzu",

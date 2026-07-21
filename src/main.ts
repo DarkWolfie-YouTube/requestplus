@@ -1554,7 +1554,6 @@ authManager.on('auth-refreshed', (token) => {
 authManager.on('auth-logout', () => {
   console.log('[Main] Auth logout, disconnecting WebSocket...');
   websocketManager.disconnect();
-  mainWindow?.hide();
 });
 
 websocketManager.on('authenticated', () => {
@@ -1578,6 +1577,8 @@ websocketManager.on('notification', (message) => {
         buttons: ['OK'],
     });
 });
+
+
 
 // Detect text that looks like a URL/link so we don't run a title search on it
 // (a broken/unsupported link should be rejected, not searched verbatim).
