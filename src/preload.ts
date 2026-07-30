@@ -23,6 +23,7 @@ interface ElectronAPI {
   // Queue controls
   getQueue: () => Promise<Queue>;
   removeFromQueue: (index: number) => Promise<boolean>;
+  moveInQueue: (from: number, to: number, expectedId?: string) => Promise<boolean>;
   clearQueue: () => Promise<boolean>;
   playTrackAtIndex: (index: number) => Promise<boolean>;
   updateQueuePage: (callback: (queue: Queue) => void) => void;
@@ -122,6 +123,11 @@ const electronAPI: ElectronAPI = {
     return ipcRenderer.invoke('remove-from-queue', index);
   },
   
+  moveInQueue: (from, to, expectedId) => {
+    console.log('Moving queue item:', from, '->', to);
+    return ipcRenderer.invoke('move-in-queue', from, to, expectedId);
+  },
+
   clearQueue: () => {
     console.log('Clearing queue via IPC');
     return ipcRenderer.invoke('clear-queue');

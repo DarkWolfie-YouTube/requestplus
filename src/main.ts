@@ -1358,6 +1358,10 @@ ipcMain.handle('remove-from-queue', async  (event: Electron.IpcMainInvokeEvent, 
     return queueHandler ? queueHandler.removeFromQueue(index) : false;
 });
 
+ipcMain.handle('move-in-queue', async (event: Electron.IpcMainInvokeEvent, from: number, to: number, expectedId?: string): Promise<boolean> => {
+    return queueHandler ? queueHandler.moveInQueue(from, to, expectedId) : false;
+});
+
 ipcMain.handle('clear-queue', async (): Promise<boolean> => {
     return queueHandler ? queueHandler.clearQueue() : false;
 });
