@@ -1,10 +1,22 @@
-import express, { Express, Request, Response } from 'express';
+import express, { Express, NextFunction, Request, Response } from 'express';
 import cors from 'cors';
 import { Settings } from './settingsHandler';
 import * as path from 'path';
 import { BrowserWindow } from 'electron';
 import PlaybackHandler from './playbackHandler';
 import type { Server } from 'node:http';
+import type PlaybackController from './playbackController';
+import type QueueHandler from './queueHandler';
+import type { Queue } from './queueHandler';
+
+/** Wiring for the token-guarded /control + /queue routes used by external clients (Stream Deck). */
+interface ControlDeps {
+    playbackController: PlaybackController;
+    getQueueHandler: () => QueueHandler | null;
+    controlToken: string;
+    /** Live read of the "Use Stream Deck" toggle; when false the API rejects all control calls. */
+    getControlEnabled: () => boolean;
+}
 
 // Type definitions
 interface TwitchUser {
@@ -64,12 +76,14 @@ class APIHandler {
     private callback: any;
     private server: Server | null = null;
     public hideSongFromView: boolean = false;
+    private control: ControlDeps | null;
 
     constructor(
-        mainWindow: BrowserWindow, 
-        playbackHandler: PlaybackHandler, 
-        logger: Logger, 
-        settings: Settings, 
+        mainWindow: BrowserWindow,
+        playbackHandler: PlaybackHandler,
+        logger: Logger,
+        settings: Settings,
+        control: ControlDeps | null = null,
     ) {
         this.app = express();
         this.mainWindow = mainWindow;
@@ -78,6 +92,7 @@ class APIHandler {
         this.theme = settings.theme;
         this.refresh = false;
         this.hideSongFromView = false;
+        this.control = control;
         this.setupMiddleware();
         this.setupRoutes();
         this.startServer();
@@ -550,6 +565,85 @@ class APIHandler {
             res.send(errorHTML);
         });
 
+        this.setupControlRoutes();
+    }
+
+    /**
+     * Token-guarded playback control for external clients (the Stream Deck plugin).
+     * These delegate to the same PlaybackController the IPC handlers use, so the
+     * platform-branching logic lives in exactly one place. /info stays public
+     * because the OBS overlay reads it; only the write routes require the token.
+     */
+    private setupControlRoutes(): void {
+        if (!this.control) return;
+        const { playbackController, getQueueHandler, controlToken, getControlEnabled } = this.control;
+
+        const requireToken = (req: Request, res: Response, next: NextFunction): void => {
+            if (!getControlEnabled()) {
+                res.status(403).json({ error: 'stream deck control disabled' });
+                return;
+            }
+            if (req.header('Authorization') !== `Bearer ${controlToken}`) {
+                res.status(401).json({ error: 'unauthorized' });
+                return;
+            }
+            next();
+        };
+
+        const run = async (res: Response, fn: () => Promise<unknown> | unknown): Promise<void> => {
+            try {
+                await fn();
+                res.json({ ok: true });
+            } catch (err) {
+                this.logger.error('control route failed', err);
+                res.status(500).json({ ok: false });
+            }
+        };
+
+        this.app.post('/control/play',     requireToken, (_q, r) => run(r, () => playbackController.playPause()));
+        this.app.post('/control/pause',    requireToken, (_q, r) => run(r, () => playbackController.pause()));
+        this.app.post('/control/skip',     requireToken, (_q, r) => run(r, () => playbackController.skip()));
+        this.app.post('/control/previous', requireToken, (_q, r) => run(r, () => playbackController.previous()));
+        this.app.post('/control/like',     requireToken, (_q, r) => run(r, () => playbackController.like()));
+        this.app.post('/control/shuffle',  requireToken, (_q, r) => run(r, () => playbackController.shuffle()));
+        this.app.post('/control/repeat',   requireToken, (_q, r) => run(r, () => playbackController.repeat()));
+
+        this.app.post('/control/volume', requireToken, (req, res) => {
+            // Relative adjustment (preferred for buttons): { delta: -1..1 }.
+            // Absolute set still supported: { level: 0..1 }.
+            if (req.body?.delta !== undefined) {
+                const delta = Number(req.body.delta);
+                if (!Number.isFinite(delta) || delta < -1 || delta > 1) {
+                    res.status(400).json({ error: 'delta must be a number between -1 and 1' });
+                    return;
+                }
+                return run(res, () => playbackController.nudgeVolume(delta));
+            }
+            const level = Number(req.body?.level);
+            if (!Number.isFinite(level) || level < 0 || level > 1) {
+                res.status(400).json({ error: 'level must be a number between 0 and 1, or provide delta' });
+                return;
+            }
+            return run(res, () => playbackController.setVolume(level));
+        });
+
+        this.app.post('/control/seek', requireToken, (req, res) => {
+            const position = Number(req.body?.position);
+            if (!Number.isFinite(position) || position < 0) {
+                res.status(400).json({ error: 'position must be a non-negative number (ms)' });
+                return;
+            }
+            return run(res, () => playbackController.seek(position));
+        });
+
+        this.app.get('/queue', requireToken, (_req, res): void => {
+            const queue: Queue = getQueueHandler()?.getQueue() ?? { items: [], currentCount: 0, currentlyPlayingIndex: -1 };
+            res.json(queue);
+        });
+
+        this.app.post('/queue/clear', requireToken, (_req, res) => run(res, () => getQueueHandler()?.clearQueue()));
+
+        this.logger.info('Control API routes registered (/control/*, /queue) — token required');
     }
 
     private startServer(): void {

@@ -25,13 +25,16 @@ class PlaybackHandler {
     private logger: Logger;
     private YTManager: YTManager;
     private AMHandler: AMHandler;
-    
-    constructor(platform: string, spotifyWS: WebSocketServer, logger: Logger, ytManager: YTManager, AMHandler: AMHandler) {
+    /** Returns the slider value we last commanded (0..1), so the display matches the player. */
+    private getCommandedVolume: () => number | null;
+
+    constructor(platform: string, spotifyWS: WebSocketServer, logger: Logger, ytManager: YTManager, AMHandler: AMHandler, getCommandedVolume: () => number | null = () => null) {
         this.platform = platform;
         this.SpotifyWS = spotifyWS;
         this.logger = logger;
         this.YTManager = ytManager;
         this.AMHandler = AMHandler;
+        this.getCommandedVolume = getCommandedVolume;
         this.currentSong = {
             id: '',
             title: '',
@@ -153,7 +156,13 @@ class PlaybackHandler {
                 progress: ytSongData.elapsedSeconds * 1000,
                 cover: ytSongData.imageSrc || '',
                 isPlaying: !ytSongData.isPaused,
-                volume: (ytVolume ? ytVolume.state / 100 : 0) || 0,
+                // Show the slider value we commanded, not YouTube's effective read-back.
+                // getVolume reports the effective volume (≈ slider^2.5) at low integer
+                // resolution, which produces a low-end "cliff to 0" and disagrees with
+                // the player's slider (Pear). The commanded value tracks the slider
+                // exactly and moves evenly. Fall back to the read only before we've
+                // commanded anything this session.
+                volume: this.getCommandedVolume() ?? ((ytVolume ? ytVolume.state / 100 : 0) || 0),
                 shuffle: ytShuffle ?? false,
                 repeat: ytRepeat ? this.convertYouTubeRepeatMode(ytRepeat.mode) : 0,
                 isLiked: ytLiked ?? false

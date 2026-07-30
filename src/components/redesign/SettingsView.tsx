@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Music, Settings, List, X, Minus, Play, Pause, SkipBack, SkipForward, Heart, Shuffle, Repeat, Repeat1, Volume2, Trash2, Check, Copy, Eye, Headphones, ListChecks, Lock, Radio, Shield, Sparkles, UserRound, ExternalLink, RefreshCw, LogOut, User as UserIcon, ArrowLeft, ArrowRight, Music2 } from "lucide-react";
+import { Music, Settings, List, X, Minus, Play, Pause, SkipBack, SkipForward, Heart, Shuffle, Repeat, Repeat1, Volume2, Trash2, Check, Copy, Eye, Headphones, ListChecks, Lock, Radio, Shield, Sparkles, UserRound, ExternalLink, RefreshCw, LogOut, User as UserIcon, ArrowLeft, ArrowRight, Music2, LayoutGrid } from "lucide-react";
 import { toast } from "sonner";
 import { Blobs, Switch } from "./shared";
 import type { AppSettings, AppUser } from "./shared";
@@ -38,6 +38,8 @@ export function SettingsView({ settings, setSettings, user, setUser, overlayPath
   overlayPath: string; locale: string;
 }) {
   const [copied, setCopied] = useState(false);
+  const [tokenCopied, setTokenCopied] = useState(false);
+  const [showToken, setShowToken] = useState(false);
   const [channelPointId, setChannelPointId] = useState<string | null>(null);
   const [channelPointLoading, setChannelPointLoading] = useState(false);
   const [channelPointSaving, setChannelPointSaving] = useState(false);
@@ -92,6 +94,14 @@ export function SettingsView({ settings, setSettings, user, setUser, overlayPath
     setCopied(true);
     toast.success("Overlay URL copied!");
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const copyToken = async () => {
+    if (!settings.streamDeckControlToken) return;
+    await navigator.clipboard.writeText(settings.streamDeckControlToken).catch(() => {});
+    setTokenCopied(true);
+    toast.success("Token copied!");
+    setTimeout(() => setTokenCopied(false), 2000);
   };
 
   const refreshChannelPoint = async () => {
@@ -268,6 +278,50 @@ export function SettingsView({ settings, setSettings, user, setUser, overlayPath
             </div>
           </Section>
         )}
+
+        {/* Stream Deck */}
+        <Section title="Stream Deck">
+          <ToggleRow
+            label="Use Stream Deck"
+            desc="Allow the Request+ Stream Deck plugin to control playback over the local API."
+            checked={!!settings.streamDeckEnabled}
+            onChange={(v) => p({ streamDeckEnabled: v })}
+          />
+          {settings.streamDeckEnabled && (
+            <div className="p-4 space-y-2">
+              <div className="flex items-center gap-2">
+                <LayoutGrid className="size-3.5 text-violet-400" />
+                <label className="text-[10px] font-bold uppercase tracking-widest text-slate-600">Plugin Token</label>
+              </div>
+              <p className="text-[11px] leading-[1.5] text-slate-600">
+                Paste this into the Stream Deck plugin (Host <span className="font-mono text-slate-400">127.0.0.1</span>, Port <span className="font-mono text-slate-400">444</span>). Keep it private &mdash; anyone with this token can control playback.
+              </p>
+              {settings.streamDeckControlToken ? (
+                <div className="flex gap-2">
+                  <input
+                    readOnly type={showToken ? "text" : "password"} value={settings.streamDeckControlToken}
+                    className="h-9 flex-1 rounded-xl border border-violet-500/20 bg-slate-950/70 px-3 font-mono text-[11px] text-slate-400 focus:outline-none"
+                  />
+                  <button
+                    onClick={() => setShowToken((v) => !v)}
+                    title={showToken ? "Hide token" : "Show token"}
+                    className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-slate-800 text-white transition-colors hover:bg-slate-700"
+                  >
+                    <Eye className="size-4" />
+                  </button>
+                  <button
+                    onClick={copyToken}
+                    className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-slate-800 text-white transition-colors hover:bg-slate-700"
+                  >
+                    {tokenCopied ? <Check className="size-4 text-emerald-400" /> : <Copy className="size-4" />}
+                  </button>
+                </div>
+              ) : (
+                <p className="text-[11px] font-semibold text-amber-400">Restart Request+ to generate a token.</p>
+              )}
+            </div>
+          )}
+        </Section>
 
         {/* Song Requests */}
         <Section title={t("CLIENT_REQUEST_MGMT_TITLE", locale)}>

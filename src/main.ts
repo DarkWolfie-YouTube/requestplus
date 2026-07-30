@@ -25,6 +25,8 @@ import PlaybackHandler, { songInfo } from './playbackHandler';
 import GTSHandler from './gtsHandler';
 import AMHandler from './amhandler';
 import WindowHandler from './window';
+import PlaybackController from './playbackController';
+import { randomBytes } from 'node:crypto';
 
 var handleStartupEvent = function() {
   if (process.platform !== 'win32') {
@@ -254,6 +256,18 @@ function getQueueItemTrackId(item: QueueItem): string {
     }
 
     return item.id;
+}
+
+/**
+ * Guarantees the local control-API token is present on a settings object. The
+ * renderer's AppSettings may not carry it, so any save that goes through the
+ * renderer would otherwise wipe it. Keep the live token if we already have one,
+ * otherwise generate a fresh one.
+ */
+function ensureControlToken(s: Settings): void {
+    if (!s.streamDeckControlToken) {
+        s.streamDeckControlToken = settings?.streamDeckControlToken || randomBytes(24).toString('hex');
+    }
 }
 
 function normalizeTrackIdForQueueMatch(id: string | null | undefined): string {
@@ -753,6 +767,15 @@ async function createWindow(): Promise<void> {
     setupAuthEventListeners(mainWindow);
     setupDeepLinkHandling(mainWindow);
     settings = await settingsHandler.load();
+
+    // Generate the local control-API token once and persist it. It guards the
+    // /control routes (Stream Deck plugin etc.) so an arbitrary web page on
+    // localhost can't drive playback. Shown to the user in settings.
+    if (!settings.streamDeckControlToken) {
+        ensureControlToken(settings);
+        settingsHandler.save(settings);
+    }
+
     queueHandler = new QueueHandler(Logger, mainWindow, settings);
 
         
@@ -777,7 +800,7 @@ async function createWindow(): Promise<void> {
 
     
     if (!playbackHandler) {
-        playbackHandler = new PlaybackHandler(settings.platform, WSServer, Logger, ytManager, amHandler);
+        playbackHandler = new PlaybackHandler(settings.platform, WSServer, Logger, ytManager, amHandler, () => playbackController.getCommandedVolume());
     }
     
     const token = await authManager.getValidAuthToken();
@@ -789,7 +812,12 @@ async function createWindow(): Promise<void> {
     }
 
   if (!apiHandler && !(global as any).ISAUTHING) {
-        apiHandler = new APIHandler(mainWindow, playbackHandler, Logger, settings);
+        apiHandler = new APIHandler(mainWindow, playbackHandler, Logger, settings, {
+            playbackController,
+            getQueueHandler: () => queueHandler ?? null,
+            controlToken: settings.streamDeckControlToken!,
+            getControlEnabled: () => settings.streamDeckEnabled === true,
+        });
     }
     
 
@@ -909,7 +937,13 @@ function applySettingsToRuntime(updatedSettings: Settings): void {
 
 // IPC Handlers
 ipcMain.handle('load-settings', async (): Promise<Settings> => {
-    return settingsHandler.load();
+    // The renderer fetches settings on mount, which can race the startup token
+    // generation. Ensure the token here so the UI always receives it; persist so
+    // main and the control API share the exact same value.
+    const loaded = settingsHandler.load();
+    ensureControlToken(loaded);
+    settingsHandler.save(loaded);
+    return loaded;
 });
 
 ipcMain.handle('ytTest', async (): Promise<songData> => {
@@ -923,6 +957,7 @@ ipcMain.handle('ytTest', async (): Promise<songData> => {
 
 ipcMain.handle('save-settings', (event: Electron.IpcMainInvokeEvent, settinga: Settings): Promise<void> => {
     return new Promise((resolve, reject) => {
+        ensureControlToken(settinga); // renderer omits the token; never let a save wipe it
         var saved = settingsHandler.save(settinga);
 
         if (saved) {
@@ -946,6 +981,7 @@ ipcMain.handle('cider:request-token', async (): Promise<string> => {
 
 ipcMain.on('settings-updated', (event: Electron.IpcMainEvent, updatedSettings: Settings): void => {
     Logger?.info('Settings updated');
+    ensureControlToken(updatedSettings); // preserve/regenerate the token before it replaces live settings
     settings = updatedSettings;
     settingsHandler.save(updatedSettings);
     applySettingsToRuntime(updatedSettings);
@@ -961,69 +997,33 @@ ipcMain.handle('window-close', async (): Promise<void> => {
     }
 });
 
-ipcMain.handle('song-play', async (): Promise<void> => {
-    const platform = settings.platform
-    
-    if (platform === 'spotify' && WSServer) {
-        WSServer.WSSendToType({ command: 'PlayPause' } as WSCommand, 'spotify');
-    } else if (platform === 'youtube' && ytManager) {
-        await ytManager.playPause();
-    } else if (platform === 'apple' && amHandler) {
-        await amHandler.playPause();
-    } else if (platform === 'soundcloud' && WSServer) {
-        WSServer.WSSendToType({ command: 'PlayPause' } as WSCommand, 'soundcloud');
-    }
+// Single service that owns the platform-branching playback logic. Both these IPC
+// handlers and the HTTP control routes (apiHandler) call into it, so the platform
+// switch lives in exactly one place. Dependencies are read lazily via getters
+// because the managers are assigned later during startup.
+const playbackController = new PlaybackController({
+    getSettings: () => settings,
+    getWSServer: () => WSServer ?? null,
+    getYtManager: () => ytManager ?? null,
+    getAmHandler: () => amHandler ?? null,
+    getQueueHandler: () => queueHandler ?? null,
+    getCurrentTrackId2: () => currentTrackId2,
+    getQueueItemTrackId,
+    getCurrentVolume: () => playbackHandler?.currentSong?.volume ?? 0,
+    // Forward to the live Logger — the module-level `Logger` is still null at
+    // construction time and only assigned once the app is ready.
+    logger: {
+        info: (msg: string, ...args: any[]) => Logger?.info(msg, ...args),
+        warn: (msg: string, ...args: any[]) => Logger?.warn(msg, ...args),
+        error: (msg: string, ...args: any[]) => Logger?.error(msg, ...args),
+    },
 });
 
-ipcMain.handle('song-pause', async (): Promise<void> => {
-    const platform = settings.platform
-    
-    if (platform === 'spotify' && WSServer) {
-        WSServer.WSSendToType({ command: 'PlayPause' } as WSCommand, 'spotify');
-    } else if (platform === 'youtube' && ytManager) {
-        await ytManager.playPause();
-    } else if (platform === 'apple' && amHandler) {
-        await amHandler.playPause();
-    }
-});
+ipcMain.handle('song-play', (): Promise<void> => playbackController.playPause());
 
-ipcMain.handle('song-skip', async (): Promise<void> => {
-    const platform = settings.platform
-    
-    if (platform === 'spotify' && WSServer) {
-        WSServer.WSSendToType({ command: 'Next' } as WSCommand, 'spotify');
-    } else if (platform === 'youtube' && ytManager) {
-        // Advance to the next request in queue order (skip only the track playing
-        // right now). A hard next() jumps straight to YouTube Music's autoplay
-        // up-next, which wins the race against our freshly-inserted song. So feed
-        // the request, then actively wait until Pear's queue actually shows it as
-        // the track right after the current one before calling next(). POST /queue
-        // returns before YTM applies the insert, so polling the queue (instead of
-        // a blind delay) makes next() reliably land on our request.
-        if (queueHandler) {
-            const nextTrack = queueHandler.getQueue().items.find(
-                item => item.id !== currentTrackId2 && !item.iscurrentlyPlaying
-            );
-            if (nextTrack) {
-                const videoId = getQueueItemTrackId(nextTrack);
-                if (!nextTrack.isQueued) {
-                    const queued = await ytManager.addItemToQueueById(videoId);
-                    if (queued) {
-                        await queueHandler.setTrackAsQueued(queueHandler.findTrackById(nextTrack.id));
-                        Logger.info(`Skip: fed "${nextTrack.title}" to the player`);
-                    }
-                }
-                const ready = await ytManager.waitUntilQueuedNext(videoId, 5000);
-                Logger.info(`Skip: "${nextTrack.title}" ${ready ? 'is now the next track in Pear' : 'did not become next within timeout; advancing anyway'}`);
-            }
-        }
-        await ytManager.next();
-    } else if (platform === 'apple' && amHandler) {
-        await amHandler.nextTrack();
-    } else if (platform === 'soundcloud' && WSServer) {
-        WSServer.WSSendToType({ command: 'Next' } as WSCommand, 'soundcloud');
-    }
-});
+ipcMain.handle('song-pause', (): Promise<void> => playbackController.pause());
+
+ipcMain.handle('song-skip', (): Promise<void> => playbackController.skip());
 
 ipcMain.handle('play-track-at-index', async (event: Electron.IpcMainInvokeEvent, index: number): Promise<boolean> => {
     if (!queueHandler) return false;
@@ -1076,86 +1076,17 @@ ipcMain.handle('play-track-at-index', async (event: Electron.IpcMainInvokeEvent,
     }
 });
 
-ipcMain.handle('song-previous', async (): Promise<void> => {
-    const platform = settings.platform
-    
-    if (platform === 'spotify' && WSServer) {
-        WSServer.WSSendToType({ command: 'Prev' } as WSCommand, 'spotify');
-    } else if (platform === 'youtube' && ytManager) {
-        await ytManager.previous();
-    } else if (platform === 'apple' && amHandler) {
-        await amHandler.previousTrack();
-    } else if (platform === 'soundcloud' && WSServer) {
-        WSServer.WSSendToType({ command: 'Prev' } as WSCommand, 'soundcloud');
-    }
+ipcMain.handle('song-previous', (): Promise<void> => playbackController.previous());
 
-});
+ipcMain.handle('song-like', (): Promise<void> => playbackController.like());
 
-ipcMain.handle('song-like', async (): Promise<void> => {
-    const platform = settings.platform
-    
-    if (platform === 'spotify' && WSServer) {
-        WSServer.WSSendToType({ command: 'like' } as WSCommand, 'spotify');
-    } else if (platform === 'youtube' && ytManager) {
-        await ytManager.toggleLike();
-    } else if (platform === 'apple' && amHandler) {
-        await amHandler.likeSong();
-    } else if (platform === 'soundcloud' && WSServer) {
-        WSServer.WSSendToType({ command: 'like' } as WSCommand, 'soundcloud');
-    }
-});
+ipcMain.handle('song-volume', (event: Electron.IpcMainInvokeEvent, level: number): Promise<void> => playbackController.setVolume(level));
 
-ipcMain.handle('song-volume', async (event: Electron.IpcMainInvokeEvent, level: number): Promise<void> => {
-    const platform = settings.platform
-    
-    if (platform === 'spotify' && WSServer) {
-        WSServer.WSSendToType({ command: 'volume', data: { volume: level } } as WSCommand, 'spotify');
-    } else if (platform === 'youtube' && ytManager) {
-        await ytManager.setVolume(level * 100);
-    } else if (platform === 'apple' && amHandler) {
-        await amHandler.setVolume(level);
-    } else if (platform === 'soundcloud' && WSServer) {
-        WSServer.WSSendToType({ command: 'volume', data: { volume: level } } as WSCommand, 'soundcloud');
-    }
-});
+ipcMain.handle('song-seek', (event: Electron.IpcMainInvokeEvent, position: number): Promise<void> => playbackController.seek(position));
 
-ipcMain.handle('song-seek', async (event: Electron.IpcMainInvokeEvent, position: number): Promise<void> => {
-    const platform = settings.platform
-    
-    if (platform === 'spotify' && WSServer) {
-        WSServer.WSSendToType({ command: 'seek', data: { position } } as WSCommand, 'spotify');
-    } else if (platform === 'youtube' && ytManager) {
-        await ytManager.seek(Math.floor(position / 1000));
-    } else if (platform === 'apple' && amHandler) {
-        await amHandler.seekTo(position / 1000);
-    } else if (platform === 'soundcloud' && WSServer) {
-        WSServer.WSSendToType({ command: 'seek', data: { position } } as WSCommand, 'soundcloud');
-    }
-});
+ipcMain.handle('song-shuffle', (): Promise<void> => playbackController.shuffle());
 
-ipcMain.handle('song-shuffle', async (): Promise<void> => {
-    const platform = settings.platform
-    
-    if (platform === 'spotify' && WSServer) {
-        WSServer.WSSendToType({ command: 'shuffle' } as WSCommand, 'spotify');
-    } else if (platform === 'youtube' && ytManager) {
-        await ytManager.toggleShuffle();
-    } else if (platform === 'apple' && amHandler) {
-        await amHandler.setShuffle();
-    }
-});
-
-ipcMain.handle('song-repeat', async (): Promise<void> => {
-    const platform = settings.platform
-    
-    if (platform === 'spotify' && WSServer) {
-        WSServer.WSSendToType({ command: 'repeat' } as WSCommand, 'spotify');
-    } else if (platform === 'youtube' && ytManager) {
-        await ytManager.cycleRepeat();
-    } else if (platform === 'apple' && amHandler) {
-        await amHandler.setRepeat();
-    }   
-});
+ipcMain.handle('song-repeat', (): Promise<void> => playbackController.repeat());
 
 // Twitch Auth Handlers
 ipcMain.handle('logout', async (): Promise<void> => {

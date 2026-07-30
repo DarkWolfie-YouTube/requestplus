@@ -26,6 +26,10 @@ interface Settings {
     ciderApiVersion?: '3' | '4';
     /** Scoped Cider 4 API token. Cider 3 keeps using appleMusicAppToken. */
     ciderV4AppToken?: string;
+    /** Bearer token guarding the local /control HTTP API (Stream Deck etc.). Generated on first run. */
+    streamDeckControlToken?: string;
+    /** When false (default), the local /control API rejects requests even with a valid token. */
+    streamDeckEnabled?: boolean;
     [key: string]: any; // Allow additional properties
 }
 
@@ -57,6 +61,7 @@ class SettingsHandler {
             primarySearchPlatform: 'spotify',
             ciderApiVersion: '3',
             ciderV4AppToken: '',
+            streamDeckEnabled: false,
         };
     }
 
