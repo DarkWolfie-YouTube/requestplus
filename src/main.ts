@@ -245,6 +245,8 @@ let autoQueueTriggered: boolean = false;
  * time, which is what makes clearing it on the first track change correct.
  */
 let awaitingStartTrackId: string | null = null;
+/** Number of test requests still to be seeded on startup (see getDebugSeedCount). */
+let debugSeedPending: number = 0;
 let lastTrackProgress: number = 0;
 let ytManager: YTManager;
 let playbackHandler: PlaybackHandler;
@@ -820,6 +822,8 @@ async function createWindow(): Promise<void> {
             }
         });
     }
+
+    scheduleDebugSeed();
 
     if (!amHandler) {
         amHandler = new AMHandler(mainWindow, Logger, settings, WSServer);
@@ -1526,6 +1530,116 @@ function updateIntervalForSongInfo(): void {
 
 
 
+/**
+ * Search terms used to seed the queue for testing. Plain queries rather than
+ * hardcoded video IDs, so they keep resolving even if a specific upload goes away.
+ */
+const DEBUG_SEED_QUERIES = [
+    'a-ha Take On Me',
+    'Daft Punk Around the World',
+    'Fatboy Slim Praise You',
+    'Gorillaz Feel Good Inc',
+    'The Prodigy Breathe'
+];
+
+/**
+ * How many test requests to seed on startup. `npm run start:debug` passes
+ * `--debug-seed=5`; REQUESTPLUS_DEBUG_SEED=5 does the same for shells where
+ * forwarding the flag is inconvenient. 0 means no seeding.
+ */
+function getDebugSeedCount(): number {
+    const flag = process.argv.find(value => value === '--debug-seed' || value.startsWith('--debug-seed='));
+    if (flag) {
+        const value = flag.includes('=') ? Number(flag.split('=')[1]) : 5;
+        return Number.isFinite(value) && value > 0 ? Math.floor(value) : 5;
+    }
+
+    const fromEnv = Number(process.env.REQUESTPLUS_DEBUG_SEED);
+    return Number.isFinite(fromEnv) && fromEnv > 0 ? Math.floor(fromEnv) : 0;
+}
+
+/**
+ * Testing helper: fill the queue without going through Twitch or any other chat
+ * platform. Resolves each search term through the normal YouTube lookup, so the
+ * entries are real, playable requests and not dead placeholders.
+ */
+async function seedDebugQueue(count: number): Promise<number> {
+    if (!queueHandler) return 0;
+
+    if (settings.platform !== 'youtube' || !ytManager) {
+        Logger.warn(`Debug seeding: only implemented for YouTube, platform is "${settings.platform}"`);
+        sendToast('Debug seeding is only implemented for YouTube', 'error', 4000);
+        return 0;
+    }
+
+    const requested = Number.isFinite(count) ? Math.floor(count) : 5;
+    const wanted = Math.max(1, Math.min(DEBUG_SEED_QUERIES.length, requested));
+
+    let added = 0;
+    for (let i = 0; i < wanted; i++) {
+        const query = DEBUG_SEED_QUERIES[i];
+        const videoId = await ytManager.searchVideoId(query);
+        if (!videoId) {
+            Logger.warn(`Debug seeding: no result for "${query}"`);
+            continue;
+        }
+        // Distinct usernames keep the queue item ids unique (id = videoId-username).
+        const result = await queueYouTubeVideo(videoId, `debug${i + 1}`);
+        if (result) added++;
+    }
+
+    Logger.info(`Debug seeding: added ${added} test request(s)`);
+    // Silent when nothing landed — the startup path retries and would otherwise
+    // fire a toast on every attempt.
+    if (added > 0) sendToast(`Seeded ${added} test request(s)`, 'info', 3000);
+    return added;
+}
+
+/**
+ * Seed the queue on startup when `npm run start:debug` asked for it. The search
+ * behind it only answers once YouTube Music is reachable, which is well after the
+ * window opens, so this retries for a while instead of firing once and giving up.
+ */
+function scheduleDebugSeed(attempt: number = 1): void {
+    if (attempt === 1) {
+        debugSeedPending = getDebugSeedCount();
+        if (debugSeedPending <= 0) return;
+        Logger.info(`Debug seeding: ${debugSeedPending} test request(s) requested (argv: ${process.argv.join(' ')})`);
+    }
+
+    if (debugSeedPending <= 0) return;
+
+    const MAX_ATTEMPTS = 20;
+    setTimeout(async () => {
+        if (debugSeedPending <= 0) return;
+
+        if (settings.platform !== 'youtube') {
+            Logger.warn(`Debug seeding: platform is "${settings.platform}", only YouTube is supported — giving up`);
+            debugSeedPending = 0;
+            return;
+        }
+
+        const added = await seedDebugQueue(debugSeedPending);
+        if (added > 0) {
+            debugSeedPending = 0;
+            return;
+        }
+
+        if (attempt >= MAX_ATTEMPTS) {
+            Logger.warn(`Debug seeding: gave up after ${MAX_ATTEMPTS} attempts — is YouTube Music running and connected?`);
+            debugSeedPending = 0;
+            return;
+        }
+
+        Logger.info(`Debug seeding: nothing added yet (attempt ${attempt}/${MAX_ATTEMPTS}), retrying`);
+        scheduleDebugSeed(attempt + 1);
+    }, attempt === 1 ? 5000 : 3000);
+}
+
+/** Same helper on demand: `await api.debugAddQueueItem(5)` in the devtools console. */
+ipcMain.handle('debug-add-queue-item', async (event: Electron.IpcMainInvokeEvent, count: number = 5): Promise<number> => {
+    return seedDebugQueue(count);
+});
 
 ipcMain.handle('searchTest', async (): Promise<void> => {
     if (WSServer) {

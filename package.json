@@ -6,6 +6,7 @@
   "main": ".vite/build/main.js",
   "scripts": {
     "start": "electron-forge start --inspect-electron",
+    "start:debug": "electron-forge start --inspect-electron -- --debug-seed=5",
     "package": "electron-forge package GITHUB_TOKEN=${process.env.GITHUB_TOKEN}",
     "make": "electron-forge make",
     "publish": "electron-forge publish",

@@ -79,7 +79,8 @@ interface ElectronAPI {
   onLocaleUpdate: (callback: (locale: string) => void) => void;
 
   // Debug function
-  debugAddQueueItem?: () => Promise<void>;
+  /** Testing helper: seed the queue with real requests, bypassing chat. */
+  debugAddQueueItem?: (count?: number) => Promise<number>;
 
   ytTest: () => Promise<songData>;
 
@@ -228,7 +229,7 @@ const electronAPI: ElectronAPI = {
   },
 
   // Debug function (optional - for testing)
-  debugAddQueueItem: () => ipcRenderer.invoke('debug-add-queue-item'),
+  debugAddQueueItem: (count) => ipcRenderer.invoke('debug-add-queue-item', count),
 
   ytTest: async () => {
     return await ipcRenderer.invoke('ytTest');
