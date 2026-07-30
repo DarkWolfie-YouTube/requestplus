@@ -164,6 +164,44 @@ class QueueHandler {
         return true;
     }
 
+    /**
+     * Pull a clicked request to the head of the waiting part of the list, i.e.
+     * below the song that is playing and below one that was already handed to
+     * the player. That is exactly the spot getNextTrackToQueue() picks from, so
+     * the list order and the order things will actually play stay the same.
+     *
+     * Unlike moveInQueue this ignores the lock rule on the moved item itself:
+     * the move is triggered by the app, not by a drag, and it never displaces a
+     * locked entry because it always lands after them.
+     */
+    async moveToFrontById(id: string): Promise<boolean> {
+        const items = this.queue.items;
+        const from = items.findIndex(item => item.id === id);
+        if (from === -1) {
+            this.logger.warn(`Cannot move to front, not in queue: ${id}`);
+            return false;
+        }
+
+        const [item] = items.splice(from, 1);
+        // First slot not taken by the playing song or an already dispatched one.
+        // Checked on the flags rather than via isLocked(), whose index-based part
+        // would be stale between the splice calls.
+        let target = items.findIndex(entry => !entry.isQueued && !entry.iscurrentlyPlaying);
+        if (target === -1) target = items.length;
+        items.splice(target, 0, item);
+
+        const playingIndex = items.findIndex(entry => entry.iscurrentlyPlaying);
+        if (playingIndex !== -1) {
+            this.queue.currentlyPlayingIndex = playingIndex;
+        }
+
+        if (from !== target) {
+            this.logger.info(`Moved to front of queue: ${item.title} by ${item.artist} (${from + 1} -> ${target + 1})`);
+            await this.updateQueuePage();
+        }
+        return true;
+    }
+
     async clearQueue(): Promise<boolean> {
         try {
             this.queue.items = [];

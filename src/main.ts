@@ -232,6 +232,19 @@ let queueHandler: QueueHandler;
 let currentTrackId: string | null = null;
 let currentTrackId2: string | null = null;
 let autoQueueTriggered: boolean = false;
+/**
+ * Request that was handed to the player and is expected to start next.
+ *
+ * Every player takes a handoff as "play next" rather than as "append" (YouTube
+ * sends INSERT_AFTER_CURRENT_VIDEO, Cider posts to /queue/add-next), so a second
+ * handoff would insert itself in front of this one and skip it. Request+ therefore
+ * hands over one request at a time and waits for it to actually start.
+ *
+ * Cleared on every track change: whatever happened, this request either started
+ * or the player moved past it, so nothing is left waiting. Only ever one at a
+ * time, which is what makes clearing it on the first track change correct.
+ */
+let awaitingStartTrackId: string | null = null;
 let lastTrackProgress: number = 0;
 let ytManager: YTManager;
 let playbackHandler: PlaybackHandler;
@@ -404,6 +417,7 @@ async function monitorTrackProgress(trackData: songInfo): Promise<void> {
     if (currentTrackId === trackId && lastTrackProgress > 0 && progress + 5000 < lastTrackProgress) {
         currentTrackId2 = null;
         autoQueueTriggered = false;
+        awaitingStartTrackId = null;
         Logger.info(`Playback progress restarted for same track: ${trackId}`);
     }
 
@@ -428,6 +442,15 @@ async function monitorTrackProgress(trackData: songInfo): Promise<void> {
         // "already handled" guard in checkCurrentlyPlayingTrack suppress a second
         // "Now Playing" toast for the same queued item across that swap.
         autoQueueTriggered = false;
+        // The handed-over request either starts now or the player moved past it.
+        // Either way nothing is waiting any more, so the next handoff may go out.
+        if (awaitingStartTrackId) {
+            const awaited = queue.items.find(item => item.id === awaitingStartTrackId);
+            if (awaited && normalizeTrackIdForQueueMatch(getQueueItemTrackId(awaited)) !== normalizeTrackIdForQueueMatch(trackId)) {
+                Logger.warn(`Player moved on without playing "${awaited.title}"; it stays queued but no longer blocks the auto-queue`);
+            }
+            awaitingStartTrackId = null;
+        }
         lastTrackProgress = progress;
         Logger.info(`New track detected: ${trackId}`);
         checkCurrentlyPlayingTrack(trackData);
@@ -457,6 +480,14 @@ async function autoQueueNextTrack(): Promise<void> {
     const queue = queueHandler.getQueue();
     if (queue.items.length === 0) {
         Logger.info('No items in queue to auto-add');
+        return;
+    }
+
+    // Give the request that was already handed over its chance to start before
+    // looking for the next one. Handing over a second one now would insert it in
+    // front of the first and skip it.
+    if (awaitingStartTrackId) {
+        Logger.info('Auto-queue: a request is still waiting to start; skipping this round');
         return;
     }
 
@@ -507,6 +538,7 @@ async function autoQueueNextTrack(): Promise<void> {
         );
 
         await queueHandler.setTrackAsQueued(queueHandler.findTrackById(nextTrack.id));
+        awaitingStartTrackId = nextTrack.id;
 
     } catch (error) {
         Logger.error('Error auto-queueing track:', error);
@@ -1048,6 +1080,7 @@ ipcMain.handle('song-skip', async (): Promise<void> => {
                     const queued = await ytManager.addItemToQueueById(videoId);
                     if (queued) {
                         await queueHandler.setTrackAsQueued(queueHandler.findTrackById(nextTrack.id));
+                        awaitingStartTrackId = nextTrack.id;
                         Logger.info(`Skip: fed "${nextTrack.title}" to the player`);
                     }
                 }
@@ -1098,6 +1131,18 @@ ipcMain.handle('play-track-at-index', async (event: Electron.IpcMainInvokeEvent,
         return true;
     }
 
+    // Only ever hand one request to the player at a time. A second click while
+    // something is still waiting to start would be inserted in front of it and
+    // skip it. So the click only pulls this request to the head of the waiting
+    // list; the auto-queue hands it over once the slot is free. It also stays
+    // un-queued and therefore still movable.
+    if (awaitingStartTrackId && awaitingStartTrackId !== trackId) {
+        const waiting = queue.items.find(item => item.id === awaitingStartTrackId);
+        Logger.info(`play-track-at-index: "${waiting?.title ?? awaitingStartTrackId}" is still waiting to start; only moving "${track.title}" up`);
+        await queueHandler.moveToFrontById(trackId);
+        return true;
+    }
+
     const platform = settings.platform;
     try {
         if (platform === 'youtube' && ytManager) {
@@ -1122,6 +1167,12 @@ ipcMain.handle('play-track-at-index', async (event: Electron.IpcMainInvokeEvent,
         }
 
         await queueHandler.setTrackAsQueued(currentIndex);
+        // The players insert a manual pick as "play next" (YTM literally sends
+        // INSERT_AFTER_CURRENT_VIDEO), so it no longer belongs at the position it
+        // was requested from. Pull it to the head of the list so the queue view
+        // shows the order that will actually play.
+        await queueHandler.moveToFrontById(trackId);
+        awaitingStartTrackId = trackId;
         Logger.info(`play-track-at-index: queued ${track.title} by ${track.artist}`);
         return true;
     } catch (error) {
@@ -1472,6 +1523,7 @@ function updateIntervalForSongInfo(): void {
         requestTrackInfo();
     }, 1000);
 }
+
 
 
 
