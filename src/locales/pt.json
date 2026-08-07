@@ -74,6 +74,8 @@
   "CLIENT_MODULES_TITLE": "Módulos",
   "CLIENT_MODULES_DESC": "Ativar ou desativar recursos opcionais",
   "CLIENT_GTS_TITLE": "Adivinhe a música",
+  "CLIENT_DISCORD_PRESENCE": "Rich Presence do Discord",
+  "CLIENT_DISCORD_PRESENCE_DESC": "Mostra a música, plataforma, capa e progresso atuais no seu perfil do Discord",
   "CLIENT_GTS_DESC": "Permite que o chat ganhe pontos adivinhando músicas",
   "CLIENT_MOD_QUEUE_TITLE": "Fila de moderação",
   "CLIENT_MOD_QUEUE_DESC": "Aprovação manual antes da reprodução",

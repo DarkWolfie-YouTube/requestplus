@@ -74,6 +74,8 @@
   "CLIENT_MODULES_TITLE": "Modules",
   "CLIENT_MODULES_DESC": "Activer ou désactiver les fonctionnalités optionnelles",
   "CLIENT_GTS_TITLE": "Devine la chanson",
+  "CLIENT_DISCORD_PRESENCE": "Présence enrichie Discord",
+  "CLIENT_DISCORD_PRESENCE_DESC": "Affiche le morceau, la plateforme, la pochette et la progression sur votre profil Discord",
   "CLIENT_GTS_DESC": "Permettre au chat de gagner des points en devinant les chansons",
   "CLIENT_MOD_QUEUE_TITLE": "File de modération",
   "CLIENT_MOD_QUEUE_DESC": "Approbation manuelle avant la lecture",

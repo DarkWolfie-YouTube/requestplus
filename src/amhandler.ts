@@ -72,6 +72,7 @@ interface AMCurrentSongObject {
     genreNames: string[];
     hasLyrics: boolean;
     name: string;
+    url: string;
     playParams: AMSongAttributePlayParams;
     releaseDate: string;
     trackNumber: number;
@@ -274,6 +275,7 @@ export default class AMHandler {
             genreNames: data.genreNames || prev?.genreNames || [],
             hasLyrics: data.hasLyrics ?? prev?.hasLyrics ?? false,
             name: data.name || prev?.name || "",
+            url: data.url || prev?.url || "",
             playParams: {
                 ...(prev?.playParams || {}),
                 ...playParams,
@@ -463,6 +465,7 @@ export default class AMHandler {
             genreNames: nowPlaying.genreNames || prev?.genreNames || [],
             hasLyrics: nowPlaying.hasLyrics ?? prev?.hasLyrics ?? false,
             name: nowPlaying.name || prev?.name || "",
+            url: nowPlaying.url || prev?.url || "",
             playParams: { ...(prev?.playParams || {}), ...normalizedPlayParams },
             releaseDate: nowPlaying.releaseDate || prev?.releaseDate || "",
             trackNumber: nowPlaying.trackNumber ?? prev?.trackNumber ?? 0,
@@ -610,6 +613,7 @@ export default class AMHandler {
                 genreNames: [],
                 hasLyrics: false,
                 name: "",
+                url: "",
                 playParams: { id: "", kind: "song" },
                 releaseDate: "",
                 trackNumber: 0,

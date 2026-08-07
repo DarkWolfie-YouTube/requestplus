@@ -11,6 +11,7 @@ interface songInfo {
   duration: number;
   progress: number;
   cover: string;
+  songUrl: string;
   isPlaying: boolean;
   volume: number;
   shuffle: boolean;
@@ -40,6 +41,7 @@ class PlaybackHandler {
             duration: 0,
             progress: 0,
             cover: '',
+            songUrl: '',
             isPlaying: false,
             volume: 0,
             shuffle: false,
@@ -67,6 +69,7 @@ class PlaybackHandler {
                     progress: 0,
                     isPlaying: false,
                     cover: '',
+                    songUrl: '',
                     volume: 0,
                     shuffle: false,
                     repeat: 0,
@@ -99,6 +102,7 @@ class PlaybackHandler {
                     progress: applemusicData.info.currentPlaybackTime * 1000 || 0,
                     isPlaying: isPlayingState || false,
                     cover: (applemusicData.info.artwork.url.includes('{w}')? applemusicData.info.artwork.url.replace('{w}', applemusicData.info.artwork.width.toString()).replace('{h}', applemusicData.info.artwork.height.toString()) : applemusicData.info.artwork.url) || '',
+                    songUrl: applemusicData.info.url || '',
                     volume: await this.AMHandler.getVolume(),
                     shuffle: applemusicData.info.shuffleMode === 1,
                     repeat: repeatMode,
@@ -157,6 +161,7 @@ class PlaybackHandler {
                 duration: ytSongData.songDuration * 1000,
                 progress: ytSongData.elapsedSeconds * 1000,
                 cover: ytSongData.imageSrc || '',
+                songUrl: ytSongData.videoId ? `https://music.youtube.com/watch?v=${ytSongData.videoId}` : '',
                 isPlaying: !ytSongData.isPaused,
                 volume: (ytVolume ? ytVolume.state / 100 : 0) || 0,
                 shuffle: ytShuffle ?? false,
@@ -195,15 +200,22 @@ class PlaybackHandler {
             if (spotifyData['artist_name:4']) dataArtists.push(spotifyData['artist_name:4']);
             
             const artists = dataArtists.length > 0 ? dataArtists.join(", ") : 'Unknown Artist';
+            const rawCover = spotifyData.image || spotifyData.image_large_url || spotifyData.image_url || '';
+            const cover = rawCover.startsWith('spotify:image:')
+                ? rawCover.replace('spotify:image:', 'https://i.scdn.co/image/')
+                : rawCover;
+            const spotifyTrackId = String(spotifyData.id || spotifyData.uri || '')
+                .replace(/^spotify:track:/, '');
 
             this.currentSong = {
-                id: spotifyData.id || '',
+                id: spotifyTrackId,
                 title: spotifyData.title || 'Unknown Title',
                 artist: artists,
                 album: spotifyData.album_title || '',
                 duration: spotifyData.duration || 0,
                 progress: spotifyData.progress || 0,
-                cover: spotifyData.image || spotifyData.image_large_url || '',
+                cover,
+                songUrl: spotifyTrackId ? `https://open.spotify.com/track/${spotifyTrackId}` : '',
                 isPlaying: spotifyData.isPlaying ?? false,
                 volume: spotifyData.volume ?? 100,
                 shuffle: spotifyData.shuffle ?? false,
@@ -252,6 +264,7 @@ class PlaybackHandler {
                 duration: spotifyData.duration || 0,
                 progress: spotifyData.progress || 0,
                 cover: spotifyData.album_art_url || '',
+                songUrl: spotifyData.url || spotifyData.id || '',
                 isPlaying: spotifyData.isPlaying ?? false,
                 volume: spotifyData.volume ?? 100,
                 shuffle: spotifyData.shuffle ?? false,

@@ -25,6 +25,7 @@ export interface AppSettings {
   requestLimitEnabled: boolean; requestLimit: number; autoPlay: boolean;
   autoAcceptSearchResults: boolean; useChannelPoints: boolean;
   channelPointRequestsEnabled: boolean; telemetryEnabled: boolean;
+  discordRichPresence: boolean;
   platform: string; filterExplicit: boolean; gtsEnabled: boolean;
   theme: string; appleMusicAppToken: string; ciderApiVersion: "3" | "4";
   ciderV4AppToken: string; primarySearchPlatform: string;

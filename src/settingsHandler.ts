@@ -19,6 +19,7 @@ interface Settings {
     filterExplicit: boolean;
     platform: string;
     telemetryEnabled: boolean;
+    discordRichPresence: boolean;
     gtsEnabled: boolean;
     /** Which platform to search on when a request has no URL (multi-platform mode) */
     primarySearchPlatform: string;
@@ -53,6 +54,7 @@ class SettingsHandler {
             filterExplicit: false,
             platform: 'spotify',
             telemetryEnabled: true,
+            discordRichPresence: false,
             gtsEnabled: false,
             primarySearchPlatform: 'spotify',
             ciderApiVersion: '3',

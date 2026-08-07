@@ -74,6 +74,8 @@
   "CLIENT_MODULES_TITLE": "Módulos",
   "CLIENT_MODULES_DESC": "Activa o desactiva funciones opcionales",
   "CLIENT_GTS_TITLE": "Adivina la canción",
+  "CLIENT_DISCORD_PRESENCE": "Presencia enriquecida de Discord",
+  "CLIENT_DISCORD_PRESENCE_DESC": "Muestra la canción, plataforma, portada y progreso actuales en tu perfil de Discord",
   "CLIENT_GTS_DESC": "Permite que el chat gane puntos adivinando canciones",
   "CLIENT_MOD_QUEUE_TITLE": "Cola de moderación",
   "CLIENT_MOD_QUEUE_DESC": "Aprobación manual antes de la reproducción",

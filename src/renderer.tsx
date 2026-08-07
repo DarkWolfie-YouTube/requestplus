@@ -41,6 +41,7 @@ interface AppSettings {
   requestLimitEnabled: boolean; requestLimit: number; autoPlay: boolean;
   autoAcceptSearchResults: boolean; useChannelPoints: boolean;
   channelPointRequestsEnabled: boolean; telemetryEnabled: boolean;
+  discordRichPresence: boolean;
   platform: string; filterExplicit: boolean; gtsEnabled: boolean;
   theme: string; appleMusicAppToken: string; ciderApiVersion: "3" | "4";
   ciderV4AppToken: string; primarySearchPlatform: string;
@@ -54,6 +55,7 @@ const defaultSettings: AppSettings = {
   requestLimitEnabled: false, requestLimit: 10, autoPlay: true,
   autoAcceptSearchResults: false, useChannelPoints: false,
   channelPointRequestsEnabled: true, telemetryEnabled: true,
+  discordRichPresence: false,
   platform: "spotify", filterExplicit: false, gtsEnabled: false,
   theme: "default", appleMusicAppToken: "", ciderApiVersion: "3",
   ciderV4AppToken: "", primarySearchPlatform: "spotify", showNotifications: true,

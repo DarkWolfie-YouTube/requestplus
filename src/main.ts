@@ -25,6 +25,7 @@ import PlaybackHandler, { songInfo } from './playbackHandler';
 import GTSHandler from './gtsHandler';
 import AMHandler from './amhandler';
 import WindowHandler from './window';
+import { DiscordPresenceManager } from './discordPresence';
 
 var handleStartupEvent = function() {
   if (process.platform !== 'win32') {
@@ -257,6 +258,7 @@ let tray: Tray | null = null;
 let isQuitting: boolean = false;
 let tokenRefreshTimer: NodeJS.Timeout | null = null;
 let soundCloudQueueTimer: NodeJS.Timeout | null = null;
+let discordPresence: DiscordPresenceManager | null = null;
 let windowHandler: WindowHandler | null = null;
 let isCreatingMainWindow = false;
 let oobeAuthListenersRegistered = false;
@@ -806,6 +808,10 @@ async function createWindow(): Promise<void> {
     setupDeepLinkHandling(mainWindow);
     settings = await settingsHandler.load();
     queueHandler = new QueueHandler(Logger, mainWindow, settings);
+    if (!discordPresence) {
+        discordPresence = new DiscordPresenceManager(Logger);
+    }
+    discordPresence.setEnabled(settings.discordRichPresence);
 
         
     if (!WSServer) {
@@ -972,6 +978,8 @@ function applySettingsToRuntime(updatedSettings: Settings): void {
     apiHandler?.updateSettings(updatedSettings);
     gtsHandler?.updateSettings(updatedSettings);
     amHandler?.updateSettings(updatedSettings);
+    discordPresence?.setEnabled(updatedSettings.discordRichPresence);
+    discordPresence?.update(currentSongInformation || null, updatedSettings.platform);
 
     if (playbackHandler) {
         updateIntervalForSongInfo();
@@ -1394,6 +1402,7 @@ app.on('window-all-closed', (): void => {
 app.on('before-quit', () => {
     isQuitting = true;
     tray?.destroy();
+    void discordPresence?.shutdown();
 });
 
 app.on('activate', (): void => {
@@ -1491,9 +1500,13 @@ async function requestTrackInfo(): Promise<void> {
     if (!playbackHandler) return;
     const info = await playbackHandler.getCurrentSong();
 
-    if (!info) return;
+    if (!info) {
+        discordPresence?.update(null, settings.platform);
+        return;
+    }
     currentSongInformation = { ...info };
     mainWindow?.webContents.send('song-info', currentSongInformation);
+    discordPresence?.update(currentSongInformation, settings.platform);
     monitorTrackProgress(currentSongInformation);
     checkCurrentlyPlayingTrack(currentSongInformation);
     if (settings.platform === 'soundcloud' && !soundCloudQueueTimer) {

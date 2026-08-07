@@ -74,6 +74,8 @@
   "CLIENT_MODULES_TITLE": "Modules",
   "CLIENT_MODULES_DESC": "Enable or disable optional features",
   "CLIENT_GTS_TITLE": "Guess The Song",
+  "CLIENT_DISCORD_PRESENCE": "Discord Rich Presence",
+  "CLIENT_DISCORD_PRESENCE_DESC": "Show the current song, platform, artwork, and progress on your Discord profile",
   "CLIENT_GTS_DESC": "Allow chat to earn points by guessing songs",
   "CLIENT_MOD_QUEUE_TITLE": "Moderation Queue",
   "CLIENT_MOD_QUEUE_DESC": "Manual song approval before playback",

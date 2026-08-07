@@ -378,6 +378,7 @@ export function SettingsView({ settings, setSettings, user, setUser, overlayPath
         <Section title={t("CLIENT_MODULES_TITLE", locale)} desc={t("CLIENT_MODULES_DESC", locale)}>
           <ToggleRow label={t("CLIENT_MOD_QUEUE_TITLE", locale)} desc={t("CLIENT_MOD_QUEUE_DESC", locale)} checked={!!settings.autoPlay} onChange={(v) => p({ autoPlay: v })} />
           <ToggleRow label={t("CLIENT_GTS_TITLE", locale)} desc={t("CLIENT_GTS_DESC", locale)} checked={!!settings.gtsEnabled} onChange={(v) => p({ gtsEnabled: v })} />
+          <ToggleRow label={t("CLIENT_DISCORD_PRESENCE", locale)} desc={t("CLIENT_DISCORD_PRESENCE_DESC", locale)} checked={!!settings.discordRichPresence} onChange={(v) => p({ discordRichPresence: v })} />
           {settings.platform !== "youtube" && (
             <ToggleRow label={t("CLIENT_FILTER_EXPLICIT", locale)} desc={t("CLIENT_FILTER_EXPLICIT_DESC", locale)} checked={!!settings.filterExplicit} onChange={(v) => p({ filterExplicit: v })} />
           )}

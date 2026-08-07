@@ -74,6 +74,8 @@
   "CLIENT_MODULES_TITLE": "Module",
   "CLIENT_MODULES_DESC": "Optionale Funktionen aktivieren oder deaktivieren",
   "CLIENT_GTS_TITLE": "Song erraten",
+  "CLIENT_DISCORD_PRESENCE": "Discord Rich Presence",
+  "CLIENT_DISCORD_PRESENCE_DESC": "Zeigt aktuellen Song, Plattform, Cover und Fortschritt in deinem Discord-Profil",
   "CLIENT_GTS_DESC": "Erlaube dem Chat, Punkte durch das Erraten von Songs zu verdienen",
   "CLIENT_MOD_QUEUE_TITLE": "Moderations-Warteschlange",
   "CLIENT_MOD_QUEUE_DESC": "Manuelle Song-Freigabe vor der Wiedergabe",
