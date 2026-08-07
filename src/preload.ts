@@ -23,6 +23,7 @@ interface ElectronAPI {
   // Queue controls
   getQueue: () => Promise<Queue>;
   removeFromQueue: (index: number) => Promise<boolean>;
+  moveInQueue: (from: number, to: number, expectedId?: string) => Promise<boolean>;
   clearQueue: () => Promise<boolean>;
   playTrackAtIndex: (index: number) => Promise<boolean>;
   updateQueuePage: (callback: (queue: Queue) => void) => void;
@@ -78,7 +79,8 @@ interface ElectronAPI {
   onLocaleUpdate: (callback: (locale: string) => void) => void;
 
   // Debug function
-  debugAddQueueItem?: () => Promise<void>;
+  /** Testing helper: seed the queue with real requests, bypassing chat. */
+  debugAddQueueItem?: (count?: number) => Promise<number>;
 
   ytTest: () => Promise<songData>;
 
@@ -122,6 +124,11 @@ const electronAPI: ElectronAPI = {
     return ipcRenderer.invoke('remove-from-queue', index);
   },
   
+  moveInQueue: (from, to, expectedId) => {
+    console.log('Moving queue item:', from, '->', to);
+    return ipcRenderer.invoke('move-in-queue', from, to, expectedId);
+  },
+
   clearQueue: () => {
     console.log('Clearing queue via IPC');
     return ipcRenderer.invoke('clear-queue');
@@ -222,7 +229,7 @@ const electronAPI: ElectronAPI = {
   },
 
   // Debug function (optional - for testing)
-  debugAddQueueItem: () => ipcRenderer.invoke('debug-add-queue-item'),
+  debugAddQueueItem: (count) => ipcRenderer.invoke('debug-add-queue-item', count),
 
   ytTest: async () => {
     return await ipcRenderer.invoke('ytTest');

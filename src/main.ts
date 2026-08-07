@@ -232,6 +232,21 @@ let queueHandler: QueueHandler;
 let currentTrackId: string | null = null;
 let currentTrackId2: string | null = null;
 let autoQueueTriggered: boolean = false;
+/**
+ * Request that was handed to the player and is expected to start next.
+ *
+ * Every player takes a handoff as "play next" rather than as "append" (YouTube
+ * sends INSERT_AFTER_CURRENT_VIDEO, Cider posts to /queue/add-next), so a second
+ * handoff would insert itself in front of this one and skip it. Request+ therefore
+ * hands over one request at a time and waits for it to actually start.
+ *
+ * Cleared on every track change: whatever happened, this request either started
+ * or the player moved past it, so nothing is left waiting. Only ever one at a
+ * time, which is what makes clearing it on the first track change correct.
+ */
+let awaitingStartTrackId: string | null = null;
+/** Number of test requests still to be seeded on startup (see getDebugSeedCount). */
+let debugSeedPending: number = 0;
 let lastTrackProgress: number = 0;
 let ytManager: YTManager;
 let playbackHandler: PlaybackHandler;
@@ -404,6 +419,7 @@ async function monitorTrackProgress(trackData: songInfo): Promise<void> {
     if (currentTrackId === trackId && lastTrackProgress > 0 && progress + 5000 < lastTrackProgress) {
         currentTrackId2 = null;
         autoQueueTriggered = false;
+        awaitingStartTrackId = null;
         Logger.info(`Playback progress restarted for same track: ${trackId}`);
     }
 
@@ -428,6 +444,15 @@ async function monitorTrackProgress(trackData: songInfo): Promise<void> {
         // "already handled" guard in checkCurrentlyPlayingTrack suppress a second
         // "Now Playing" toast for the same queued item across that swap.
         autoQueueTriggered = false;
+        // The handed-over request either starts now or the player moved past it.
+        // Either way nothing is waiting any more, so the next handoff may go out.
+        if (awaitingStartTrackId) {
+            const awaited = queue.items.find(item => item.id === awaitingStartTrackId);
+            if (awaited && normalizeTrackIdForQueueMatch(getQueueItemTrackId(awaited)) !== normalizeTrackIdForQueueMatch(trackId)) {
+                Logger.warn(`Player moved on without playing "${awaited.title}"; it stays queued but no longer blocks the auto-queue`);
+            }
+            awaitingStartTrackId = null;
+        }
         lastTrackProgress = progress;
         Logger.info(`New track detected: ${trackId}`);
         checkCurrentlyPlayingTrack(trackData);
@@ -457,6 +482,14 @@ async function autoQueueNextTrack(): Promise<void> {
     const queue = queueHandler.getQueue();
     if (queue.items.length === 0) {
         Logger.info('No items in queue to auto-add');
+        return;
+    }
+
+    // Give the request that was already handed over its chance to start before
+    // looking for the next one. Handing over a second one now would insert it in
+    // front of the first and skip it.
+    if (awaitingStartTrackId) {
+        Logger.info('Auto-queue: a request is still waiting to start; skipping this round');
         return;
     }
 
@@ -507,6 +540,7 @@ async function autoQueueNextTrack(): Promise<void> {
         );
 
         await queueHandler.setTrackAsQueued(queueHandler.findTrackById(nextTrack.id));
+        awaitingStartTrackId = nextTrack.id;
 
     } catch (error) {
         Logger.error('Error auto-queueing track:', error);
@@ -789,6 +823,8 @@ async function createWindow(): Promise<void> {
         });
     }
 
+    scheduleDebugSeed();
+
     if (!amHandler) {
         amHandler = new AMHandler(mainWindow, Logger, settings, WSServer);
     }
@@ -1048,6 +1084,7 @@ ipcMain.handle('song-skip', async (): Promise<void> => {
                     const queued = await ytManager.addItemToQueueById(videoId);
                     if (queued) {
                         await queueHandler.setTrackAsQueued(queueHandler.findTrackById(nextTrack.id));
+                        awaitingStartTrackId = nextTrack.id;
                         Logger.info(`Skip: fed "${nextTrack.title}" to the player`);
                     }
                 }
@@ -1098,6 +1135,18 @@ ipcMain.handle('play-track-at-index', async (event: Electron.IpcMainInvokeEvent,
         return true;
     }
 
+    // Only ever hand one request to the player at a time. A second click while
+    // something is still waiting to start would be inserted in front of it and
+    // skip it. So the click only pulls this request to the head of the waiting
+    // list; the auto-queue hands it over once the slot is free. It also stays
+    // un-queued and therefore still movable.
+    if (awaitingStartTrackId && awaitingStartTrackId !== trackId) {
+        const waiting = queue.items.find(item => item.id === awaitingStartTrackId);
+        Logger.info(`play-track-at-index: "${waiting?.title ?? awaitingStartTrackId}" is still waiting to start; only moving "${track.title}" up`);
+        await queueHandler.moveToFrontById(trackId);
+        return true;
+    }
+
     const platform = settings.platform;
     try {
         if (platform === 'youtube' && ytManager) {
@@ -1122,6 +1171,12 @@ ipcMain.handle('play-track-at-index', async (event: Electron.IpcMainInvokeEvent,
         }
 
         await queueHandler.setTrackAsQueued(currentIndex);
+        // The players insert a manual pick as "play next" (YTM literally sends
+        // INSERT_AFTER_CURRENT_VIDEO), so it no longer belongs at the position it
+        // was requested from. Pull it to the head of the list so the queue view
+        // shows the order that will actually play.
+        await queueHandler.moveToFrontById(trackId);
+        awaitingStartTrackId = trackId;
         Logger.info(`play-track-at-index: queued ${track.title} by ${track.artist}`);
         return true;
     } catch (error) {
@@ -1358,6 +1413,10 @@ ipcMain.handle('remove-from-queue', async  (event: Electron.IpcMainInvokeEvent, 
     return queueHandler ? queueHandler.removeFromQueue(index) : false;
 });
 
+ipcMain.handle('move-in-queue', async (event: Electron.IpcMainInvokeEvent, from: number, to: number, expectedId?: string): Promise<boolean> => {
+    return queueHandler ? queueHandler.moveInQueue(from, to, expectedId) : false;
+});
+
 ipcMain.handle('clear-queue', async (): Promise<boolean> => {
     return queueHandler ? queueHandler.clearQueue() : false;
 });
@@ -1470,6 +1529,117 @@ function updateIntervalForSongInfo(): void {
 }
 
 
+
+/**
+ * Search terms used to seed the queue for testing. Plain queries rather than
+ * hardcoded video IDs, so they keep resolving even if a specific upload goes away.
+ */
+const DEBUG_SEED_QUERIES = [
+    'a-ha Take On Me',
+    'Daft Punk Around the World',
+    'Fatboy Slim Praise You',
+    'Gorillaz Feel Good Inc',
+    'The Prodigy Breathe'
+];
+
+/**
+ * How many test requests to seed on startup. `npm run start:debug` passes
+ * `--debug-seed=5`; REQUESTPLUS_DEBUG_SEED=5 does the same for shells where
+ * forwarding the flag is inconvenient. 0 means no seeding.
+ */
+function getDebugSeedCount(): number {
+    const flag = process.argv.find(value => value === '--debug-seed' || value.startsWith('--debug-seed='));
+    if (flag) {
+        const value = flag.includes('=') ? Number(flag.split('=')[1]) : 5;
+        return Number.isFinite(value) && value > 0 ? Math.floor(value) : 5;
+    }
+
+    const fromEnv = Number(process.env.REQUESTPLUS_DEBUG_SEED);
+    return Number.isFinite(fromEnv) && fromEnv > 0 ? Math.floor(fromEnv) : 0;
+}
+
+/**
+ * Testing helper: fill the queue without going through Twitch or any other chat
+ * platform. Resolves each search term through the normal YouTube lookup, so the
+ * entries are real, playable requests and not dead placeholders.
+ */
+async function seedDebugQueue(count: number): Promise<number> {
+    if (!queueHandler) return 0;
+
+    if (settings.platform !== 'youtube' || !ytManager) {
+        Logger.warn(`Debug seeding: only implemented for YouTube, platform is "${settings.platform}"`);
+        sendToast('Debug seeding is only implemented for YouTube', 'error', 4000);
+        return 0;
+    }
+
+    const requested = Number.isFinite(count) ? Math.floor(count) : 5;
+    const wanted = Math.max(1, Math.min(DEBUG_SEED_QUERIES.length, requested));
+
+    let added = 0;
+    for (let i = 0; i < wanted; i++) {
+        const query = DEBUG_SEED_QUERIES[i];
+        const videoId = await ytManager.searchVideoId(query);
+        if (!videoId) {
+            Logger.warn(`Debug seeding: no result for "${query}"`);
+            continue;
+        }
+        // Distinct usernames keep the queue item ids unique (id = videoId-username).
+        const result = await queueYouTubeVideo(videoId, `debug${i + 1}`);
+        if (result) added++;
+    }
+
+    Logger.info(`Debug seeding: added ${added} test request(s)`);
+    // Silent when nothing landed — the startup path retries and would otherwise
+    // fire a toast on every attempt.
+    if (added > 0) sendToast(`Seeded ${added} test request(s)`, 'info', 3000);
+    return added;
+}
+
+/**
+ * Seed the queue on startup when `npm run start:debug` asked for it. The search
+ * behind it only answers once YouTube Music is reachable, which is well after the
+ * window opens, so this retries for a while instead of firing once and giving up.
+ */
+function scheduleDebugSeed(attempt: number = 1): void {
+    if (attempt === 1) {
+        debugSeedPending = getDebugSeedCount();
+        if (debugSeedPending <= 0) return;
+        Logger.info(`Debug seeding: ${debugSeedPending} test request(s) requested (argv: ${process.argv.join(' ')})`);
+    }
+
+    if (debugSeedPending <= 0) return;
+
+    const MAX_ATTEMPTS = 20;
+    setTimeout(async () => {
+        if (debugSeedPending <= 0) return;
+
+        if (settings.platform !== 'youtube') {
+            Logger.warn(`Debug seeding: platform is "${settings.platform}", only YouTube is supported — giving up`);
+            debugSeedPending = 0;
+            return;
+        }
+
+        const added = await seedDebugQueue(debugSeedPending);
+        if (added > 0) {
+            debugSeedPending = 0;
+            return;
+        }
+
+        if (attempt >= MAX_ATTEMPTS) {
+            Logger.warn(`Debug seeding: gave up after ${MAX_ATTEMPTS} attempts — is YouTube Music running and connected?`);
+            debugSeedPending = 0;
+            return;
+        }
+
+        Logger.info(`Debug seeding: nothing added yet (attempt ${attempt}/${MAX_ATTEMPTS}), retrying`);
+        scheduleDebugSeed(attempt + 1);
+    }, attempt === 1 ? 5000 : 3000);
+}
+
+/** Same helper on demand: `await api.debugAddQueueItem(5)` in the devtools console. */
+ipcMain.handle('debug-add-queue-item', async (event: Electron.IpcMainInvokeEvent, count: number = 5): Promise<number> => {
+    return seedDebugQueue(count);
+});
 
 ipcMain.handle('searchTest', async (): Promise<void> => {
     if (WSServer) {
