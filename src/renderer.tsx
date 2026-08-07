@@ -1267,7 +1267,13 @@ export default function App() {
 
       <div className="h-full pt-8 pb-[52px] overflow-hidden">
         {view === "player" && (
-          <RedesignedMusicPlayer track={track} setTrack={setTrack} locale={locale} />
+          <RedesignedMusicPlayer
+            track={track}
+            setTrack={setTrack}
+            queueItems={queueItems}
+            platform={settings.platform}
+            locale={locale}
+          />
         )}
         {view === "queue" && (
           <RedesignedQueuePage items={queueItems} setItems={setQueueItems} locale={locale} />
