@@ -1,11 +1,12 @@
 {
   "name": "requestplus",
   "productName": "Request+",
-  "version": "3.0.3",
+  "version": "3.1.0",
   "description": "Supercharged Music Overlay for Streamers!",
   "main": ".vite/build/main.js",
   "scripts": {
     "start": "electron-forge start --inspect-electron",
+    "start:debug": "electron-forge start --inspect-electron -- --debug-seed=5",
     "package": "electron-forge package GITHUB_TOKEN=${process.env.GITHUB_TOKEN}",
     "make": "electron-forge make",
     "publish": "electron-forge publish",

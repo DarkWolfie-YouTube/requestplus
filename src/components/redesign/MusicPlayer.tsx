@@ -4,7 +4,20 @@ import { Blobs, fmt, TrackArt } from "./shared";
 import type { Track } from "./shared";
 import { t } from "../../i18n";
 
-export function MusicPlayer({ track, setTrack, locale }: { track: Track; setTrack: (t: Track) => void; locale: string }) {
+interface QueueItem {
+  iscurrentlyPlaying?: boolean;
+  isQueued?: boolean;
+}
+
+interface MusicPlayerProps {
+  track: Track;
+  setTrack: (t: Track) => void;
+  queueItems: QueueItem[];
+  platform: string;
+  locale: string;
+}
+
+export function MusicPlayer({ track, setTrack, queueItems, platform, locale }: MusicPlayerProps) {
   const [vol, setVol] = useState(Math.round(track.volume * 100));
   const [liked, setLiked] = useState(track.isLiked);
   const adjusting = useRef(false);
@@ -41,6 +54,30 @@ export function MusicPlayer({ track, setTrack, locale }: { track: Track; setTrac
     setLiked(next);
     setTrack({ ...track, isLiked: next });
     api()?.like?.();
+  };
+
+  const skip = async () => {
+    const playerApi = api();
+    if (!playerApi) return;
+
+    const nextIndex = queueItems.findIndex(
+      (item) => !item.iscurrentlyPlaying && !item.isQueued,
+    );
+
+    if (nextIndex === -1) {
+      await playerApi.skip?.();
+      return;
+    }
+
+    const queued = await playerApi.playTrackAtIndex?.(nextIndex);
+    if (queued === false) return;
+
+    // The player integrations apply queue inserts asynchronously. Give them the
+    // same small handoff window used by the original player before advancing.
+    const delay = platform === "youtube" ? 1000 : platform === "apple" ? 300 : 50;
+    window.setTimeout(() => {
+      playerApi.skip?.();
+    }, delay);
   };
 
   const volBg = `linear-gradient(to right,#8b5cf6 0%,#10b981 ${vol}%,#1e293b ${vol}%,#1e293b 100%)`;
@@ -112,7 +149,7 @@ export function MusicPlayer({ track, setTrack, locale }: { track: Track; setTrac
               : <Play className="size-7 fill-current ml-0.5" />}
           </button>
           <button
-            onClick={() => api()?.skip?.()}
+            onClick={() => void skip()}
             className="flex size-12 items-center justify-center rounded-full bg-slate-800/80 text-white ring-1 ring-white/8 transition-all hover:bg-slate-700 active:scale-95"
           >
             <SkipForward className="size-5 fill-current" />

@@ -234,6 +234,21 @@ let queueHandler: QueueHandler;
 let currentTrackId: string | null = null;
 let currentTrackId2: string | null = null;
 let autoQueueTriggered: boolean = false;
+/**
+ * Request that was handed to the player and is expected to start next.
+ *
+ * Every player takes a handoff as "play next" rather than as "append" (YouTube
+ * sends INSERT_AFTER_CURRENT_VIDEO, Cider posts to /queue/add-next), so a second
+ * handoff would insert itself in front of this one and skip it. Request+ therefore
+ * hands over one request at a time and waits for it to actually start.
+ *
+ * Cleared on every track change: whatever happened, this request either started
+ * or the player moved past it, so nothing is left waiting. Only ever one at a
+ * time, which is what makes clearing it on the first track change correct.
+ */
+let awaitingStartTrackId: string | null = null;
+/** Number of test requests still to be seeded on startup (see getDebugSeedCount). */
+let debugSeedPending: number = 0;
 let lastTrackProgress: number = 0;
 let ytManager: YTManager;
 let playbackHandler: PlaybackHandler;
@@ -247,7 +262,15 @@ let soundCloudQueueTimer: NodeJS.Timeout | null = null;
 let windowHandler: WindowHandler | null = null;
 let isCreatingMainWindow = false;
 let oobeAuthListenersRegistered = false;
-let pendingMainWindowAfterWebSocket = false;
+let revealMainWindowAfterCloudAuth = false;
+
+/**
+ * How long to wait for a connected client to return song search results.
+ * Generous on purpose: the lookup goes out to the streaming service, so on a slow
+ * connection it can take several seconds. Giving up early makes Request+ answer
+ * the viewer before the music app has responded.
+ */
+const SEARCH_RESULT_TIMEOUT_MS = 15000;
 
 function getQueueItemTrackId(item: QueueItem): string {
     const requestedBySuffix = `-${item.requestedBy}`;
@@ -410,6 +433,7 @@ async function monitorTrackProgress(trackData: songInfo): Promise<void> {
     if (currentTrackId === trackId && lastTrackProgress > 0 && progress + 5000 < lastTrackProgress) {
         currentTrackId2 = null;
         autoQueueTriggered = false;
+        awaitingStartTrackId = null;
         Logger.info(`Playback progress restarted for same track: ${trackId}`);
     }
 
@@ -434,6 +458,15 @@ async function monitorTrackProgress(trackData: songInfo): Promise<void> {
         // "already handled" guard in checkCurrentlyPlayingTrack suppress a second
         // "Now Playing" toast for the same queued item across that swap.
         autoQueueTriggered = false;
+        // The handed-over request either starts now or the player moved past it.
+        // Either way nothing is waiting any more, so the next handoff may go out.
+        if (awaitingStartTrackId) {
+            const awaited = queue.items.find(item => item.id === awaitingStartTrackId);
+            if (awaited && normalizeTrackIdForQueueMatch(getQueueItemTrackId(awaited)) !== normalizeTrackIdForQueueMatch(trackId)) {
+                Logger.warn(`Player moved on without playing "${awaited.title}"; it stays queued but no longer blocks the auto-queue`);
+            }
+            awaitingStartTrackId = null;
+        }
         lastTrackProgress = progress;
         Logger.info(`New track detected: ${trackId}`);
         checkCurrentlyPlayingTrack(trackData);
@@ -463,6 +496,14 @@ async function autoQueueNextTrack(): Promise<void> {
     const queue = queueHandler.getQueue();
     if (queue.items.length === 0) {
         Logger.info('No items in queue to auto-add');
+        return;
+    }
+
+    // Give the request that was already handed over its chance to start before
+    // looking for the next one. Handing over a second one now would insert it in
+    // front of the first and skip it.
+    if (awaitingStartTrackId) {
+        Logger.info('Auto-queue: a request is still waiting to start; skipping this round');
         return;
     }
 
@@ -513,6 +554,7 @@ async function autoQueueNextTrack(): Promise<void> {
         );
 
         await queueHandler.setTrackAsQueued(queueHandler.findTrackById(nextTrack.id));
+        awaitingStartTrackId = nextTrack.id;
 
     } catch (error) {
         Logger.error('Error auto-queueing track:', error);
@@ -661,45 +703,62 @@ async function ensureOverlayFile(): Promise<string> {
     return targetPath;
 }
 
-async function createWindow(): Promise<void> {
-    const customSession = session.fromPartition('persist:api-session', { cache: false });
-    
-    customSession.setCertificateVerifyProc((request, callback) => {
-        if (request.hostname === 'api.requestplus.xyz') {
-            callback(0); // 0 = success, bypass verification
-        } else {
-            callback(-3); // -3 = use default verification
-        }
-    });
-    const request = net.request({
-        method: 'GET',
-        url: 'https://api.requestplus.xyz/hardware/check?id=' + authManager.getHardwareInfoPublic()?.deviceId,
-        session: customSession
-    });
+async function checkHardwareBanStatus(): Promise<void> {
+    await authManager.ready();
 
-    request.on('response', (response) => {
-        let body = '';
-        response.on('data', (chunk) => { body += chunk; });
-        response.on('end', () => {
-            try {
-                const data = JSON.parse(body);
-                if (data.banned) app.quit();
-            } catch (e) {
-                if (Logger) Logger.error('Error parsing response:', e);
-                app.quit();
-            }
+    const hardwareInfo = authManager.getHardwareInfoPublic();
+    if (!hardwareInfo?.deviceId) {
+        Logger?.warn('[Main] Skipping hardware ban check because device ID is unavailable.');
+        return;
+    }
+
+    await new Promise<void>((resolve) => {
+        let settled = false;
+        const finish = () => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timeout);
+            resolve();
+        };
+        const timeout = setTimeout(() => {
+            Logger?.warn('[Main] Hardware ban check timed out; continuing startup.');
+            request.abort();
+            finish();
+        }, 5000);
+        const request = net.request({
+            method: 'GET',
+            url: 'https://api.requestplus.xyz/hardware/check?id=' + encodeURIComponent(hardwareInfo.deviceId)
         });
-    });
 
-    request.on('error', (error) => {
-        if (Logger) Logger.error('Error checking hardware ban status:', error);
-        app.quit();
-    });
+        request.on('response', (response) => {
+            let body = '';
+            response.on('data', (chunk) => { body += chunk; });
+            response.on('end', () => {
+                try {
+                    const data = JSON.parse(body);
+                    if (data.banned) app.quit();
+                } catch (e) {
+                    Logger?.error('[Main] Error parsing hardware ban response:', e);
+                } finally {
+                    finish();
+                }
+            });
+        });
 
-    request.end();
+        request.on('error', (error) => {
+            Logger?.error('[Main] Error checking hardware ban status:', error);
+            finish();
+        });
+
+        request.end();
+    });
+}
+
+async function createWindow(): Promise<void> {
     if (isCreatingMainWindow) return;
     isCreatingMainWindow = true;
     try {
+    await checkHardwareBanStatus();
     const currentSettings = settingsHandler.load();
     if (currentSettings.oobeCompleted !== true) {
         createStartupOobeWindow();
@@ -709,20 +768,9 @@ async function createWindow(): Promise<void> {
     if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.setMinimumSize(400, 800);
         mainWindow.setSize(400, 800);
-        mainWindow.show();
-        mainWindow.focus();
+        showMainWindow();
         return;
     }
-
-    const apiConnected = await ensureApiWebSocketConnected();
-    if (!apiConnected) {
-        const token = await authManager.getValidAuthToken();
-        if (!token) {
-            createStartupOobeWindow();
-        }
-        return;
-    }
-    
 
     await ensureOverlayFile();
 
@@ -744,9 +792,10 @@ async function createWindow(): Promise<void> {
         titleBarStyle: 'hidden',
         titleBarOverlay: false,
         resizable: false,
+        show: false,
         icon: path.join(__dirname, 'assets', 'the_letter.png'),
     });
-    
+
     if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
         mainWindow.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL);
         mainWindow.webContents.on('did-finish-load', () => {
@@ -760,7 +809,10 @@ async function createWindow(): Promise<void> {
     // mainWindow.webContents.openDevTools();
     
     if (!(global as any).ISAUTHING) {
-        await checkForUpdates(mainWindow, Logger);
+        // Run the update/terms check in the background — it does unbounded network
+        // fetches (GitHub releases + api.requestplus.xyz/termsUpdate) and must never
+        // block the window/local API from starting if an endpoint stalls.
+        void checkForUpdates(mainWindow, Logger).catch((err) => Logger?.error('[Main] checkForUpdates failed:', err));
     }
 
     // Setup auth event listeners BEFORE deep link handling so events aren't missed
@@ -779,10 +831,10 @@ async function createWindow(): Promise<void> {
     queueHandler = new QueueHandler(Logger, mainWindow, settings);
 
         
-    if (!WSServer && !(global as any).ISAUTHING) {
+    if (!WSServer) {
         WSServer = new websocket(443, mainWindow, Logger);
     }
-    
+
     if (!ytManager) {
         ytManager = new YTManager(Logger);
 
@@ -793,6 +845,8 @@ async function createWindow(): Promise<void> {
             }
         });
     }
+
+    scheduleDebugSeed();
 
     if (!amHandler) {
         amHandler = new AMHandler(mainWindow, Logger, settings, WSServer);
@@ -819,10 +873,32 @@ async function createWindow(): Promise<void> {
             getControlEnabled: () => settings.streamDeckEnabled === true,
         });
     }
-    
+
 
     if (!gtsHandler) {
         gtsHandler = new GTSHandler(app, mainWindow, apiHandler, playbackHandler, Logger, settings);
+    }
+
+    const token = await authManager.getValidAuthToken();
+    const hardwareInfo = authManager.getHardwareInfoPublic();
+
+    if (token && hardwareInfo) {
+      revealMainWindowAfterCloudAuth = true;
+      websocketManager.connect(token.token, hardwareInfo.deviceId).catch((error) => {
+        Logger?.warn('[Main] Cloud websocket connection failed after local startup; reconnect will continue in the background:', error);
+      });
+      scheduleTokenRefresh(token.expiresAt);
+      revealMainWindowWhenCloudAuthenticated();
+      // Safety net: never leave the window hidden if cloud auth is slow or
+      // unreachable (e.g. an API outage). Show it after a short grace period.
+      setTimeout(() => {
+        if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.isVisible()) {
+          showMainWindow();
+        }
+      }, 8000);
+    } else {
+      Logger?.info('[Main] No auth token available; local API server is running without cloud websocket.');
+      showMainWindow();
     }
     
     updateIntervalForSongInfo();
@@ -840,8 +916,7 @@ async function createWindow(): Promise<void> {
             {
                 label: 'Show Request+',
                 click: () => {
-                    mainWindow?.show();
-                    mainWindow?.focus();
+                    showMainWindow();
                 }
             },
             { type: 'separator' },
@@ -862,7 +937,7 @@ async function createWindow(): Promise<void> {
             if (mainWindow?.isVisible()) {
                 mainWindow.focus();
             } else {
-                mainWindow?.show();
+                showMainWindow();
             }
         });
     } catch (error) {
@@ -881,30 +956,6 @@ async function createWindow(): Promise<void> {
     }
 }
 
-async function ensureApiWebSocketConnected(): Promise<boolean> {
-    if (websocketManager.isAuthenticated()) {
-        return true;
-    }
-
-    await authManager.ready();
-    const token = await authManager.getValidAuthToken();
-    const hardwareInfo = authManager.getHardwareInfoPublic();
-
-    if (!token || !hardwareInfo) {
-        return false;
-    }
-
-    try {
-        await websocketManager.connect(token.token, hardwareInfo.deviceId);
-        scheduleTokenRefresh(token.expiresAt);
-        return websocketManager.isAuthenticated();
-    } catch (error) {
-        Logger?.error('[Main] API websocket connection failed before window creation:', error);
-        pendingMainWindowAfterWebSocket = true;
-        return false;
-    }
-}
-
 function createStartupOobeWindow(): BrowserWindow {
     if (!windowHandler) {
         windowHandler = new WindowHandler(app.getPath('userData'), async () => {
@@ -920,6 +971,36 @@ function createStartupOobeWindow(): BrowserWindow {
     }
 
     return oobeWindow;
+}
+
+function revealMainWindowWhenCloudAuthenticated(): boolean {
+    if (!mainWindow || mainWindow.isDestroyed()) {
+        return false;
+    }
+
+    if (revealMainWindowAfterCloudAuth && !websocketManager.isAuthenticated()) {
+        revealMainWindowAfterCloudAuth = true;
+        mainWindow.hide();
+        Logger?.info('[Main] Main window reveal deferred until cloud websocket authentication completes.');
+        return false;
+    }
+
+    revealMainWindowAfterCloudAuth = false;
+    mainWindow.show();
+    mainWindow.focus();
+    return true;
+}
+
+/**
+ * Show the window unconditionally. Used for explicit user actions (tray, re-open)
+ * and the no-token/offline path — there deferring on cloud auth would otherwise
+ * leave the UI permanently unreachable.
+ */
+function showMainWindow(): void {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    revealMainWindowAfterCloudAuth = false;
+    mainWindow.show();
+    mainWindow.focus();
 }
 
 function applySettingsToRuntime(updatedSettings: Settings): void {
@@ -1044,6 +1125,18 @@ ipcMain.handle('play-track-at-index', async (event: Electron.IpcMainInvokeEvent,
         return true;
     }
 
+    // Only ever hand one request to the player at a time. A second click while
+    // something is still waiting to start would be inserted in front of it and
+    // skip it. So the click only pulls this request to the head of the waiting
+    // list; the auto-queue hands it over once the slot is free. It also stays
+    // un-queued and therefore still movable.
+    if (awaitingStartTrackId && awaitingStartTrackId !== trackId) {
+        const waiting = queue.items.find(item => item.id === awaitingStartTrackId);
+        Logger.info(`play-track-at-index: "${waiting?.title ?? awaitingStartTrackId}" is still waiting to start; only moving "${track.title}" up`);
+        await queueHandler.moveToFrontById(trackId);
+        return true;
+    }
+
     const platform = settings.platform;
     try {
         if (platform === 'youtube' && ytManager) {
@@ -1068,6 +1161,12 @@ ipcMain.handle('play-track-at-index', async (event: Electron.IpcMainInvokeEvent,
         }
 
         await queueHandler.setTrackAsQueued(currentIndex);
+        // The players insert a manual pick as "play next" (YTM literally sends
+        // INSERT_AFTER_CURRENT_VIDEO), so it no longer belongs at the position it
+        // was requested from. Pull it to the head of the list so the queue view
+        // shows the order that will actually play.
+        await queueHandler.moveToFrontById(trackId);
+        awaitingStartTrackId = trackId;
         Logger.info(`play-track-at-index: queued ${track.title} by ${track.artist}`);
         return true;
     } catch (error) {
@@ -1235,6 +1334,10 @@ ipcMain.handle('remove-from-queue', async  (event: Electron.IpcMainInvokeEvent, 
     return queueHandler ? queueHandler.removeFromQueue(index) : false;
 });
 
+ipcMain.handle('move-in-queue', async (event: Electron.IpcMainInvokeEvent, from: number, to: number, expectedId?: string): Promise<boolean> => {
+    return queueHandler ? queueHandler.moveInQueue(from, to, expectedId) : false;
+});
+
 ipcMain.handle('clear-queue', async (): Promise<boolean> => {
     return queueHandler ? queueHandler.clearQueue() : false;
 });
@@ -1348,6 +1451,117 @@ function updateIntervalForSongInfo(): void {
 
 
 
+/**
+ * Search terms used to seed the queue for testing. Plain queries rather than
+ * hardcoded video IDs, so they keep resolving even if a specific upload goes away.
+ */
+const DEBUG_SEED_QUERIES = [
+    'a-ha Take On Me',
+    'Daft Punk Around the World',
+    'Fatboy Slim Praise You',
+    'Gorillaz Feel Good Inc',
+    'The Prodigy Breathe'
+];
+
+/**
+ * How many test requests to seed on startup. `npm run start:debug` passes
+ * `--debug-seed=5`; REQUESTPLUS_DEBUG_SEED=5 does the same for shells where
+ * forwarding the flag is inconvenient. 0 means no seeding.
+ */
+function getDebugSeedCount(): number {
+    const flag = process.argv.find(value => value === '--debug-seed' || value.startsWith('--debug-seed='));
+    if (flag) {
+        const value = flag.includes('=') ? Number(flag.split('=')[1]) : 5;
+        return Number.isFinite(value) && value > 0 ? Math.floor(value) : 5;
+    }
+
+    const fromEnv = Number(process.env.REQUESTPLUS_DEBUG_SEED);
+    return Number.isFinite(fromEnv) && fromEnv > 0 ? Math.floor(fromEnv) : 0;
+}
+
+/**
+ * Testing helper: fill the queue without going through Twitch or any other chat
+ * platform. Resolves each search term through the normal YouTube lookup, so the
+ * entries are real, playable requests and not dead placeholders.
+ */
+async function seedDebugQueue(count: number): Promise<number> {
+    if (!queueHandler) return 0;
+
+    if (settings.platform !== 'youtube' || !ytManager) {
+        Logger.warn(`Debug seeding: only implemented for YouTube, platform is "${settings.platform}"`);
+        sendToast('Debug seeding is only implemented for YouTube', 'error', 4000);
+        return 0;
+    }
+
+    const requested = Number.isFinite(count) ? Math.floor(count) : 5;
+    const wanted = Math.max(1, Math.min(DEBUG_SEED_QUERIES.length, requested));
+
+    let added = 0;
+    for (let i = 0; i < wanted; i++) {
+        const query = DEBUG_SEED_QUERIES[i];
+        const videoId = await ytManager.searchVideoId(query);
+        if (!videoId) {
+            Logger.warn(`Debug seeding: no result for "${query}"`);
+            continue;
+        }
+        // Distinct usernames keep the queue item ids unique (id = videoId-username).
+        const result = await queueYouTubeVideo(videoId, `debug${i + 1}`);
+        if (result) added++;
+    }
+
+    Logger.info(`Debug seeding: added ${added} test request(s)`);
+    // Silent when nothing landed — the startup path retries and would otherwise
+    // fire a toast on every attempt.
+    if (added > 0) sendToast(`Seeded ${added} test request(s)`, 'info', 3000);
+    return added;
+}
+
+/**
+ * Seed the queue on startup when `npm run start:debug` asked for it. The search
+ * behind it only answers once YouTube Music is reachable, which is well after the
+ * window opens, so this retries for a while instead of firing once and giving up.
+ */
+function scheduleDebugSeed(attempt: number = 1): void {
+    if (attempt === 1) {
+        debugSeedPending = getDebugSeedCount();
+        if (debugSeedPending <= 0) return;
+        Logger.info(`Debug seeding: ${debugSeedPending} test request(s) requested (argv: ${process.argv.join(' ')})`);
+    }
+
+    if (debugSeedPending <= 0) return;
+
+    const MAX_ATTEMPTS = 20;
+    setTimeout(async () => {
+        if (debugSeedPending <= 0) return;
+
+        if (settings.platform !== 'youtube') {
+            Logger.warn(`Debug seeding: platform is "${settings.platform}", only YouTube is supported — giving up`);
+            debugSeedPending = 0;
+            return;
+        }
+
+        const added = await seedDebugQueue(debugSeedPending);
+        if (added > 0) {
+            debugSeedPending = 0;
+            return;
+        }
+
+        if (attempt >= MAX_ATTEMPTS) {
+            Logger.warn(`Debug seeding: gave up after ${MAX_ATTEMPTS} attempts — is YouTube Music running and connected?`);
+            debugSeedPending = 0;
+            return;
+        }
+
+        Logger.info(`Debug seeding: nothing added yet (attempt ${attempt}/${MAX_ATTEMPTS}), retrying`);
+        scheduleDebugSeed(attempt + 1);
+    }, attempt === 1 ? 5000 : 3000);
+}
+
+/** Same helper on demand: `await api.debugAddQueueItem(5)` in the devtools console. */
+ipcMain.handle('debug-add-queue-item', async (event: Electron.IpcMainInvokeEvent, count: number = 5): Promise<number> => {
+    return seedDebugQueue(count);
+});
+
 ipcMain.handle('searchTest', async (): Promise<void> => {
     if (WSServer) {
         WSServer.WSSendToType({ command: "searchRequest", data: { query: "Shockwave Marshmello" } } as WSCommand, 'spotify');
@@ -1387,7 +1601,10 @@ authManager.on('auth-success', async (token) => {
   (global as any).Logger.info('[Main] Auth success, connecting WebSocket...');
   const hardwareInfo = authManager.getHardwareInfoPublic();
   if (hardwareInfo) {
-    websocketManager.connect(token.token, hardwareInfo.deviceId);
+    revealMainWindowAfterCloudAuth = true;
+    websocketManager.connect(token.token, hardwareInfo.deviceId).catch((error) => {
+      Logger?.warn('[Main] Cloud websocket connection failed after auth success; reconnect will continue in the background:', error);
+    });
   }
   scheduleTokenRefresh(token.expiresAt);
   const isExperimentalUser = await authManager.checkExperimentalUser();
@@ -1431,11 +1648,9 @@ authManager.on('auth-logout', () => {
 });
 
 websocketManager.on('authenticated', () => {
-    if (!pendingMainWindowAfterWebSocket) return;
-    pendingMainWindowAfterWebSocket = false;
-    void createWindow();
+    if (!revealMainWindowAfterCloudAuth) return;
+    revealMainWindowWhenCloudAuthenticated();
 });
-
 
 websocketManager.on('notification', (message) => {
     if (!mainWindow || mainWindow.isDestroyed()) {
@@ -1453,6 +1668,8 @@ websocketManager.on('notification', (message) => {
         buttons: ['OK'],
     });
 });
+
+
 
 // Detect text that looks like a URL/link so we don't run a title search on it
 // (a broken/unsupported link should be rejected, not searched verbatim).
@@ -1678,12 +1895,12 @@ websocketManager.on('song-search-request', async (message) => {
             WSServer.SearchResults = [];
             WSServer.WSSendToType({ command: 'searchRequest', data: { query: newQuery } } as WSCommand, 'spotify');
 
-            let firstResult: any = null;
-            for (let attempt = 0; attempt < 20; attempt++) {
-                await wait(100);
-                firstResult = WSServer.SearchResults?.[0];
-                if (firstResult) break;
-            }
+            // Wait for the client's actual answer instead of polling for a fixed 2s.
+            // On a slow connection the lookup regularly takes longer than that, and
+            // the old loop replied "search failed" while the result was still in
+            // flight — the request then silently never made it into the queue.
+            const searchResults = await WSServer.waitForSearchResults(SEARCH_RESULT_TIMEOUT_MS);
+            const firstResult: any = searchResults?.[0] ?? null;
 
             if (!firstResult) {
                 websocketManager.send({ type: 'song_search_response', message: 'ERR_SP_SEARCH_FAILED', username: message.username, msgID: message.messageId, platform: message.platform, channel: message.channel });

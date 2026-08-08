@@ -524,7 +524,7 @@ class AuthManager extends EventEmitter {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          refresh_token: this.authToken.refreshToken,
+          refresh_token: this.authToken!.refreshToken,
           device_id: this.hardwareInfo!.deviceId
         })
       });

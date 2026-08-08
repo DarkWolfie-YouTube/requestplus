@@ -98,6 +98,110 @@ class QueueHandler {
         return this.removeFromQueue(index);
     }
 
+    /**
+     * A song is locked once it is playing or has been handed to the player
+     * (Spotify/YTM/SoundCloud). At that point the platform queue owns it and
+     * reordering it here would only desync the two lists.
+     */
+    private isLocked(index: number): boolean {
+        const item = this.queue.items[index];
+        if (!item) return true;
+        return Boolean(item.isQueued) || Boolean(item.iscurrentlyPlaying) || index === this.queue.currentlyPlayingIndex;
+    }
+
+    /**
+     * Move a pending request to another position in the queue.
+     *
+     * The whole move is rejected (rather than clamped) when it would shift a
+     * locked song, so the visible order always matches what will actually play.
+     * `expectedId` guards against a stale index: the renderer may send a move
+     * that was computed before a new request arrived or another item was removed.
+     */
+    async moveInQueue(from: number, to: number, expectedId?: string): Promise<boolean> {
+        const items = this.queue.items;
+
+        if (!Number.isInteger(from) || !Number.isInteger(to)) {
+            this.logger.warn(`Attempted to move queue item with non-integer index: ${from} -> ${to}`);
+            return false;
+        }
+
+        if (from < 0 || from >= items.length || to < 0 || to >= items.length) {
+            this.logger.warn(`Attempted to move queue item out of range: ${from} -> ${to} (size ${items.length})`);
+            return false;
+        }
+
+        if (expectedId && items[from].id !== expectedId) {
+            this.logger.warn(`Queue moved since the move was requested; expected ${expectedId} at index ${from}`);
+            return false;
+        }
+
+        if (from === to) return true;
+
+        // Everything between source and target shifts by one, so a locked song
+        // anywhere in that span (including the source itself) blocks the move.
+        const lower = Math.min(from, to);
+        const upper = Math.max(from, to);
+        for (let i = lower; i <= upper; i++) {
+            if (this.isLocked(i)) {
+                this.logger.warn(`Cannot move queue item ${from} -> ${to}: "${items[i].title}" is already playing or queued`);
+                return false;
+            }
+        }
+
+        const [movedItem] = items.splice(from, 1);
+        items.splice(to, 0, movedItem);
+        this.queue.currentCount = items.length;
+
+        // Locked items keep their index by construction, but re-derive the
+        // pointer anyway so the queue object stays self-consistent.
+        const playingIndex = items.findIndex(item => item.iscurrentlyPlaying);
+        if (playingIndex !== -1) {
+            this.queue.currentlyPlayingIndex = playingIndex;
+        }
+
+        this.logger.info(`Moved in queue: ${movedItem.title} by ${movedItem.artist} (${from + 1} -> ${to + 1})`);
+        await this.updateQueuePage();
+        return true;
+    }
+
+    /**
+     * Pull a clicked request to the head of the waiting part of the list, i.e.
+     * below the song that is playing and below one that was already handed to
+     * the player. That is exactly the spot getNextTrackToQueue() picks from, so
+     * the list order and the order things will actually play stay the same.
+     *
+     * Unlike moveInQueue this ignores the lock rule on the moved item itself:
+     * the move is triggered by the app, not by a drag, and it never displaces a
+     * locked entry because it always lands after them.
+     */
+    async moveToFrontById(id: string): Promise<boolean> {
+        const items = this.queue.items;
+        const from = items.findIndex(item => item.id === id);
+        if (from === -1) {
+            this.logger.warn(`Cannot move to front, not in queue: ${id}`);
+            return false;
+        }
+
+        const [item] = items.splice(from, 1);
+        // First slot not taken by the playing song or an already dispatched one.
+        // Checked on the flags rather than via isLocked(), whose index-based part
+        // would be stale between the splice calls.
+        let target = items.findIndex(entry => !entry.isQueued && !entry.iscurrentlyPlaying);
+        if (target === -1) target = items.length;
+        items.splice(target, 0, item);
+
+        const playingIndex = items.findIndex(entry => entry.iscurrentlyPlaying);
+        if (playingIndex !== -1) {
+            this.queue.currentlyPlayingIndex = playingIndex;
+        }
+
+        if (from !== target) {
+            this.logger.info(`Moved to front of queue: ${item.title} by ${item.artist} (${from + 1} -> ${target + 1})`);
+            await this.updateQueuePage();
+        }
+        return true;
+    }
+
     async clearQueue(): Promise<boolean> {
         try {
             this.queue.items = [];
