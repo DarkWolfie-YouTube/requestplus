@@ -2,9 +2,15 @@ import { app, BrowserWindow, ipcMain, shell, MessageBoxOptions, MessageBoxReturn
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { setTimeout as wait } from 'node:timers/promises';
-import { checkForUpdates, getSettings, resolveModal, setPreReleaseCheck } from './updateChecker';
+import {
+    checkForUpdates,
+    getAvailableUpdateChannels,
+    getSettings,
+    resolveModal,
+    setPreReleaseCheck,
+    setUpdateChannel
+} from './updateChecker';
 import QueueHandler, { Queue, QueueItem } from './queueHandler';
-import { updateElectronApp } from 'update-electron-app';
 
 //Handlers
 import websocket from './websocket';
@@ -55,7 +61,6 @@ var handleStartupEvent = function() {
 };
 
 handleStartupEvent();
-updateElectronApp();
 
 
 // Type definitions
@@ -86,7 +91,8 @@ interface WSCommand {
 }
 
 interface UpdateSettings {
-    preRelease?: boolean;
+    checkPreReleases: boolean;
+    channel: string;
     [key: string]: any;
 }
 
@@ -795,8 +801,8 @@ async function createWindow(): Promise<void> {
     // mainWindow.webContents.openDevTools();
     
     if (!(global as any).ISAUTHING) {
-        // Run the update/terms check in the background — it does unbounded network
-        // fetches (GitHub releases + api.requestplus.xyz/termsUpdate) and must never
+        // Run the update/terms check in the background. It calls the Request+
+        // update service and api.requestplus.xyz/termsUpdate and must never
         // block the window/local API from starting if an endpoint stalls.
         void checkForUpdates(mainWindow, Logger).catch((err) => Logger?.error('[Main] checkForUpdates failed:', err));
     }
@@ -1297,6 +1303,14 @@ ipcMain.on('modal-response', (_event, id: string, response: number) => {
 
 ipcMain.handle('get-update-settings', (): UpdateSettings => {
     return getSettings();
+});
+
+ipcMain.handle('get-update-channels', async (): Promise<string[]> => {
+    return getAvailableUpdateChannels();
+});
+
+ipcMain.handle('set-update-channel', (_event: Electron.IpcMainInvokeEvent, channel: string): void => {
+    setUpdateChannel(channel);
 });
 
 ipcMain.handle('set-pre-release-check', (event: Electron.IpcMainInvokeEvent, enabled: boolean): void => {

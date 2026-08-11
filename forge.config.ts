@@ -2,6 +2,13 @@ const { FusesPlugin } = require('@electron-forge/plugin-fuses');
 const { FuseV1Options, FuseVersion } = require('@electron/fuses');
 const path = require('path');
 
+const updateBranch = process.env.REQUESTPLUS_RELEASE_BRANCH || 'stable';
+const updateArch = process.env.REQUESTPLUS_RELEASE_ARCH || process.env.npm_config_arch || process.arch;
+if (!/^[a-z0-9][a-z0-9-]*$/.test(updateBranch)) {
+  throw new Error('REQUESTPLUS_RELEASE_BRANCH must contain lowercase letters, numbers, or hyphens');
+}
+const updateFeedBase = `https://updates.requestplus.xyz/v1/updates/feeds/${updateBranch}`;
+
 module.exports = {
   packagerConfig: {
     asar: true,
@@ -45,6 +52,13 @@ module.exports = {
         format: 'ULFO',
         overwrite: true,
         debug: false
+      }
+    },
+    {
+      name: '@electron-forge/maker-zip',
+      platforms: ['darwin'],
+      config: {
+        macUpdateManifestBaseUrl: `${updateFeedBase}/macos/${updateArch}`
       }
     },
     {
