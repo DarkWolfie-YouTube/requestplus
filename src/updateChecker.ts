@@ -366,8 +366,6 @@ async function checkForUpdates(window: BrowserWindow | null, logger: Logger): Pr
             const storeName = process.windowsStore ? 'Microsoft Store' : 'Mac App Store';
             logger.info(`Updates for this installation are managed by the ${storeName}`);
             sendToast(window, `Updates for this installation are managed by ${storeName}.`, 'info', 5000);
-        } else if (checkForNativeUpdate(nativeBranch, window, logger)) {
-            logger.info(`Started Forge native update check on the ${nativeBranch} branch`);
         } else {
             try {
             const checks = await Promise.allSettled(
@@ -385,38 +383,42 @@ async function checkForUpdates(window: BrowserWindow | null, logger: Logger): Pr
 
             const selected = selectNewestUpdate(responses);
             if (selected?.release && selected.latestVersion) {
-                const releaseType = selected.channel === 'stable' ? 'release' : `${selected.channel} release`;
-                await sendToastWithDelay(
-                    window,
-                    `New ${releaseType} (${selected.latestVersion}) available! Current: ${currentVersion}`,
-                    'warning',
-                    8000,
-                    1000
-                );
-                logger.info(
-                    `Update available: ${selected.latestVersion}; ` +
-                    `file=${selected.release.fileName}; sha256=${selected.release.sha256 ?? 'unavailable'}`
-                );
+                if (await checkForNativeUpdate(nativeBranch, window, logger)) {
+                    logger.info(`Started Forge native update check on the ${nativeBranch} branch`);
+                } else {
+                    const releaseType = selected.channel === 'stable' ? 'release' : `${selected.channel} release`;
+                    await sendToastWithDelay(
+                        window,
+                        `New ${releaseType} (${selected.latestVersion}) available! Current: ${currentVersion}`,
+                        'warning',
+                        8000,
+                        1000
+                    );
+                    logger.info(
+                        `Update available: ${selected.latestVersion}; ` +
+                        `file=${selected.release.fileName}; sha256=${selected.release.sha256 ?? 'unavailable'}`
+                    );
 
-                setTimeout(() => {
-                    void (async () => {
-                    try {
-                        if (process.platform === 'linux') {
-                            await downloadAndInstallLinuxUpdate(selected.release!, window, logger);
-                        } else {
-                            const downloadUrl = new URL(selected.release!.downloadUrl);
-                            if (downloadUrl.protocol !== 'https:') {
-                                throw new Error('Update server returned a non-HTTPS download URL');
+                    setTimeout(() => {
+                        void (async () => {
+                        try {
+                            if (process.platform === 'linux') {
+                                await downloadAndInstallLinuxUpdate(selected.release!, window, logger);
+                            } else {
+                                const downloadUrl = new URL(selected.release!.downloadUrl);
+                                if (downloadUrl.protocol !== 'https:') {
+                                    throw new Error('Update server returned a non-HTTPS download URL');
+                                }
+                                await shell.openExternal(downloadUrl.toString());
+                                await sendToastWithDelay(window, 'Opening update download...', 'success', 3000, 100);
                             }
-                            await shell.openExternal(downloadUrl.toString());
-                            await sendToastWithDelay(window, 'Opening update download...', 'success', 3000, 100);
+                        } catch (error) {
+                            logger.error('Error opening update download:', error);
+                            await sendToastWithDelay(window, 'Failed to download or install the update', 'error', 6000, 100);
                         }
-                    } catch (error) {
-                        logger.error('Error opening update download:', error);
-                        await sendToastWithDelay(window, 'Failed to download or install the update', 'error', 6000, 100);
-                    }
-                    })();
-                }, 2000);
+                        })();
+                    }, 2000);
+                }
             } else {
                 logger.info(`No updates available: ${currentVersion}`);
                 await sendToastWithDelay(

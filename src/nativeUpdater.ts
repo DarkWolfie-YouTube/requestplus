@@ -28,11 +28,11 @@ export function isNativeUpdaterSupported(): boolean {
     return squirrelInstalled || (process.platform === 'darwin' && hasMacDeveloperIdSignature());
 }
 
-export function checkForNativeUpdate(
+export async function checkForNativeUpdate(
     branch: string,
     window: BrowserWindow | null,
     logger: NativeUpdaterLogger
-): boolean {
+): Promise<boolean> {
     if (!isNativeUpdaterSupported()) {
         if (app.isPackaged && process.platform === 'darwin' && !process.mas) {
             logger.info(
@@ -46,9 +46,21 @@ export function checkForNativeUpdate(
     updaterLogger = logger;
     registerUpdaterListeners();
 
+    if (checkInProgress) {
+        logger.info('A native update check is already in progress');
+        return true;
+    }
+    checkInProgress = true;
+
     const platform = process.platform === 'win32' ? 'windows' : 'macos';
     const feedBase = `${UPDATE_FEED_ROOT}/${encodeURIComponent(branch)}/${platform}/${process.arch}`;
     const feedUrl = process.platform === 'darwin' ? `${feedBase}/RELEASES.json` : feedBase;
+    const metadataUrl = process.platform === 'darwin' ? feedUrl : `${feedUrl}/RELEASES`;
+    if (!await nativeFeedExists(metadataUrl, logger)) {
+        checkInProgress = false;
+        return false;
+    }
+
     if (currentFeed !== feedUrl) {
         autoUpdater.setFeedURL({
             url: feedUrl,
@@ -59,13 +71,32 @@ export function checkForNativeUpdate(
         logger.info(`Native updater feed configured for ${branch}: ${feedUrl}`);
     }
 
-    if (checkInProgress) {
-        logger.info('A native update check is already in progress');
-        return true;
-    }
-    checkInProgress = true;
     autoUpdater.checkForUpdates();
     return true;
+}
+
+async function nativeFeedExists(metadataUrl: string, logger: NativeUpdaterLogger): Promise<boolean> {
+    try {
+        const response = await fetch(metadataUrl, {
+            headers: { 'User-Agent': `RequestPlus/${app.getVersion()} NativeUpdaterPreflight` },
+            signal: AbortSignal.timeout(10_000)
+        });
+        if (response.status === 404) {
+            await response.body?.cancel();
+            logger.warn(`Native update metadata is not published: ${metadataUrl}`);
+            return false;
+        }
+        if (!response.ok) {
+            await response.body?.cancel();
+            logger.warn(`Native update metadata returned HTTP ${response.status}`);
+            return false;
+        }
+        await response.body?.cancel();
+        return true;
+    } catch (error) {
+        logger.warn('Could not preflight the native update feed:', error);
+        return false;
+    }
 }
 
 function hasMacDeveloperIdSignature(): boolean {

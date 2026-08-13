@@ -129,11 +129,13 @@ export function SettingsView({ settings, setSettings, user, setUser, overlayPath
     let active = true;
     const loadUpdateFeeds = async () => {
       try {
-        const [saved, available] = await Promise.all([
+        const [savedResult, availableResult] = await Promise.allSettled([
           api()?.getUpdateSettings?.(),
           api()?.getUpdateChannels?.(),
         ]);
         if (!active) return;
+        const saved = savedResult.status === "fulfilled" ? savedResult.value : undefined;
+        const available = availableResult.status === "fulfilled" ? availableResult.value : undefined;
         const channels = Array.isArray(available) && available.length > 0
           ? available
           : ["stable", "beta"];
