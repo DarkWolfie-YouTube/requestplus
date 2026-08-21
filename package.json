@@ -23,7 +23,6 @@
   "author": "Quil DayTrack",
   "license": "GPL-3.0-only",
   "devDependencies": {
-    "@bunny.net/storage-sdk": "^0.3.1",
     "@electron-forge/cli": "^7.8.3",
     "@electron-forge/maker-appx": "^7.10.2",
     "@electron-forge/maker-deb": "^7.10.2",
