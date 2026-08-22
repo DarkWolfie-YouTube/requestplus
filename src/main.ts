@@ -1290,8 +1290,8 @@ ipcMain.handle('oobe:openURL', async (_event, url: string): Promise<void> => {
     await shell.openExternal(target.toString());
 });
 
-ipcMain.handle('check-for-updates', (): void => {
-    checkForUpdates(mainWindow, Logger);
+ipcMain.handle('check-for-updates', async (): Promise<void> => {
+    await checkForUpdates(mainWindow, Logger);
 });
 
 ipcMain.on('modal-response', (_event, id: string, response: number) => {

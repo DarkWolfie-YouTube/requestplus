@@ -46,6 +46,7 @@ export function SettingsView({ settings, setSettings, user, setUser, overlayPath
   const [updateChannel, setUpdateChannelState] = useState("stable");
   const [updateChannels, setUpdateChannels] = useState<string[]>(["stable", "beta"]);
   const [updateChannelsLoading, setUpdateChannelsLoading] = useState(true);
+  const [updateChannelSaving, setUpdateChannelSaving] = useState(false);
   const [channelPointForm, setChannelPointForm] = useState({
     title: "Song Requests",
     prompt: "Redeem this to request a song through Request+.",
@@ -159,15 +160,29 @@ export function SettingsView({ settings, setSettings, user, setUser, overlayPath
   }, []);
 
   const selectUpdateChannel = async (channel: string) => {
+    if (!/^[a-z0-9][a-z0-9-]{0,29}$/.test(channel)) {
+      toast.error("That update feed name is invalid.");
+      return;
+    }
+
+    const updateApi = api();
+    if (typeof updateApi?.setUpdateChannel !== "function") {
+      toast.error("Update feed settings are unavailable in this app session.");
+      return;
+    }
+
     const previous = updateChannel;
     setUpdateChannelState(channel);
+    setUpdateChannelSaving(true);
     try {
-      await api()?.setUpdateChannel?.(channel);
+      await updateApi.setUpdateChannel(channel);
       toast.success(`Update feed changed to ${formatChannelName(channel)}.`);
     } catch (error) {
       setUpdateChannelState(previous);
       console.error("Failed to save update feed:", error);
       toast.error("Failed to change the update feed.");
+    } finally {
+      setUpdateChannelSaving(false);
     }
   };
 
@@ -547,7 +562,7 @@ export function SettingsView({ settings, setSettings, user, setUser, overlayPath
             <select
               id="update-feed"
               value={updateChannel}
-              disabled={updateChannelsLoading}
+              disabled={updateChannelsLoading || updateChannelSaving}
               onChange={(event) => void selectUpdateChannel(event.target.value)}
               className="w-full rounded-xl border border-violet-500/20 bg-slate-950/70 px-3 py-2.5 text-sm font-semibold text-white focus:outline-none focus:ring-1 focus:ring-violet-500 disabled:cursor-wait disabled:opacity-60"
             >

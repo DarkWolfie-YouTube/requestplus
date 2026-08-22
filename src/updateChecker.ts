@@ -345,6 +345,74 @@ async function downloadAndInstallLinuxUpdate(
     }
 }
 
+async function downloadUpdatePackage(
+    release: UpdateServerRelease,
+    window: BrowserWindow | null,
+    logger: Logger
+): Promise<string> {
+    if (!release.downloadUrl || !release.fileName) {
+        throw new Error('Update server did not provide a downloadable artifact');
+    }
+    const downloadUrl = new URL(release.downloadUrl);
+    if (downloadUrl.protocol !== 'https:') {
+        throw new Error('Update server returned a non-HTTPS download URL');
+    }
+
+    const fileName = path.basename(release.fileName);
+    if (fileName !== release.fileName || fileName === '.' || fileName === '..') {
+        throw new Error('Update server returned an invalid artifact filename');
+    }
+    const updateDirectory = path.join(app.getPath('temp'), 'requestplus-updates', release.version);
+    await mkdir(updateDirectory, { recursive: true });
+    const destination = path.join(updateDirectory, fileName);
+    const response = await fetch(downloadUrl, {
+        headers: { 'User-Agent': `RequestPlus/${app.getVersion()} UpdateDownloader` },
+        signal: AbortSignal.timeout(30 * 60 * 1000)
+    });
+    if (!response.ok || !response.body) {
+        throw new Error(`Update download returned HTTP ${response.status}`);
+    }
+
+    const expectedSize = release.size > 0
+        ? release.size
+        : Number(response.headers.get('content-length') ?? 0);
+    const hash = createHash('sha256');
+    let downloaded = 0;
+    let lastProgressAt = 0;
+    const progress = new Transform({
+        transform(chunk, _encoding, callback) {
+            downloaded += chunk.length;
+            hash.update(chunk);
+            const now = Date.now();
+            if (now - lastProgressAt >= 1000 || (expectedSize > 0 && downloaded >= expectedSize)) {
+                lastProgressAt = now;
+                const percent = expectedSize > 0 ? Math.min(100, downloaded / expectedSize * 100) : 0;
+                logger.info(`Downloading ${fileName}: ${percent.toFixed(1)}% (${downloaded}/${expectedSize || '?'} bytes)`);
+            }
+            callback(null, chunk);
+        }
+    });
+
+    sendToast(window, `Downloading Request+ ${release.version}...`, 'info', 5000);
+    try {
+        await pipeline(response.body, progress, createWriteStream(destination));
+        const downloadedSize = (await stat(destination)).size;
+        const downloadedHash = hash.digest('hex');
+        if (expectedSize > 0 && downloadedSize !== expectedSize) {
+            throw new Error(`Update size mismatch: expected ${expectedSize}, received ${downloadedSize}`);
+        }
+        if (release.sha256 && downloadedHash.toLowerCase() !== release.sha256.toLowerCase()) {
+            throw new Error('Update SHA-256 verification failed');
+        }
+    } catch (error) {
+        await rm(destination, { force: true });
+        throw error;
+    }
+
+    logger.info(`Verified update package: ${destination}`);
+    return destination;
+}
+
 async function checkForUpdates(window: BrowserWindow | null, logger: Logger): Promise<void> {
     try {
         // Load current settings
@@ -362,6 +430,7 @@ async function checkForUpdates(window: BrowserWindow | null, logger: Logger): Pr
                 : 'stable';
         const channels = [selectedChannel];
         const nativeBranch = selectedChannel;
+        logger.info(`Using update feed: ${selectedChannel}`);
         if (process.windowsStore || process.mas) {
             const storeName = process.windowsStore ? 'Microsoft Store' : 'Mac App Store';
             logger.info(`Updates for this installation are managed by the ${storeName}`);
@@ -405,12 +474,20 @@ async function checkForUpdates(window: BrowserWindow | null, logger: Logger): Pr
                             if (process.platform === 'linux') {
                                 await downloadAndInstallLinuxUpdate(selected.release!, window, logger);
                             } else {
-                                const downloadUrl = new URL(selected.release!.downloadUrl);
-                                if (downloadUrl.protocol !== 'https:') {
-                                    throw new Error('Update server returned a non-HTTPS download URL');
+                                const destination = await downloadUpdatePackage(selected.release!, window, logger);
+                                const choice = await sendModal(
+                                    window,
+                                    'Request+ Update Ready',
+                                    `Request+ ${selected.latestVersion} has been downloaded and verified. Open the installer now?`,
+                                    ['Open installer', 'Later']
+                                );
+                                if (choice === 0) {
+                                    const openError = await shell.openPath(destination);
+                                    if (openError) throw new Error(openError);
+                                    await sendToastWithDelay(window, 'Update installer opened.', 'success', 3000, 100);
+                                } else {
+                                    await sendToastWithDelay(window, 'Update downloaded. You can install it from your temporary files.', 'info', 5000, 100);
                                 }
-                                await shell.openExternal(downloadUrl.toString());
-                                await sendToastWithDelay(window, 'Opening update download...', 'success', 3000, 100);
                             }
                         } catch (error) {
                             logger.error('Error opening update download:', error);
@@ -601,8 +678,14 @@ function compareVersions(current: string, latest: string): boolean {
 }
 
 function setPreReleaseCheck(enabled: boolean): void {
+    loadSettings();
     settings.checkPreReleases = enabled;
-    settings.channel = enabled ? 'beta' : 'stable';
+    // Keep a custom feed selected when the legacy pre-release toggle is used.
+    // The toggle only changes the stable/beta choice; it should not silently
+    // move users off a branch they selected in the feed picker.
+    if (!enabled || settings.channel === 'stable' || settings.channel === 'beta') {
+        settings.channel = enabled ? 'beta' : 'stable';
+    }
     saveSettings();
 }
 
@@ -610,6 +693,7 @@ function setUpdateChannel(channel: string): void {
     if (!validChannel(channel)) {
         throw new Error('Invalid update feed');
     }
+    loadSettings();
     settings.channel = channel;
     settings.checkPreReleases = channel !== 'stable';
     saveSettings();
