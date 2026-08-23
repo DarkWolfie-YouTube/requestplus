@@ -126,7 +126,7 @@ function registerUpdaterListeners(): void {
 
     autoUpdater.on('error', (error) => {
         checkInProgress = false;
-        updaterLogger?.error('Native updater error:', error);
+        updaterLogger?.error(`Native updater error: ${describeUpdaterError(error)}`);
         sendToast('Automatic update failed. You can retry from Settings.', 'error', 6000);
     });
     autoUpdater.on('checking-for-update', () => {
@@ -168,6 +168,18 @@ function registerUpdaterListeners(): void {
             autoUpdater.quitAndInstall();
         }
     });
+}
+
+function describeUpdaterError(error: unknown): string {
+    if (error instanceof Error) {
+        return `${error.name}: ${error.message}${error.stack ? `\n${error.stack}` : ''}`;
+    }
+    if (typeof error === 'string') return error;
+    try {
+        return JSON.stringify(error);
+    } catch {
+        return String(error);
+    }
 }
 
 function sendToast(message: string, type: 'info' | 'success' | 'error', duration: number): void {
