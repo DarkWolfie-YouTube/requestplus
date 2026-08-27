@@ -41,7 +41,7 @@ export function TrackArt({ cover, title, artist, className = "" }: { cover: stri
   // Reset the error latch when the cover changes, otherwise one failed load
   // pins the placeholder for every subsequent track (the component isn't remounted).
   useEffect(() => { setErr(false); }, [cover]);
-  const hue = ((title.charCodeAt(0) || 65) * 47 + (artist.charCodeAt(0) || 65) * 19) % 360;
+  const hue = ((title?.charCodeAt(0) || 65) * 47 + (artist?.charCodeAt(0) || 65) * 19) % 360;
 
   if (cover && !err) {
     return <img src={cover} alt={`${title} - ${artist}`} className={`${className} object-cover`} onError={() => setErr(true)} />;
