@@ -181,8 +181,18 @@ export function SettingsView({ settings, setSettings, user, setUser, overlayPath
       setUpdateChannelState(previous);
       console.error("Failed to save update feed:", error);
       toast.error("Failed to change the update feed.");
+      return;
     } finally {
       setUpdateChannelSaving(false);
+    }
+
+    if (channel !== previous && typeof updateApi.checkForUpdates === "function") {
+      try {
+        await updateApi.checkForUpdates();
+      } catch (error) {
+        console.error("Failed to check the selected update feed:", error);
+        toast.error("The update feed changed, but its update check failed.");
+      }
     }
   };
 
@@ -574,7 +584,7 @@ export function SettingsView({ settings, setSettings, user, setUser, overlayPath
               ))}
             </select>
             <p className="text-[11px] leading-[1.5] text-slate-600">
-              Stable receives production releases. Other feeds may contain preview builds.
+              Stable receives production releases. Switching feeds reinstalls that branch even when its version number matches the installed build.
             </p>
             <button
               onClick={async () => {
