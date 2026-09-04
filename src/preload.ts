@@ -52,6 +52,8 @@ interface ElectronAPI {
   // Update system
   checkForUpdates: () => Promise<void>;
   getUpdateSettings: () => Promise<any>;
+  getUpdateChannels: () => Promise<string[]>;
+  setUpdateChannel: (channel: string) => Promise<void>;
   setPreReleaseCheck: (enabled: boolean) => Promise<void>;
 
   // Overlay
@@ -186,6 +188,8 @@ const electronAPI: ElectronAPI = {
   // Update system
   checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
   getUpdateSettings: () => ipcRenderer.invoke('get-update-settings'),
+  getUpdateChannels: () => ipcRenderer.invoke('get-update-channels'),
+  setUpdateChannel: (channel) => ipcRenderer.invoke('set-update-channel', channel),
   setPreReleaseCheck: (enabled) => ipcRenderer.invoke('set-pre-release-check', enabled),
 
   // Overlay

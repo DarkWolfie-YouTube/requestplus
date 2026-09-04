@@ -2,11 +2,21 @@ const { FusesPlugin } = require('@electron-forge/plugin-fuses');
 const { FuseV1Options, FuseVersion } = require('@electron/fuses');
 const path = require('path');
 
+const updateBranch = process.env.REQUESTPLUS_RELEASE_BRANCH || 'stable';
+const updateArch = process.env.REQUESTPLUS_RELEASE_ARCH || process.env.npm_config_arch || process.arch;
+if (!/^[a-z0-9][a-z0-9-]*$/.test(updateBranch)) {
+  throw new Error('REQUESTPLUS_RELEASE_BRANCH must contain lowercase letters, numbers, or hyphens');
+}
+const updateFeedBase = `https://updates.requestplus.xyz/v1/updates/feeds/${updateBranch}`;
+
 module.exports = {
   packagerConfig: {
     asar: true,
     appBundleId: 'com.darkwolfie.requestplus',
     name: 'Request+',
+    // Debian expects a filesystem-safe executable matching maker-deb's `bin`.
+    // Preserve the existing executable name on Windows/macOS for update compatibility.
+    executableName: process.platform === 'linux' ? 'requestplus' : 'Request+',
     icon: 'build/icon', // Electron Forge will automatically append the correct extension (.ico, .icns, etc.)
     // Code signing configuration (Windows)
     ...(process.env.APPX_CERT_PASSWORD && {
@@ -48,13 +58,21 @@ module.exports = {
       }
     },
     {
+      name: '@electron-forge/maker-zip',
+      platforms: ['darwin'],
+      config: {
+        macUpdateManifestBaseUrl: `${updateFeedBase}/macos/${updateArch}`
+      }
+    },
+    {
       name: '@electron-forge/maker-deb',
       config: {
         options: {
           icon: 'build/icon.png',
           maintainer: 'QuilDayTrack',
-          executableName: "Request+",
-          executeableName: "Request+",
+          name: 'requestplus',
+          productName: 'Request+',
+          bin: 'requestplus',
           homepage: 'https://requestplus.xyz',
           mimeType: ['x-scheme-handler/requestplus']
         }

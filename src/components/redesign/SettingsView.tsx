@@ -43,6 +43,10 @@ export function SettingsView({ settings, setSettings, user, setUser, overlayPath
   const [channelPointLoading, setChannelPointLoading] = useState(false);
   const [channelPointSaving, setChannelPointSaving] = useState(false);
   const [ciderTokenLoading, setCiderTokenLoading] = useState(false);
+  const [updateChannel, setUpdateChannelState] = useState("stable");
+  const [updateChannels, setUpdateChannels] = useState<string[]>(["stable", "beta"]);
+  const [updateChannelsLoading, setUpdateChannelsLoading] = useState(true);
+  const [updateChannelSaving, setUpdateChannelSaving] = useState(false);
   const [channelPointForm, setChannelPointForm] = useState({
     title: "Song Requests",
     prompt: "Redeem this to request a song through Request+.",
@@ -121,6 +125,66 @@ export function SettingsView({ settings, setSettings, user, setUser, overlayPath
   useEffect(() => {
     if (settings.useChannelPoints) void refreshChannelPoint();
   }, [settings.useChannelPoints]);
+
+  useEffect(() => {
+    let active = true;
+    const loadUpdateFeeds = async () => {
+      try {
+        const [savedResult, availableResult] = await Promise.allSettled([
+          api()?.getUpdateSettings?.(),
+          api()?.getUpdateChannels?.(),
+        ]);
+        if (!active) return;
+        const saved = savedResult.status === "fulfilled" ? savedResult.value : undefined;
+        const available = availableResult.status === "fulfilled" ? availableResult.value : undefined;
+        const channels = Array.isArray(available) && available.length > 0
+          ? available
+          : ["stable", "beta"];
+        const selected = typeof saved?.channel === "string"
+          ? saved.channel
+          : saved?.checkPreReleases
+            ? "beta"
+            : "stable";
+        setUpdateChannels(channels.includes(selected) ? channels : [selected, ...channels]);
+        setUpdateChannelState(selected);
+      } catch (error) {
+        console.warn("Could not load update feeds; using built-in feeds:", error);
+      } finally {
+        if (active) setUpdateChannelsLoading(false);
+      }
+    };
+    void loadUpdateFeeds();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const selectUpdateChannel = async (channel: string) => {
+    if (!/^[a-z0-9][a-z0-9-]{0,29}$/.test(channel)) {
+      toast.error("That update feed name is invalid.");
+      return;
+    }
+
+    const updateApi = api();
+    if (typeof updateApi?.setUpdateChannel !== "function") {
+      toast.error("Update feed settings are unavailable in this app session.");
+      return;
+    }
+
+    const previous = updateChannel;
+    setUpdateChannelState(channel);
+    setUpdateChannelSaving(true);
+    try {
+      await updateApi.setUpdateChannel(channel);
+      toast.success(`Update feed changed to ${formatChannelName(channel)}.`);
+    } catch (error) {
+      setUpdateChannelState(previous);
+      console.error("Failed to save update feed:", error);
+      toast.error("Failed to change the update feed.");
+    } finally {
+      setUpdateChannelSaving(false);
+    }
+  };
 
   const createChannelPoint = async () => {
     const title = channelPointForm.title.trim();
@@ -490,6 +554,41 @@ export function SettingsView({ settings, setSettings, user, setUser, overlayPath
           </div>
         </Section>
 
+        {/* Updates */}
+        <Section title="Updates" desc="Choose which release feed Request+ checks for updates.">
+          <div className="space-y-3 p-4">
+            <label htmlFor="update-feed" className="block text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">
+              Update feed
+            </label>
+            <select
+              id="update-feed"
+              value={updateChannel}
+              disabled={updateChannelsLoading || updateChannelSaving}
+              onChange={(event) => void selectUpdateChannel(event.target.value)}
+              className="w-full rounded-xl border border-violet-500/20 bg-slate-950/70 px-3 py-2.5 text-sm font-semibold text-white focus:outline-none focus:ring-1 focus:ring-violet-500 disabled:cursor-wait disabled:opacity-60"
+            >
+              {updateChannels.map((channel) => (
+                <option key={channel} value={channel} className="bg-slate-900">
+                  {formatChannelName(channel)}{channel === "stable" ? " (recommended)" : ""}
+                </option>
+              ))}
+            </select>
+            <p className="text-[11px] leading-[1.5] text-slate-600">
+              Stable receives production releases. Other feeds may contain preview builds.
+            </p>
+            <button
+              onClick={async () => {
+                if (api()?.checkForUpdates) await api().checkForUpdates();
+                else toast.info(t("CLIENT_UPDATE_CHECK_UNAVAILABLE", locale));
+              }}
+              className="flex w-full items-center justify-center gap-2 rounded-xl bg-slate-800 px-4 py-2.5 text-sm font-bold text-white transition-colors hover:bg-slate-700"
+            >
+              <RefreshCw className="size-3.5" />
+              {t("CLIENT_CHECK_UPDATES", locale)}
+            </button>
+          </div>
+        </Section>
+
         {/* Privacy */}
         <Section title={t("CLIENT_PRIVACY_TITLE", locale)}>
           <ToggleRow label={t("CLIENT_TELEMETRY", locale)} desc={t("CLIENT_TELEMETRY_DESC", locale)} checked={!!settings.telemetryEnabled} onChange={(v) => p({ telemetryEnabled: v })} />
@@ -506,21 +605,19 @@ export function SettingsView({ settings, setSettings, user, setUser, overlayPath
               <ExternalLink className="size-3.5" />
               {t("CLIENT_VISIT_WEBSITE", locale)}
             </button>
-            <button
-              onClick={async () => {
-                if (api()?.checkForUpdates) await api().checkForUpdates();
-                else toast.info(t("CLIENT_UPDATE_CHECK_UNAVAILABLE", locale));
-              }}
-              className="flex w-full items-center justify-center gap-2 rounded-xl bg-slate-800/50 px-4 py-2 text-xs font-bold text-slate-500 transition-colors hover:bg-slate-800 hover:text-slate-300"
-            >
-              <RefreshCw className="size-3.5" />
-              {t("CLIENT_CHECK_UPDATES", locale)}
-            </button>
           </div>
         </Section>
       </div>
     </div>
   );
+}
+
+function formatChannelName(channel: string): string {
+  return channel
+    .split("-")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
 }
 
 // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Onboarding Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
