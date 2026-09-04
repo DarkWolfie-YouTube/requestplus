@@ -1,6 +1,7 @@
 import { app, BrowserWindow, shell } from 'electron';
 import fetch from 'node-fetch';
 import { createHash } from 'node:crypto';
+import { spawn } from 'node:child_process';
 import * as fs from 'fs';
 import { createWriteStream } from 'node:fs';
 import { mkdir, rm, stat } from 'node:fs/promises';
@@ -10,9 +11,17 @@ import { pipeline } from 'node:stream/promises';
 import { setTimeout as wait } from 'node:timers/promises';
 import { checkForNativeUpdate } from './nativeUpdater';
 
+declare const __REQUESTPLUS_RELEASE_CHANNEL__: string;
+
 const UPDATE_SERVER_URL = 'https://updates.requestplus.xyz/v1/updates/check';
 const UPDATE_CHANNELS_URL = 'https://updates.requestplus.xyz/v1/updates/channels';
 const UPDATE_REQUEST_TIMEOUT_MS = 10_000;
+const COMPILED_UPDATE_CHANNEL = typeof __REQUESTPLUS_RELEASE_CHANNEL__ === 'string'
+    ? __REQUESTPLUS_RELEASE_CHANNEL__
+    : 'stable';
+const INSTALLED_UPDATE_CHANNEL = validChannel(COMPILED_UPDATE_CHANNEL)
+    ? COMPILED_UPDATE_CHANNEL
+    : 'stable';
 
 // Type definitions
 interface UpdateSettings {
@@ -217,11 +226,15 @@ function getUpdateTarget(): { platform: string; arch: string } {
 async function requestUpdate(
     currentVersion: string,
     channel: string,
-    logger: Logger
+    logger: Logger,
+    forceArtifact = false
 ): Promise<UpdateServerResponse> {
     const target = getUpdateTarget();
     const endpoint = new URL(UPDATE_SERVER_URL);
-    endpoint.searchParams.set('currentVersion', currentVersion);
+    // The update service intentionally omits the artifact when versions match.
+    // Query from a baseline version when changing feeds so a same-version branch
+    // build can still be downloaded and installed.
+    endpoint.searchParams.set('currentVersion', forceArtifact ? '0.0.0' : currentVersion);
     endpoint.searchParams.set('platform', target.platform);
     endpoint.searchParams.set('arch', target.arch);
     endpoint.searchParams.set('channel', channel);
@@ -244,7 +257,8 @@ async function requestUpdate(
     }
     logger.info(
         `Update server ${channel} result: ${data.reason}` +
-        (data.latestVersion ? ` (${data.latestVersion})` : '')
+        (data.latestVersion ? ` (${data.latestVersion})` : '') +
+        (forceArtifact ? ' [branch switch]' : '')
     );
     return data;
 }
@@ -413,6 +427,93 @@ async function downloadUpdatePackage(
     return destination;
 }
 
+function squirrelUpdateExecutable(): string | null {
+    if (process.platform !== 'win32') return null;
+    const updateExecutable = path.resolve(path.dirname(process.execPath), '..', 'Update.exe');
+    return fs.existsSync(updateExecutable) ? updateExecutable : null;
+}
+
+async function scheduleWindowsBranchSwitch(
+    installerPath: string,
+    selectedChannel: string,
+    logger: Logger
+): Promise<void> {
+    const updateExecutable = squirrelUpdateExecutable();
+    if (!updateExecutable) {
+        throw new Error('The Squirrel uninstaller could not be found for this installation');
+    }
+    if (path.extname(installerPath).toLowerCase() !== '.exe') {
+        throw new Error('The selected Windows branch does not provide an executable installer');
+    }
+
+    const helperPath = path.join(
+        app.getPath('temp'),
+        'requestplus-updates',
+        `switch-to-${selectedChannel}.ps1`
+    );
+    fs.writeFileSync(helperPath, [
+        "$ErrorActionPreference = 'Stop'",
+        'Start-Sleep -Seconds 2',
+        "$uninstall = Start-Process -FilePath $args[0] -ArgumentList @('--uninstall', '--silent') -WindowStyle Hidden -PassThru",
+        '$uninstall.WaitForExit()',
+        "if ($uninstall.ExitCode -ne 0) { throw \"Request+ uninstall failed with exit code $($uninstall.ExitCode)\" }",
+        'Start-Sleep -Seconds 2',
+        'Start-Process -FilePath $args[1]'
+    ].join('\r\n'), 'utf8');
+
+    await new Promise<void>((resolve, reject) => {
+        const helper = spawn(
+            'powershell.exe',
+            ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', helperPath, updateExecutable, installerPath],
+            { detached: true, stdio: 'ignore', windowsHide: true }
+        );
+        helper.once('error', reject);
+        helper.once('spawn', () => {
+            helper.unref();
+            resolve();
+        });
+    });
+    logger.info(`Scheduled reinstall from ${INSTALLED_UPDATE_CHANNEL} to ${selectedChannel}`);
+    app.quit();
+}
+
+async function openUpdateInstaller(
+    destination: string,
+    selected: UpdateServerResponse,
+    switchingChannel: boolean,
+    window: BrowserWindow | null,
+    logger: Logger
+): Promise<void> {
+    const selectedChannel = selected.channel;
+    const releaseVersion = selected.latestVersion ?? selected.release?.version ?? app.getVersion();
+    const squirrelSwitch = switchingChannel &&
+        squirrelUpdateExecutable() !== null &&
+        !compareVersions(app.getVersion(), releaseVersion);
+    const choice = await sendModal(
+        window,
+        switchingChannel ? 'Switch Request+ Update Feed' : 'Request+ Update Ready',
+        squirrelSwitch
+            ? `Request+ will close, remove the ${INSTALLED_UPDATE_CHANNEL} build, and install the ${selectedChannel} build (${releaseVersion}). Your settings will be kept.`
+            : switchingChannel
+                ? `The ${selectedChannel} build (${releaseVersion}) has been downloaded and verified. Open its installer now?`
+                : `Request+ ${releaseVersion} has been downloaded and verified. Open the installer now?`,
+        [squirrelSwitch ? 'Restart and switch' : 'Open installer', 'Later']
+    );
+    if (choice !== 0) {
+        await sendToastWithDelay(window, 'Update downloaded. You can install it from your temporary files.', 'info', 5000, 100);
+        return;
+    }
+
+    if (squirrelSwitch) {
+        await scheduleWindowsBranchSwitch(destination, selectedChannel, logger);
+        return;
+    }
+
+    const openError = await shell.openPath(destination);
+    if (openError) throw new Error(openError);
+    await sendToastWithDelay(window, 'Update installer opened.', 'success', 3000, 100);
+}
+
 async function checkForUpdates(window: BrowserWindow | null, logger: Logger): Promise<void> {
     try {
         // Load current settings
@@ -430,7 +531,11 @@ async function checkForUpdates(window: BrowserWindow | null, logger: Logger): Pr
                 : 'stable';
         const channels = [selectedChannel];
         const nativeBranch = selectedChannel;
-        logger.info(`Using update feed: ${selectedChannel}`);
+        const switchingChannel = selectedChannel !== INSTALLED_UPDATE_CHANNEL;
+        logger.info(
+            `Using update feed: ${selectedChannel}; installed feed: ${INSTALLED_UPDATE_CHANNEL}` +
+            (switchingChannel ? '; branch reinstall required' : '')
+        );
         if (process.windowsStore || process.mas) {
             const storeName = process.windowsStore ? 'Microsoft Store' : 'Mac App Store';
             logger.info(`Updates for this installation are managed by the ${storeName}`);
@@ -438,7 +543,7 @@ async function checkForUpdates(window: BrowserWindow | null, logger: Logger): Pr
         } else {
             try {
             const checks = await Promise.allSettled(
-                channels.map((channel) => requestUpdate(currentVersion, channel, logger))
+                channels.map((channel) => requestUpdate(currentVersion, channel, logger, switchingChannel))
             );
             const responses = checks
                 .filter((result): result is PromiseFulfilledResult<UpdateServerResponse> => result.status === 'fulfilled')
@@ -452,13 +557,15 @@ async function checkForUpdates(window: BrowserWindow | null, logger: Logger): Pr
 
             const selected = selectNewestUpdate(responses);
             if (selected?.release && selected.latestVersion) {
-                if (await checkForNativeUpdate(nativeBranch, window, logger)) {
+                if (!switchingChannel && await checkForNativeUpdate(nativeBranch, window, logger)) {
                     logger.info(`Started Forge native update check on the ${nativeBranch} branch`);
                 } else {
                     const releaseType = selected.channel === 'stable' ? 'release' : `${selected.channel} release`;
                     await sendToastWithDelay(
                         window,
-                        `New ${releaseType} (${selected.latestVersion}) available! Current: ${currentVersion}`,
+                        switchingChannel
+                            ? `Preparing the ${selected.channel} build (${selected.latestVersion})...`
+                            : `New ${releaseType} (${selected.latestVersion}) available! Current: ${currentVersion}`,
                         'warning',
                         8000,
                         1000
@@ -475,19 +582,7 @@ async function checkForUpdates(window: BrowserWindow | null, logger: Logger): Pr
                                 await downloadAndInstallLinuxUpdate(selected.release!, window, logger);
                             } else {
                                 const destination = await downloadUpdatePackage(selected.release!, window, logger);
-                                const choice = await sendModal(
-                                    window,
-                                    'Request+ Update Ready',
-                                    `Request+ ${selected.latestVersion} has been downloaded and verified. Open the installer now?`,
-                                    ['Open installer', 'Later']
-                                );
-                                if (choice === 0) {
-                                    const openError = await shell.openPath(destination);
-                                    if (openError) throw new Error(openError);
-                                    await sendToastWithDelay(window, 'Update installer opened.', 'success', 3000, 100);
-                                } else {
-                                    await sendToastWithDelay(window, 'Update downloaded. You can install it from your temporary files.', 'info', 5000, 100);
-                                }
+                                await openUpdateInstaller(destination, selected, switchingChannel, window, logger);
                             }
                         } catch (error) {
                             logger.error('Error opening update download:', error);
@@ -497,11 +592,17 @@ async function checkForUpdates(window: BrowserWindow | null, logger: Logger): Pr
                     }, 2000);
                 }
             } else {
-                logger.info(`No updates available: ${currentVersion}`);
+                logger.info(
+                    switchingChannel
+                        ? `No compatible build is available on ${selectedChannel}`
+                        : `No updates available: ${currentVersion}`
+                );
                 await sendToastWithDelay(
                     window,
-                    `You're running the latest version (${currentVersion})`,
-                    'success',
+                    switchingChannel
+                        ? `No compatible ${selectedChannel} build is currently available for this system.`
+                        : `You're running the latest version (${currentVersion})`,
+                    switchingChannel ? 'warning' : 'success',
                     5000,
                     2000
                 );

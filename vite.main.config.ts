@@ -2,6 +2,11 @@ import { defineConfig } from 'vite';
 import copy from 'rollup-plugin-copy';
 import * as path from 'node:path';
 
+const releaseChannel = process.env.REQUESTPLUS_RELEASE_BRANCH || 'stable';
+if (!/^[a-z0-9][a-z0-9-]{0,29}$/.test(releaseChannel)) {
+  throw new Error('REQUESTPLUS_RELEASE_BRANCH must contain lowercase letters, numbers, or hyphens');
+}
+
 const nodeBuiltins = [
   'fs',
   'path',
@@ -22,6 +27,9 @@ const nodeBuiltins = [
 
 // https://vitejs.dev/config
 export default defineConfig({
+  define: {
+    __REQUESTPLUS_RELEASE_CHANNEL__: JSON.stringify(releaseChannel),
+  },
   build: {
     target: 'node22',
     rollupOptions: {
