@@ -7,19 +7,24 @@ var requestplus = (() => {
     const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
     /**
-     * Initializes the WebSocket client to connect to a server on port 443.
+     * Initializes the WebSocket client, falling back if the legacy port is blocked.
      */
     const initializePlaybackAPI = async () => {
         const delayTime = 200; // Delay time before initializing
         await delay(delayTime);
 
         let ws;
+        const playbackPorts = [443, 45923];
+        let playbackPortIndex = 0;
         const connect = async () => {
-            ws = new WebSocket("ws://localhost:443");
+            const playbackPort = playbackPorts[playbackPortIndex];
+            let connected = false;
+            ws = new WebSocket(`ws://127.0.0.1:${playbackPort}`);
             ws.binaryType = "arraybuffer"; // Set binary type to handle ArrayBuffer
 
             ws.onopen = () => {
-                console.log("Connected to WebSocket server");
+                connected = true;
+                console.log(`Connected to Request+ WebSocket server on port ${playbackPort}`);
                 ws.send(
                     JSON.stringify({
                         command: "currentTrack",
@@ -331,6 +336,9 @@ var requestplus = (() => {
             };
 
             ws.onclose = async () => {
+                if (!connected) {
+                    playbackPortIndex = (playbackPortIndex + 1) % playbackPorts.length;
+                }
                 console.log("Disconnected from WebSocket server. Attempting to reconnect in 2 seconds...");
                 await delay(2000);
                 connect(); // Attempt to reconnect

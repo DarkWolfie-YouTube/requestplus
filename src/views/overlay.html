@@ -24,6 +24,31 @@
         let currentTrack = null;
         let hideTimeout;
         let timeElapsed = 0;
+        const requestPlusApiPorts = [444, 45924];
+        let requestPlusApiPort = requestPlusApiPorts[0];
+
+        function requestPlusApi(path, options) {
+            const ports = [requestPlusApiPort, ...requestPlusApiPorts.filter(port => port !== requestPlusApiPort)];
+            const attempt = (index) => {
+                const port = ports[index];
+                $.ajax({
+                    ...options,
+                    url: `http://127.0.0.1:${port}${path}`,
+                    success: function(response) {
+                        requestPlusApiPort = port;
+                        if (options.success) options.success(response);
+                    },
+                    error: function(xhr, status, error) {
+                        if (index + 1 < ports.length) {
+                            attempt(index + 1);
+                        } else if (options.error) {
+                            options.error(xhr, status, error);
+                        }
+                    }
+                });
+            };
+            attempt(0);
+        }
 
 
         function init() {
@@ -33,8 +58,7 @@
 
 
         function apiInit() {
-    $.ajax({
-        url: 'http://localhost:444/settings',
+    requestPlusApi('/settings', {
         type: 'GET',
         crossDomain: true,
         timeout: 5000, // Add timeout
@@ -150,8 +174,7 @@
         }
 
         function npSongInfoLoop() {
-            $.ajax({
-                url: 'http://localhost:444/info',
+            requestPlusApi('/info', {
                 type: 'GET',
                 crossDomain: true,
                 timeout: 5000, // Add timeout
@@ -260,8 +283,7 @@
         const timeText = document.querySelector('.overlay-timer-text');
         const durationText = document.querySelector('.overlay-timer-text2');
         const timeBar = document.querySelector('.overlay-timer-bar');
-            $.ajax({
-                url: 'http://localhost:444/info',
+            requestPlusApi('/info', {
                 type: 'GET',
                 crossDomain: true,
                 success: function(response) {
@@ -359,8 +381,7 @@
             return new Promise(resolve => setTimeout(resolve, ms));
         }
         function settingsReload() {
-            $.ajax({
-                url: 'http://localhost:444/settings',
+            requestPlusApi('/settings', {
                 type: 'GET',
                 crossDomain: true,
                 success: function(response) {

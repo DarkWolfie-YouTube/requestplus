@@ -31,6 +31,7 @@ import PlaybackHandler, { songInfo } from './playbackHandler';
 import GTSHandler from './gtsHandler';
 import AMHandler from './amhandler';
 import WindowHandler from './window';
+import { LOCAL_PLAYBACK_WEBSOCKET_PORTS } from './localPorts';
 
 var handleStartupEvent = function() {
   if (process.platform !== 'win32') {
@@ -815,7 +816,7 @@ async function createWindow(): Promise<void> {
 
         
     if (!WSServer) {
-        WSServer = new websocket(443, mainWindow, Logger);
+        WSServer = new websocket(LOCAL_PLAYBACK_WEBSOCKET_PORTS, mainWindow, Logger);
     }
 
     if (!ytManager) {
