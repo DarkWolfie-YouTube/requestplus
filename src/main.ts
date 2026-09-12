@@ -7,6 +7,7 @@ import {
     getAvailableUpdateChannels,
     getSettings,
     resolveModal,
+    sendModal,
     setPreReleaseCheck,
     setUpdateChannel
 } from './updateChecker';
@@ -62,6 +63,22 @@ var handleStartupEvent = function() {
 };
 
 handleStartupEvent();
+
+// Must run before app 'ready' fires, so hardware acceleration can only be toggled
+// here via a direct settings.json read rather than through the SettingsHandler
+// instance created later during app startup.
+(function applyStartupHardwareAccelerationSetting(): void {
+    try {
+        const settingsPath = path.join(app.getPath('userData'), 'settings.json');
+        if (!fs.existsSync(settingsPath)) return;
+        const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'));
+        if (settings.hardwareAcceleration === false) {
+            app.disableHardwareAcceleration();
+        }
+    } catch (error) {
+        console.error('Failed to read hardwareAcceleration startup setting:', error);
+    }
+})();
 
 
 // Type definitions
@@ -1003,17 +1020,38 @@ ipcMain.handle('ytTest', async (): Promise<songData> => {
 
 ipcMain.handle('save-settings', (event: Electron.IpcMainInvokeEvent, settinga: Settings): Promise<void> => {
     return new Promise((resolve, reject) => {
+        const hardwareAccelerationChanged =
+            (settings.hardwareAcceleration !== false) !== (settinga.hardwareAcceleration !== false);
         var saved = settingsHandler.save(settinga);
 
         if (saved) {
             settings = settinga;
             applySettingsToRuntime(settings);
             resolve();
+
+            if (hardwareAccelerationChanged) {
+                void promptHardwareAccelerationRestart();
+            }
         } else {
             reject(new Error('Failed to save settings'));
         }
     });
 });
+
+/** Hardware acceleration can only be toggled at startup, so ask before applying it live. */
+async function promptHardwareAccelerationRestart(): Promise<void> {
+    const response = await sendModal(
+        mainWindow,
+        'Restart required',
+        'Hardware acceleration changes only take effect after Request+ restarts. Restart now?',
+        ['Restart Now', 'Later']
+    );
+    if (response === 0) {
+        isQuitting = true;
+        app.relaunch();
+        app.exit(0);
+    }
+}
 
 ipcMain.handle('cider:request-token', async (): Promise<string> => {
     const token = await amHandler.requestCiderV2Token();
@@ -1036,8 +1074,20 @@ ipcMain.handle('window-minimize', (): void => {
 });
 
 ipcMain.handle('window-close', async (): Promise<void> => {
-    if (mainWindow) {
-        await mainWindow.hide();
+    if (!mainWindow) return;
+
+    const response = await sendModal(
+        mainWindow,
+        'Close Request+',
+        'Do you want to keep Request+ running in the background, or quit it completely?',
+        ['Run in Background', 'Quit Completely']
+    );
+
+    if (response === 1) {
+        isQuitting = true;
+        app.quit();
+    } else {
+        mainWindow.hide();
     }
 });
 
