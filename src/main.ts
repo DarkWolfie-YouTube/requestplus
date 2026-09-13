@@ -271,6 +271,7 @@ let autoQueueTriggered: boolean = false;
 let awaitingStartTrackId: string | null = null;
 /** Number of test requests still to be seeded on startup (see getDebugSeedCount). */
 let debugSeedPending: number = 0;
+let youtubeAdvanceTimer: NodeJS.Timeout | null = null;
 let lastTrackProgress: number = 0;
 let ytManager: YTManager;
 let playbackHandler: PlaybackHandler;
@@ -444,6 +445,7 @@ async function monitorTrackProgress(trackData: songInfo): Promise<void> {
         currentTrackId2 = null;
         autoQueueTriggered = false;
         awaitingStartTrackId = null;
+        clearYoutubeAdvanceTimer();
         Logger.info(`Playback progress restarted for same track: ${trackId}`);
     }
 
@@ -477,6 +479,7 @@ async function monitorTrackProgress(trackData: songInfo): Promise<void> {
             }
             awaitingStartTrackId = null;
         }
+        clearYoutubeAdvanceTimer();
         lastTrackProgress = progress;
         Logger.info(`New track detected: ${trackId}`);
         checkCurrentlyPlayingTrack(trackData);
@@ -541,7 +544,15 @@ async function autoQueueNextTrack(): Promise<void> {
             await amHandler.queueTrack(getQueueItemTrackId(nextTrack));
             dispatched = true;
         } else if (settings.platform === 'youtube' && ytManager && nextTrack.platform === 'youtube') {
-            dispatched = await ytManager.addItemToQueueById(getQueueItemTrackId(nextTrack));
+            const youtubeVideoId = getQueueItemTrackId(nextTrack);
+            dispatched = await ytManager.addItemToQueueById(youtubeVideoId);
+            if (dispatched) {
+                // YouTube Music's autoplay sometimes stalls (or starts radio) instead
+                // of playing the request we just inserted, so playback gets stuck when
+                // the current track ends. Arm a one-shot safety net that actively
+                // advances to our request iff the player is genuinely stuck at the end.
+                scheduleYoutubeEndAdvance(youtubeVideoId);
+            }
         } else if (settings.platform === 'soundcloud' && nextTrack.platform === 'soundcloud') {
             WSServer.WSSendToType({
                 command: 'addTrack',
@@ -595,6 +606,57 @@ function scheduleSoundCloudQueueAdvance(): void {
         soundCloudQueueTimer = null;
         void autoQueueNextTrack();
     }, delayMs);
+}
+
+function clearYoutubeAdvanceTimer(): void {
+    if (youtubeAdvanceTimer) {
+        clearTimeout(youtubeAdvanceTimer);
+        youtubeAdvanceTimer = null;
+    }
+}
+
+/**
+ * Safety net for YouTube auto-advance. Request+ pre-queues the next request ~10s
+ * before the current track ends and normally relies on YouTube Music to auto-play
+ * it. When YTM's autoplay stalls (it would otherwise start radio, or autoplay is
+ * off) playback gets stuck on the finished track. We schedule a one-shot check for
+ * just after the natural end; forceYoutubeAdvanceIfStalled only acts if the player
+ * is genuinely stuck on the ended track with our request queued right after it.
+ */
+function scheduleYoutubeEndAdvance(queuedVideoId: string): void {
+    clearYoutubeAdvanceTimer();
+    const current = currentSongInformation;
+    if (!current || !current.id || !current.duration) return;
+    const currentVideoId = current.id;
+    const remaining = current.duration - current.progress; // ms
+    // Fire shortly after the song would naturally end, giving YTM's own autoplay
+    // the first chance — if it worked, the check below is a no-op.
+    const delay = Math.max(0, remaining) + 750;
+    youtubeAdvanceTimer = setTimeout(() => {
+        youtubeAdvanceTimer = null;
+        void forceYoutubeAdvanceIfStalled(currentVideoId, queuedVideoId);
+    }, delay);
+}
+
+async function forceYoutubeAdvanceIfStalled(currentVideoId: string, queuedVideoId: string): Promise<void> {
+    if (!ytManager) return;
+    try {
+        const song = await ytManager.getCurrentSong();
+        // Player already moved on (autoplay worked) — nothing to do.
+        if (!song || song.videoId !== currentVideoId) return;
+        // Same track but not actually at its end (paused or seeked back) — never cut
+        // a song that is still playing.
+        if ((song.songDuration - song.elapsedSeconds) > 3) return;
+        const state = await ytManager.getQueueState();
+        if (!state || state.selectedIndex < 0) return;
+        // Only advance when our request is genuinely the very next item, so we never
+        // fall through to YouTube Music's radio/autoplay.
+        if (state.videoIds[state.selectedIndex + 1] !== queuedVideoId) return;
+        Logger.info(`Auto-advance: YouTube stalled at the end of ${currentVideoId}; advancing to queued request ${queuedVideoId}`);
+        await ytManager.next();
+    } catch (error) {
+        Logger.error('Auto-advance: end-of-track check failed', error);
+    }
 }
 
 async function checkCurrentlyPlayingTrack(trackData: TrackData): Promise<void> {
@@ -1214,8 +1276,15 @@ ipcMain.handle('play-track-at-index', async (event: Electron.IpcMainInvokeEvent,
     const platform = settings.platform;
     try {
         if (platform === 'youtube' && ytManager) {
-            const queued = await ytManager.addItemToQueueById(getQueueItemTrackId(track));
+            const youtubeVideoId = getQueueItemTrackId(track);
+            const queued = await ytManager.addItemToQueueById(youtubeVideoId);
             if (!queued) return false;
+            // A manual pick is inserted as "play next" and then relies on YouTube
+            // Music advancing at the end of the current track, exactly like the
+            // auto-queue does. Arm the same safety net here: without it a stalled
+            // autoplay leaves awaitingStartTrackId set, which blocks the auto-queue
+            // for good. song-skip does not need this — it calls next() itself.
+            scheduleYoutubeEndAdvance(youtubeVideoId);
         } else if (platform === 'spotify' && WSServer) {
             WSServer.WSSendToType({ command: 'addTrack', data: { uri: `spotify:track:${getQueueItemTrackId(track)}` } } as WSCommand, 'spotify');
         } else if (platform === 'apple' && amHandler) {
