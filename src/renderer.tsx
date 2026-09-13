@@ -58,6 +58,7 @@ const defaultSettings: AppSettings = {
   platform: "spotify", filterExplicit: false, gtsEnabled: false,
   theme: "default", appleMusicAppToken: "", ciderApiVersion: "3",
   ciderV4AppToken: "", primarySearchPlatform: "spotify", showNotifications: true,
+  reducedMotion: false, hardwareAcceleration: true,
 };
 
 const initialTrack: Track = {
@@ -99,6 +100,16 @@ const CSS = `
   .blob  { animation: blob 8s infinite ease-in-out; }
   .d2    { animation-delay: 2.5s; }
   .d4    { animation-delay: 4.5s; }
+
+  /* Reduced motion mode: freeze the background glow and drop backdrop blur panels,
+     for lowest GPU/CPU usage while the window just sits open (e.g. during a stream). */
+  .reduce-motion .blob { animation: none; }
+  .reduce-motion .backdrop-blur,
+  .reduce-motion .backdrop-blur-sm,
+  .reduce-motion .backdrop-blur-xl {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
 
   .vol::-webkit-slider-thumb {
     -webkit-appearance: none;
@@ -1261,6 +1272,10 @@ export default function App() {
     api.preload?.();
   }, []);
 
+  useEffect(() => {
+    document.documentElement.classList.toggle("reduce-motion", !!settings.reducedMotion);
+  }, [settings.reducedMotion]);
+
   return (
     <div className="h-screen w-screen overflow-hidden bg-slate-950 text-white">
       <style>{CSS}</style>
@@ -1300,7 +1315,7 @@ export default function App() {
 
       {/* Modal */}
       {modal && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 px-5 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/85 px-5">
           <div className="w-full max-w-[340px] rounded-2xl border border-violet-500/25 bg-slate-900 p-5 shadow-2xl">
             <h2 className="text-base font-extrabold text-white">{modal.title}</h2>
             <p className="mt-2 text-[13px] leading-6 text-slate-400 whitespace-pre-wrap">{modal.message}</p>

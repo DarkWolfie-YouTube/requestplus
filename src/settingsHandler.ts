@@ -26,6 +26,10 @@ interface Settings {
     ciderApiVersion?: '3' | '4';
     /** Scoped Cider 4 API token. Cider 3 keeps using appleMusicAppToken. */
     ciderV4AppToken?: string;
+    /** Freeze background animations and drop backdrop blur, for lowest GPU/CPU usage while idle. */
+    reducedMotion?: boolean;
+    /** When false, GPU acceleration is disabled at app startup (takes effect after restart). */
+    hardwareAcceleration?: boolean;
     [key: string]: any; // Allow additional properties
 }
 
