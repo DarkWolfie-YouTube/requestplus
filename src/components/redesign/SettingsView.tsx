@@ -598,6 +598,22 @@ export function SettingsView({ settings, setSettings, user, setUser, overlayPath
           </div>
         </Section>
 
+        {/* Performance */}
+        <Section title={t("CLIENT_PERFORMANCE_TITLE", locale)}>
+          <ToggleRow
+            label={t("CLIENT_REDUCED_MOTION", locale)}
+            desc={t("CLIENT_REDUCED_MOTION_DESC", locale)}
+            checked={!!settings.reducedMotion}
+            onChange={(v) => p({ reducedMotion: v })}
+          />
+          <ToggleRow
+            label={t("CLIENT_HARDWARE_ACCELERATION", locale)}
+            desc={t("CLIENT_HARDWARE_ACCELERATION_DESC", locale)}
+            checked={settings.hardwareAcceleration !== false}
+            onChange={(v) => p({ hardwareAcceleration: v })}
+          />
+        </Section>
+
         {/* Privacy */}
         <Section title={t("CLIENT_PRIVACY_TITLE", locale)}>
           <ToggleRow label={t("CLIENT_TELEMETRY", locale)} desc={t("CLIENT_TELEMETRY_DESC", locale)} checked={!!settings.telemetryEnabled} onChange={(v) => p({ telemetryEnabled: v })} />
