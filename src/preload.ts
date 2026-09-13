@@ -11,6 +11,7 @@ interface ElectronAPI {
 
   // Music controls
   playPause: () => Promise<void>;
+  pause: () => Promise<void>;
   skip: () => Promise<void>;
   previous: () => Promise<void>;
   like: () => Promise<void>;
@@ -57,6 +58,7 @@ interface ElectronAPI {
   setPreReleaseCheck: (enabled: boolean) => Promise<void>;
 
   // Overlay
+  reportRendererError: (payload: { message: string; stack?: string; componentStack?: string | null }) => void;
   getOverlayPath: () => Promise<string>;
 
   // Track info
@@ -106,6 +108,7 @@ const electronAPI: ElectronAPI = {
 
   // Music controls
   playPause: () => ipcRenderer.invoke('song-play'),
+  pause: () => ipcRenderer.invoke('song-pause'),
   skip: () => ipcRenderer.invoke('song-skip'),
   previous: () => ipcRenderer.invoke('song-previous'),
   volume: (level) => ipcRenderer.invoke('song-volume', level),
@@ -191,6 +194,9 @@ const electronAPI: ElectronAPI = {
   getUpdateChannels: () => ipcRenderer.invoke('get-update-channels'),
   setUpdateChannel: (channel) => ipcRenderer.invoke('set-update-channel', channel),
   setPreReleaseCheck: (enabled) => ipcRenderer.invoke('set-pre-release-check', enabled),
+
+  // Renderer-Fehler an den Main-Prozess melden, damit sie in log.txt landen
+  reportRendererError: (payload) => ipcRenderer.send('renderer-error', payload),
 
   // Overlay
   getOverlayPath: () => ipcRenderer.invoke('get-overlay-path'),

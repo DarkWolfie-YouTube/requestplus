@@ -180,18 +180,18 @@ class YTManager extends EventEmitter {
             return response.data;
         } catch (error: any) {
             if (error.response?.status === 401) {
-                console.log(`[YTManager] ${endpoint || 'Request'} got 401, refreshing token and retrying`);
+                this.logger.warn(`[YTManager] ${endpoint || 'Request'} got 401, refreshing token and retrying`);
                 // Token expired, get new one and retry once
                 await this.newToken();
                 try {
                     const retryResponse = await requestFn();
                     if (retryResponse.status === 204) {
-                        console.log(`[YTManager] ${endpoint || 'Request'} retry returned 204 No Content`);
+                        this.logger.warn(`[YTManager] ${endpoint || 'Request'} retry returned 204 No Content`);
                         return true as unknown as T;
                     }
                     return retryResponse.data;
                 } catch (retryError: any) {
-                    console.error(`[YTManager] ${endpoint || 'Request'} retry failed:`, retryError.message);
+                    this.logger.error(`[YTManager] ${endpoint || 'Request'} retry failed: ${retryError.message}`);
                     return null;
                 }
             }
@@ -333,11 +333,19 @@ class YTManager extends EventEmitter {
     // ── REST fallbacks ────────────────────────────────────────────────────────
 
     async getCurrentSong(): Promise<songData | null> {
-        return this.makeAuthenticatedRequest<songData>(() =>
+        const song = await this.makeAuthenticatedRequest<songData>(() =>
             this.instance.get('/song', {
                 headers: { 'Authorization': `Bearer ${this.token}` }
             }), '/song'
         );
+
+        // Pear answers 204 No Content while it is still starting up and no track
+        // is loaded yet. makeAuthenticatedRequest turns that into the `true`
+        // sentinel it uses for the control endpoints, which have no body — but
+        // `true` is not song data. It survives a plain truthiness check and every
+        // field read off it is undefined, which is how a missing title reached the
+        // renderer and how "not paused" turned into "playing".
+        return song && typeof song === 'object' ? song : null;
     }
 
     async getVolume(): Promise<volumeState | null> {
@@ -381,6 +389,42 @@ class YTManager extends EventEmitter {
     }
 
     // Control methods
+    /**
+     * Pear reports isPaused:false for a track it has only loaded, so a toggle from
+     * that state goes towards pause and the first play never happens — the button
+     * looks dead until the track has been started once inside Pear. Asking for the
+     * direction explicitly avoids guessing against a state Pear reports wrongly.
+     */
+    async play(): Promise<void> {
+        await this.makeAuthenticatedRequest(() =>
+            this.instance.post('/play', {}, {
+                headers: { 'Authorization': `Bearer ${this.token}` }
+            }), '/play'
+        );
+        this.refreshSongStateSoon();
+    }
+
+    async pause(): Promise<void> {
+        await this.makeAuthenticatedRequest(() =>
+            this.instance.post('/pause', {}, {
+                headers: { 'Authorization': `Bearer ${this.token}` }
+            }), '/pause'
+        );
+        this.refreshSongStateSoon();
+    }
+
+    /** Pear does not always push a state change, so re-read shortly after a command. */
+    private refreshSongStateSoon(): void {
+        setTimeout(() => {
+            this.getCurrentSong().then(song => {
+                if (song) {
+                    this.cachedSong = song;
+                    this.emit('state-update', this.cachedSong);
+                }
+            }).catch(() => {});
+        }, 800);
+    }
+
     async playPause(): Promise<void> {
         await this.makeAuthenticatedRequest(() =>
             this.instance.post('/toggle-play', {}, {

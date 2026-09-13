@@ -13,6 +13,7 @@ import { Navigation as RedesignedNavigation } from "./components/redesign/Naviga
 import { MusicPlayer as RedesignedMusicPlayer } from "./components/redesign/MusicPlayer";
 import { QueuePage as RedesignedQueuePage } from "./components/redesign/QueuePage";
 import { SettingsView as RedesignedSettingsView } from "./components/redesign/SettingsView";
+import { ErrorBoundary } from "./components/redesign/ErrorBoundary";
 import { t } from "./i18n";
 
 
@@ -1354,5 +1355,9 @@ export default function App() {
 
 const container = document.getElementById("root");
 if (container) {
-  createRoot(container).render(<App />);
+  createRoot(container).render(
+    <ErrorBoundary>
+      <App />
+    </ErrorBoundary>
+  );
 }

@@ -1005,6 +1005,13 @@ function applySettingsToRuntime(updatedSettings: Settings): void {
 
 
 // IPC Handlers
+// Renderer errors never reached the log before, so a crashed UI looked like a
+// silent black window. DevTools are disabled in packaged builds, so this channel
+// is the only way these errors become visible to a user reporting a problem.
+ipcMain.on('renderer-error', (_event, payload: { message?: string; stack?: string; componentStack?: string | null }) => {
+    Logger?.error(`[Renderer] ${payload?.message || 'Unknown render error'}`, payload?.stack || '', payload?.componentStack || '');
+});
+
 ipcMain.handle('load-settings', async (): Promise<Settings> => {
     return settingsHandler.load();
 });
@@ -1097,7 +1104,7 @@ ipcMain.handle('song-play', async (): Promise<void> => {
     if (platform === 'spotify' && WSServer) {
         WSServer.WSSendToType({ command: 'PlayPause' } as WSCommand, 'spotify');
     } else if (platform === 'youtube' && ytManager) {
-        await ytManager.playPause();
+        await ytManager.play();
     } else if (platform === 'apple' && amHandler) {
         await amHandler.playPause();
     } else if (platform === 'soundcloud' && WSServer) {
@@ -1111,7 +1118,7 @@ ipcMain.handle('song-pause', async (): Promise<void> => {
     if (platform === 'spotify' && WSServer) {
         WSServer.WSSendToType({ command: 'PlayPause' } as WSCommand, 'spotify');
     } else if (platform === 'youtube' && ytManager) {
-        await ytManager.playPause();
+        await ytManager.pause();
     } else if (platform === 'apple' && amHandler) {
         await amHandler.playPause();
     }
