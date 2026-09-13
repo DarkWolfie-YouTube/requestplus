@@ -5,6 +5,7 @@ import * as path from 'path';
 import { BrowserWindow } from 'electron';
 import PlaybackHandler from './playbackHandler';
 import type { Server } from 'node:http';
+import { LOCAL_API_PORTS, LOCAL_LOOPBACK_HOST } from './localPorts';
 
 // Type definitions
 interface TwitchUser {
@@ -47,6 +48,7 @@ interface WSServerInterface {
 interface Logger {
     info(message: string, ...args: any[]): void;
     error(message: string, ...args: any[]): void;
+    warn(message: string, ...args: any[]): void;
 }
 
 
@@ -552,11 +554,31 @@ class APIHandler {
 
     }
 
-    private startServer(): void {
+    private startServer(portIndex = 0): void {
         if (this.server) return;
 
-        this.server = this.app.listen(444, () => {
-            this.logger.info('API server listening on port 444');
+        const port = LOCAL_API_PORTS[portIndex];
+        const server = this.app.listen(port, LOCAL_LOOPBACK_HOST, () => {
+            this.logger.info(`API server listening on http://${LOCAL_LOOPBACK_HOST}:${port}`);
+        });
+        this.server = server;
+        server.once('error', (error: NodeJS.ErrnoException) => {
+            this.server = null;
+            const fallbackIndex = portIndex + 1;
+            if (fallbackIndex < LOCAL_API_PORTS.length) {
+                this.logger.warn(`Local API port ${port} is unavailable (${error.code ?? 'unknown'}); trying ${LOCAL_API_PORTS[fallbackIndex]}`);
+                this.startServer(fallbackIndex);
+                return;
+            }
+            this.logger.error(`Could not start the local API server on ports ${LOCAL_API_PORTS.join(' or ')}:`, error);
+            if (!this.mainWindow.isDestroyed()) {
+                this.mainWindow.webContents.send(
+                    'show-toast',
+                    `The local overlay server could not start on ports ${LOCAL_API_PORTS.join(' or ')}.`,
+                    'error',
+                    7000
+                );
+            }
         });
     }
 

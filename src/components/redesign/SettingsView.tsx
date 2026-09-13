@@ -181,8 +181,18 @@ export function SettingsView({ settings, setSettings, user, setUser, overlayPath
       setUpdateChannelState(previous);
       console.error("Failed to save update feed:", error);
       toast.error("Failed to change the update feed.");
+      return;
     } finally {
       setUpdateChannelSaving(false);
+    }
+
+    if (channel !== previous && typeof updateApi.checkForUpdates === "function") {
+      try {
+        await updateApi.checkForUpdates();
+      } catch (error) {
+        console.error("Failed to check the selected update feed:", error);
+        toast.error("The update feed changed, but its update check failed.");
+      }
     }
   };
 
@@ -573,7 +583,7 @@ export function SettingsView({ settings, setSettings, user, setUser, overlayPath
               ))}
             </select>
             <p className="text-[11px] leading-[1.5] text-slate-600">
-              Stable receives production releases. Other feeds may contain preview builds.
+              Stable receives production releases. Switching feeds reinstalls that branch even when its version number matches the installed build.
             </p>
             <button
               onClick={async () => {
@@ -586,6 +596,22 @@ export function SettingsView({ settings, setSettings, user, setUser, overlayPath
               {t("CLIENT_CHECK_UPDATES", locale)}
             </button>
           </div>
+        </Section>
+
+        {/* Performance */}
+        <Section title={t("CLIENT_PERFORMANCE_TITLE", locale)}>
+          <ToggleRow
+            label={t("CLIENT_REDUCED_MOTION", locale)}
+            desc={t("CLIENT_REDUCED_MOTION_DESC", locale)}
+            checked={!!settings.reducedMotion}
+            onChange={(v) => p({ reducedMotion: v })}
+          />
+          <ToggleRow
+            label={t("CLIENT_HARDWARE_ACCELERATION", locale)}
+            desc={t("CLIENT_HARDWARE_ACCELERATION_DESC", locale)}
+            checked={settings.hardwareAcceleration !== false}
+            onChange={(v) => p({ hardwareAcceleration: v })}
+          />
         </Section>
 
         {/* Privacy */}

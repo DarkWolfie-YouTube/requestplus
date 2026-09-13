@@ -74,11 +74,11 @@ export function Onboarding({ onComplete, user, overlayPath, locale = "en" }: {
 
   return (
     <div className="relative flex h-full overflow-hidden bg-gradient-to-br from-slate-950 via-slate-900 to-emerald-950/50">
-      {/* Blobs */}
+      {/* Blobs - radial gradients instead of an animated blur() filter, see shared.tsx */}
       <div className="pointer-events-none absolute inset-0 overflow-hidden opacity-[0.16]">
-        <div className="blob absolute -left-16 -top-16 h-[28rem] w-[28rem] rounded-full bg-fuchsia-600 blur-[100px]" />
-        <div className="blob d2 absolute -right-16 top-24 h-[28rem] w-[28rem] rounded-full bg-emerald-500 blur-[100px]" />
-        <div className="blob d4 absolute -bottom-24 left-40 h-[32rem] w-[32rem] rounded-full bg-cyan-500 blur-[100px]" />
+        <div className="blob absolute -left-16 -top-16 h-[28rem] w-[28rem] rounded-full" style={{ background: "radial-gradient(circle at center, rgba(192,38,211,0.9) 0%, rgba(192,38,211,0.45) 35%, rgba(192,38,211,0) 70%)" }} />
+        <div className="blob d2 absolute -right-16 top-24 h-[28rem] w-[28rem] rounded-full" style={{ background: "radial-gradient(circle at center, rgba(16,185,129,0.9) 0%, rgba(16,185,129,0.45) 35%, rgba(16,185,129,0) 70%)" }} />
+        <div className="blob d4 absolute -bottom-24 left-40 h-[32rem] w-[32rem] rounded-full" style={{ background: "radial-gradient(circle at center, rgba(6,182,212,0.9) 0%, rgba(6,182,212,0.45) 35%, rgba(6,182,212,0) 70%)" }} />
       </div>
 
       {/* Ã¢â€â‚¬Ã¢â€â‚¬ Sidebar Ã¢â€â‚¬Ã¢â€â‚¬ */}
