@@ -23,10 +23,9 @@ export function Topbar({ title = "Request+", isMac }: { title?: string, isMac?: 
         style={{ WebkitAppRegion: "drag" } as any}
       >
         {isMac && (
-          <div className="mr-2 flex h-3 w-3 items-center justify-center rounded-full bg-red-500">
-            <div className="h-1 w-1 rounded-full bg-slate-950" />
-            <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-violet-400/80" style={{ padding: "300px 0px" }}>{title}</span>
-          </div>
+          <center>
+            <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-violet-400/80 px-43">{title}</span>
+          </center>
         )}
         {!isMac && <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-violet-400/80">{title}</span>}
       </div>
