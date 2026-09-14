@@ -1,408 +1,254 @@
-import { useState } from "react";
-import { Check, Copy, Eye, Headphones, ListChecks, Lock, Music2, Radio, Shield, Sparkles, UserRound, ArrowLeft, ArrowRight } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Check, ChevronRight, Copy, ExternalLink, Headphones, ListChecks, Radio, RefreshCw, Sparkles, UserRound, Monitor } from "lucide-react";
 import { toast } from "sonner";
-import { Switch } from "./shared";
 import type { AppSettings, AppUser } from "./shared";
+import { overlayThemes, hasLinkedChannel, setupChatPlatforms, setupReady, type SetupConnections, type SetupStatus } from "../../onboarding";
 import { t } from "../../i18n";
+import "../../styles/onboarding.css";
 
-const defaultSettings: AppSettings = {
-  enableRequests: true, modsOnly: false, subsOnly: false,
-  requestLimitEnabled: false, requestLimit: 10, autoPlay: true,
-  autoAcceptSearchResults: false, useChannelPoints: false,
-  channelPointRequestsEnabled: true, telemetryEnabled: true,
-  platform: "spotify", filterExplicit: false, gtsEnabled: false,
-  theme: "default", appleMusicAppToken: "", ciderApiVersion: "3",
-  ciderV4AppToken: "", primarySearchPlatform: "spotify", showNotifications: true,
+const steps = ["WELCOME", "ACCOUNT", "MUSIC", "RULES", "OVERLAY", "TEST"] as const;
+const icons = [Sparkles, UserRound, Headphones, ListChecks, Monitor, Radio];
+const platforms = ["spotify", "youtube", "apple", "soundcloud"] as const;
+const guidePaths: Record<string, string> = {
+  spotify: "spotify", youtube: "youtube-music", apple: "apple-music", soundcloud: "soundcloud",
 };
+const platformNames: Record<string, string> = { spotify: "Spotify", youtube: "YouTube Music", apple: "Apple Music", soundcloud: "SoundCloud" };
 
-const STEPS = [
-  { id: "welcome", label: "Welcome", icon: Sparkles },
-  { id: "account", label: "Account", icon: UserRound },
-  { id: "music", label: "Platform", icon: Headphones },
-  { id: "rules", label: "Rules", icon: ListChecks },
-  { id: "done", label: "Done", icon: Check },
-];
-
-const OOBE_PLATFORMS = [
-  { value: "spotify", label: "Spotify", desc: "Stream and request songs from Spotify." },
-  { value: "youtube", label: "YouTube", desc: "Request songs via YouTube Pear." },
-  { value: "apple", label: "Apple Music", desc: "Use Cider for Apple Music integration." },
-  { value: "soundcloud", label: "SoundCloud", desc: "Request tracks from SoundCloud." },
-];
-
-export function Onboarding({ onComplete, user, overlayPath, locale = "en" }: {
-  onComplete: () => void;
-  user: AppUser | null;
-  overlayPath: string;
-  locale?: string;
-}) {
+export function Onboarding({ locale, setLocale }: { locale: string; setLocale: (locale: string) => void }) {
+  const api = window.api;
+  const [settings, setSettings] = useState<AppSettings | null>(null);
+  const dirty = useRef<Partial<AppSettings>>({});
   const [step, setStep] = useState(0);
-  const [settings, setSettings] = useState(defaultSettings);
-  const [copied, setCopied] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const p = (patch: Partial<AppSettings>) => setSettings((s) => ({ ...s, ...patch }));
+  const [user, setUser] = useState<AppUser | null>(null);
+  const [connections, setConnections] = useState<SetupConnections | null>(null);
+  const [status, setStatus] = useState<SetupStatus | null>(null);
+  const [error, setError] = useState("");
+  const [connectionError, setConnectionError] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [previewRevision, setPreviewRevision] = useState(0);
+  const [overlayConfirmed, setOverlayConfirmed] = useState(false);
+  const [testStarted, setTestStarted] = useState(false);
+  const [requestConfirmed, setRequestConfirmed] = useState(false);
+  const [queue, setQueue] = useState<Array<{ title: string; isQueued?: boolean; iscurrentlyPlaying?: boolean }>>([]);
+  const heading = useRef<HTMLHeadingElement>(null);
+  const lock = useRef(false);
+  const tx = (key: string, vars?: Record<string, string>) => t(key, locale, vars);
 
-  const pct = ((step + 1) / STEPS.length) * 100;
-  const api = (window as any).api;
-  const finish = async () => {
-    setSaving(true);
+  const load = async () => {
+    setLoading(true);
+    setError("");
     try {
-      const next = { ...settings, oobeCompleted: true };
-      localStorage.setItem("settings", JSON.stringify(next));
-      localStorage.setItem("requestplus:v3:oobe-complete", "true");
-      const api = (window as any).api;
-      if (api?.completeOnboarding) await api.completeOnboarding(next);
-      else await api?.saveSettings?.(next);
-      onComplete();
-      toast.success(t("OOBE_TOAST_READY", locale));
-    } catch { onComplete(); }
-    finally { setSaving(false); }
+      const saved = await api.loadSettings();
+      if (!saved || typeof saved !== "object") throw new Error("Missing settings");
+      setSettings(saved);
+      dirty.current = {};
+    } catch { setError("SETUP_LOAD_FAILED"); }
+    finally { setLoading(false); }
   };
 
-  const goNext = () => {
-    if (step === STEPS.length - 1) { void finish(); return; }
-    setStep((s) => s + 1);
+  useEffect(() => { void load(); }, []);
+  useEffect(() => {
+    let stopped = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const poll = async () => {
+      try {
+        const next = await api.setupStatus();
+        if (!stopped) setStatus(next);
+        if (testStarted) {
+          const nextQueue = await api.getQueue();
+          if (!stopped) setQueue(nextQueue.items || []);
+        }
+      } catch { if (!stopped) setStatus(null); }
+      if (!stopped) timer = setTimeout(poll, 2000);
+    };
+    void poll();
+    return () => { stopped = true; clearTimeout(timer); };
+  }, [testStarted]);
+
+  useEffect(() => {
+    let stopped = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const refresh = async () => {
+      try {
+        const account = await api.fetchUserData();
+        if (stopped) return;
+        setUser(account);
+        if (!account) { setConnections(null); setConnectionError(false); return; }
+        const accountLocale = await api.getLocale();
+        if (stopped) return;
+        if (accountLocale) setLocale(accountLocale);
+        const linked = await api.setupConnections();
+        if (!stopped) { setConnections(linked); setConnectionError(false); }
+      } catch { if (!stopped) { setConnectionError(true); setConnections(null); } }
+    };
+    const poll = async () => { await refresh(); if (!stopped) timer = setTimeout(poll, 10000); };
+    const focus = () => { void refresh(); };
+    void poll();
+    const unsubscribe = api.authSuccess((response: { status?: string }) => {
+      if (response?.status === "error") setError("SETUP_LOGIN_FAILED");
+      if (["success", "restored", "refreshed", "logged-out"].includes(response?.status || "")) void refresh();
+    });
+    window.addEventListener("focus", focus);
+    return () => { stopped = true; clearTimeout(timer); unsubscribe?.(); window.removeEventListener("focus", focus); };
+  }, []);
+
+  useEffect(() => { heading.current?.focus(); }, [step]);
+
+  const patch = (next: Partial<AppSettings>) => {
+    dirty.current = { ...dirty.current, ...next };
+    setSettings(current => current ? { ...current, ...next } : current);
+    if ("platform" in next || "ciderApiVersion" in next || "appleMusicAppToken" in next || "ciderV4AppToken" in next) {
+      setTestStarted(false);
+      setRequestConfirmed(false);
+    }
   };
-
-
-  const copyOverlay = async () => {
-    await navigator.clipboard.writeText(overlayPath).catch(() => {});
-    setCopied(true);
-    toast.success(t("OOBE_TOAST_OVERLAY_COPIED", locale));
-    setTimeout(() => setCopied(false), 1800);
+  const run = async (action: () => Promise<void>, errorKey = "SETUP_ACTION_FAILED") => {
+    if (lock.current) return;
+    lock.current = true;
+    setBusy(true);
+    setError("");
+    try { await action(); }
+    catch { setError(errorKey); }
+    finally { lock.current = false; setBusy(false); }
   };
+  const save = async () => {
+    await api.saveSetupDraft(dirty.current);
+    dirty.current = {};
+  };
+  const selectTheme = (theme: string): void => void run(async () => {
+    await api.saveSetupDraft({ ...dirty.current, theme });
+    dirty.current = {};
+    setSettings(current => current ? { ...current, theme } : current);
+    setOverlayConfirmed(false);
+    setTestStarted(false);
+    setRequestConfirmed(false);
+    setPreviewRevision(value => value + 1);
+  }, "SETUP_SAVE_FAILED");
+  const navigate = (index: number): void => void run(async () => {
+    if (step === 3 && index > step) patch({ oobeRulesReviewed: true });
+    await save();
+    setStep(index);
+  }, "SETUP_SAVE_FAILED");
+  const finish = (deferred: boolean): void => void run(async () => {
+    await api.completeOnboarding({ patch: dirty.current, deferred, overlayConfirmed, requestConfirmed });
+  }, "SETUP_FINISH_FAILED");
+  const checkMusic = (): void => void run(async () => {
+    await save();
+    setStatus(await api.setupStatus());
+  }, "SETUP_SAVE_FAILED");
+  const startTest = (): void => void run(async () => {
+    await save();
+    await api.setupBeginTest();
+    setStatus(current => current ? { ...current, request: null } : current);
+    setTestStarted(true);
+    setRequestConfirmed(false);
+  });
+  const openDocs = (): void => void run(() => api.yesnt(`https://docs.requestplus.xyz/integrations/music/${guidePaths[settings?.platform || ""] || ""}`));
+  const copy = (): void => void run(async () => {
+    if (!status?.overlayPath) throw new Error("Missing overlay");
+    await navigator.clipboard.writeText(status.overlayPath);
+    toast.success(tx("SETUP_COPIED"));
+  }, "SETUP_COPY_FAILED");
+  const linked = !!user && hasLinkedChannel(connections);
+  const music = !!status?.music && status.platform === settings?.platform && !Object.keys(dirty.current).some(key => ["platform", "ciderApiVersion", "appleMusicAppToken", "ciderV4AppToken"].includes(key));
+  const ready = requestConfirmed && music && setupReady(status, linked, overlayConfirmed) && !!settings?.oobeRulesReviewed;
+  const completed = [true, linked && !!status?.cloud, music, !!settings?.oobeRulesReviewed, !!status?.overlay && overlayConfirmed, ready];
+  const done = completed.slice(1).filter(Boolean).length;
+  const title = tx(`SETUP_${steps[step]}_TITLE`);
 
-  return (
-    <div className="relative flex h-full overflow-hidden bg-gradient-to-br from-slate-950 via-slate-900 to-emerald-950/50">
-      {/* Blobs - radial gradients instead of an animated blur() filter, see shared.tsx */}
-      <div className="pointer-events-none absolute inset-0 overflow-hidden opacity-[0.16]">
-        <div className="blob absolute -left-16 -top-16 h-[28rem] w-[28rem] rounded-full" style={{ background: "radial-gradient(circle at center, rgba(192,38,211,0.9) 0%, rgba(192,38,211,0.45) 35%, rgba(192,38,211,0) 70%)" }} />
-        <div className="blob d2 absolute -right-16 top-24 h-[28rem] w-[28rem] rounded-full" style={{ background: "radial-gradient(circle at center, rgba(16,185,129,0.9) 0%, rgba(16,185,129,0.45) 35%, rgba(16,185,129,0) 70%)" }} />
-        <div className="blob d4 absolute -bottom-24 left-40 h-[32rem] w-[32rem] rounded-full" style={{ background: "radial-gradient(circle at center, rgba(6,182,212,0.9) 0%, rgba(6,182,212,0.45) 35%, rgba(6,182,212,0) 70%)" }} />
+  const indicator = (ok: boolean, label: string) => <span className={`setup-status ${ok ? "is-ready" : ""}`}>{ok ? <Check size={14} aria-hidden="true" /> : <span className="setup-status-dot" />}{label}</span>;
+  const toggle = (key: string, labelKey: string, descKey?: string) => <label className="setup-toggle" key={key}>
+    <span><strong>{tx(labelKey)}</strong>{descKey && <small>{tx(descKey)}</small>}</span>
+    <input type="checkbox" checked={!!settings?.[key]} onChange={event => patch({ [key]: event.target.checked })} />
+  </label>;
+
+  return <div className="setup-shell">
+    <aside className="setup-sidebar">
+      <div className="setup-brand"><span className="setup-brand-icon"><Sparkles size={22} /></span><div><strong>Request+</strong><small>{tx("OOBE_SETUP_LABEL")}</small></div></div>
+      <nav aria-label={tx("OOBE_SETUP_LABEL")}>
+        {steps.map((key, index) => { const Icon = icons[index]; return <button type="button" key={key} disabled={busy || !settings} aria-label={tx(`SETUP_STEP_${key}`)} aria-current={step === index ? "step" : undefined} onClick={() => navigate(index)}>
+          <span className={completed[index] && index > 0 ? "setup-nav-done" : ""}>{completed[index] && index > 0 ? <Check size={18} /> : <Icon size={18} />}</span><span>{tx(`SETUP_STEP_${key}`)}</span>
+        </button>; })}
+      </nav>
+      <div className="setup-sidebar-bottom"><label htmlFor="setup-language">{tx("SETUP_LANGUAGE")}</label>
+        <select aria-label={tx("SETUP_LANGUAGE")} id="setup-language" disabled={!!user} value={locale} onChange={event => setLocale(event.target.value)}>{Object.entries({ en: "English", es: "Español", fr: "Français", pt: "Português", de: "Deutsch" }).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
+        <p>{tx("SETUP_PROGRESS", { done: String(done), total: "5" })}</p><progress max={5} value={done} aria-label={tx("SETUP_PROGRESS", { done: String(done), total: "5" })} />
       </div>
-
-      {/* Ã¢â€â‚¬Ã¢â€â‚¬ Sidebar Ã¢â€â‚¬Ã¢â€â‚¬ */}
-      <aside className="relative z-10 flex w-[220px] shrink-0 flex-col border-r border-white/[0.07] bg-slate-950/60 px-4 py-6 backdrop-blur-sm">
-        {/* Brand */}
-        <div className="mb-8 flex items-center gap-2.5">
-          <div className="flex size-8 items-center justify-center rounded-lg bg-gradient-to-br from-fuchsia-500 to-emerald-500 shadow-md">
-            <Sparkles className="size-4 text-white" />
-          </div>
-          <div>
-            <p className="text-[10px] font-black uppercase tracking-[0.18em] text-emerald-400">{t("OOBE_SETUP_LABEL", locale)}</p>
-            <p className="text-sm font-extrabold text-white">Request+</p>
-          </div>
-        </div>
-
-        {/* Step list */}
-        <nav className="flex-1 space-y-1">
-          {STEPS.map((s, i) => {
-            const Icon = s.icon;
-            const active = i === step;
-            const done = i < step;
-            return (
-              <button
-                key={s.id}
-                type="button"
-                onClick={() => setStep(i)}
-                className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm transition-all ${
-                  active
-                    ? "bg-white/10 text-white ring-1 ring-white/15"
-                    : done
-                    ? "text-emerald-300/80 hover:bg-white/5 hover:text-emerald-200"
-                    : "text-slate-600 hover:bg-white/5 hover:text-slate-400"
-                }`}
-              >
-                <span className={`flex size-7 shrink-0 items-center justify-center rounded-lg text-[11px] font-black transition-colors ${
-                  done
-                    ? "bg-emerald-400/20 text-emerald-300"
-                    : active
-                    ? "bg-white/15 text-white"
-                    : "bg-white/5 text-slate-600"
-                }`}>
-                  {done ? <Check className="size-3.5" /> : <Icon className="size-3.5" />}
-                </span>
-                <span className="font-semibold">{s.label}</span>
-              </button>
-            );
-          })}
-        </nav>
-
-        {/* Progress */}
-        <div className="mt-6 space-y-2">
-          <div className="flex items-center justify-between text-[10px] font-bold text-slate-600">
-            <span>Progress</span>
-            <span>{Math.round(pct)}%</span>
-          </div>
-          <div className="h-1 overflow-hidden rounded-full bg-white/8">
-            <div
-              className="h-full rounded-full bg-gradient-to-r from-fuchsia-400 via-violet-400 to-emerald-400 transition-all duration-500"
-              style={{ width: `${pct}%` }}
-            />
-          </div>
-        </div>
-
-        {/* Skip */}
-        <button
-          onClick={() => void finish()}
-          className="mt-4 rounded-xl px-3 py-2 text-xs font-semibold text-slate-600 transition-colors hover:bg-white/8 hover:text-slate-400"
-        >
-                    {t("OOBE_SKIP", locale)}
-        </button>
-      </aside>
-
-      {/* Ã¢â€â‚¬Ã¢â€â‚¬ Main content Ã¢â€â‚¬Ã¢â€â‚¬ */}
-      <div className="relative z-10 flex flex-1 flex-col overflow-hidden">
-        {/* Content area */}
-        <div className="flex-1 overflow-y-auto no-sb px-8 py-7">
-
-          {/* Welcome */}
-          {step === 0 && (
-            <div className="flex h-full flex-col justify-center gap-7">
-              <div className="space-y-4 max-w-lg">
-                <div className="inline-flex items-center gap-1.5 rounded-full border border-emerald-300/25 bg-emerald-300/10 px-3 py-1 text-xs font-semibold text-emerald-200">
-                  <Radio className="size-3" />
-                  Live Music Requests
-                </div>
-                <h2 className="text-4xl font-extrabold leading-[1.15] tracking-tight">
-                  Welcome to<br />Request+
-                </h2>
-                <p className="text-[15px] leading-7 text-slate-400 max-w-md">
-            The ultimate song request tool for streamers. Let your viewers queue up tracks from Spotify, YouTube, Apple Music, and more - all without leaving your stream.
-                </p>
-              </div>
-              <div className="grid grid-cols-3 gap-3 max-w-lg">
-                {[
-                  { n: "01", title: "Sign In", desc: "Connect your Request+ account to identify who's requesting and enable moderation." },
-            { n: "02", title: "Pick Platform", desc: "Choose your music source - Spotify, YouTube, Apple Music." },
-                  { n: "03", title: "Set Rules", desc: "Control who can request and how many songs per user." },
-                ].map(({ n, title, desc }) => (
-                  <div key={n} className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
-                    <p className="mb-2 text-[10px] font-black tracking-widest text-violet-400">{n}</p>
-                    <p className="text-sm font-bold text-white">{title}</p>
-                    <p className="mt-1 text-[11px] leading-5 text-slate-600">{desc}</p>
-                  </div>
-                ))}
-              </div>
+    </aside>
+    <div className="setup-main">
+      <main className="setup-content">
+        <header><p className="setup-eyebrow">{tx("SETUP_STEP_COUNT", { step: String(step + 1), total: "6" })}</p><h1 ref={heading} tabIndex={-1}>{title}</h1><p>{tx(`SETUP_${steps[step]}_DESC`)}</p></header>
+        {error && <div className="setup-alert" role="alert">{tx(error)}{!settings && <button type="button" onClick={() => void load()}>{tx("SETUP_RETRY")}</button>}</div>}
+        {loading && <p role="status">{tx("SETUP_LOADING")}</p>}
+        {settings && <fieldset disabled={busy} className="setup-fields">
+          {step === 0 && <>
+            <div className="setup-hero"><Radio size={32} /><h2>{tx("SETUP_OUTCOME")}</h2><p>{tx("SETUP_OUTCOME_DESC")}</p></div>
+            <div className="setup-card"><h2>{tx("SETUP_BEFORE")}</h2><p>{tx("SETUP_BEFORE_DESC")}</p></div>
+            <p className="setup-note">{tx("SETUP_LATER_HINT")}</p>
+          </>}
+          {step === 1 && <>
+            <div className="setup-card"><div className="setup-row"><h2>{tx("OOBE_REQUEST_ACCOUNT_TITLE")}</h2>{indicator(!!user, tx(user ? "SETUP_SIGNED_IN" : "SETUP_NOT_CONNECTED"))}</div>
+              {user ? <p>{user.display_name}</p> : <button className="setup-primary" type="button" onClick={() => void run(() => api.requestPlusLogin(), "SETUP_LOGIN_FAILED")}><UserRound size={16} />{tx("OOBE_SIGN_IN_BUTTON")}</button>}
+              <p className="setup-note">{tx("SETUP_LOGIN_HINT")}</p>
             </div>
-          )}
-
-          {/* Account */}
-          {step === 1 && (
-            <div className="flex h-full flex-col justify-center gap-6 max-w-lg">
-              <div>
-                <p className="mb-1 text-[10px] font-black uppercase tracking-[0.18em] text-violet-400">Step 2 of 5</p>
-                <h2 className="text-3xl font-extrabold">{t("OOBE_ACCOUNT_TITLE", locale)}</h2>
-                <p className="mt-2 text-[15px] leading-7 text-slate-400">{t("OOBE_ACCOUNT_DESC", locale)}</p>
-              </div>
-
-              <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5 space-y-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="font-bold text-white">Request+ Account</p>
-                    <p className="text-sm text-slate-600">{user ? `Signed in as ${user.display_name}` : "Not yet connected"}</p>
-                  </div>
-                  <UserRound className="size-5 text-fuchsia-300" />
-                </div>
-                {user ? (
-                  <div className="flex items-center gap-3 rounded-xl bg-slate-950/60 p-4">
-                    <img src={user.profile_image_url} alt="" className="size-12 rounded-full ring-2 ring-emerald-300/40" />
-                    <div className="min-w-0">
-                      <p className="truncate font-bold text-white">{user.display_name}</p>
-                      <p className="truncate text-sm text-slate-600">{user.email}</p>
-                    </div>
-                  </div>
-                ) : (
-                  <button
-                    onClick={() => (window as any).api?.requestPlusLogin?.()}
-                    className="flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-fuchsia-600 to-emerald-500 font-bold text-white transition-all hover:from-fuchsia-500 hover:to-emerald-400"
-                  >
-                    <UserRound className="size-4" />
-                    Sign In with Request+
-                  </button>
-                )}
-              </div>
-
-              <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5 space-y-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="font-bold text-white">OBS Overlay URL</p>
-                    <p className="text-sm text-slate-600">Add this as a Browser Source in OBS Studio</p>
-                  </div>
-                  <Eye className="size-5 text-emerald-300" />
-                </div>
-                <div className="flex gap-2">
-                  <input
-                    readOnly value={overlayPath}
-                    className="h-10 flex-1 rounded-xl border border-white/10 bg-slate-950/60 px-3 font-mono text-xs text-slate-400 focus:outline-none"
-                  />
-                  <button
-                    onClick={copyOverlay}
-                    className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-white/10 text-white transition-colors hover:bg-white/15"
-                  >
-                    {copied ? <Check className="size-4 text-emerald-300" /> : <Copy className="size-4" />}
-                  </button>
-                </div>
-              </div>
+            <div className="setup-card"><div className="setup-row"><h2>{tx("SETUP_CHANNELS")}</h2><button type="button" onClick={() => void run(async () => { setConnections(await api.setupConnections()); setConnectionError(false); })} disabled={!user}><RefreshCw size={15} />{tx("SETUP_REFRESH")}</button></div>
+              <p>{tx("SETUP_CHANNELS_HINT")}</p>
+              {connectionError && <p role="status" className="setup-warning">{tx("SETUP_CONNECTIONS_FAILED")}</p>}
+              {setupChatPlatforms(connections).map(({ key, label }) => { const connection = connections?.[key]; return <div className="setup-connection" key={key}><strong>{label}</strong><span>{connection?.username || connection?.channelTitle || connection?.displayName}</span>{indicator(!!connection?.connected && !connection.expired, tx(connection?.expired ? "SETUP_RECONNECT" : connection?.connected ? "SETUP_LINKED" : connections ? "SETUP_NOT_LINKED" : "SETUP_NOT_CHECKED"))}</div>; })}
+              <button type="button" onClick={() => void run(() => api.setupDashboard())}><ExternalLink size={15} />{tx("SETUP_LINK_ACCOUNTS")}</button>
             </div>
-          )}
-
-          {/* Platform */}
-          {step === 2 && (
-            <div className="flex h-full flex-col justify-center gap-6 max-w-lg">
-              <div>
-                <p className="mb-1 text-[10px] font-black uppercase tracking-[0.18em] text-violet-400">Step 3 of 5</p>
-                <h2 className="text-3xl font-extrabold">Music Platform</h2>
-                <p className="mt-2 text-[15px] leading-7 text-slate-400">Choose which platform your viewers will request songs from.</p>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                {OOBE_PLATFORMS.map((pl) => {
-                  const sel = settings.platform === pl.value;
-                  return (
-                    <button
-                      key={pl.value}
-                      onClick={() => p({ platform: pl.value })}
-                      className={`rounded-2xl border p-5 text-left transition-all ${
-                        sel
-                          ? "border-emerald-400/50 bg-emerald-400/10 shadow-xl shadow-emerald-950/50"
-                          : "border-white/8 bg-white/[0.03] hover:bg-white/[0.06]"
-                      }`}
-                    >
-                      <div className="mb-3 flex items-center justify-between">
-                        <span className="font-bold text-white">{pl.label}</span>
-                        <span className={`flex size-6 items-center justify-center rounded-full text-xs ${
-                          sel ? "bg-emerald-400 text-slate-950" : "bg-white/8 text-slate-700"
-                        }`}>
-                          {sel && <Check className="size-3.5" />}
-                        </span>
-                      </div>
-                      <p className="text-xs leading-5 text-slate-600">{pl.desc}</p>
-                    </button>
-                  );
-                })}
-              </div>
-              {settings.platform === "apple" && (
-                <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5 space-y-3">
-                  <p className="text-sm font-bold text-white">Cider Version</p>
-                  <div className="grid grid-cols-2 gap-3">
-                    {(["3", "4"] as const).map((v) => (
-                      <button
-                        key={v}
-                        onClick={() => p({ ciderApiVersion: v })}
-                        className={`rounded-xl px-4 py-3 font-bold transition-all ${
-                          settings.ciderApiVersion === v
-                            ? "bg-emerald-400 text-slate-950"
-                            : "bg-slate-800/80 text-slate-400 hover:bg-slate-700"
-                        }`}
-                      >
-                        Cider {v}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
+            {indicator(!!status?.cloud, tx(status?.cloud ? "SETUP_CLOUD_READY" : "SETUP_CLOUD_WAIT"))}
+          </>}
+          {step === 2 && <>
+            <div className="setup-platforms" role="radiogroup" aria-label={tx("SETUP_STEP_MUSIC")}>
+              {platforms.map(platform => <label className={settings.platform === platform ? "selected" : ""} key={platform}><input type="radio" name="platform" value={platform} checked={settings.platform === platform} onChange={() => patch({ platform })} /><strong>{platformNames[platform]}</strong>{platform === "soundcloud" && <small>{tx("SETUP_EXPERIMENTAL")}</small>}</label>)}
             </div>
-          )}
-
-          {/* Rules */}
-          {step === 3 && (
-            <div className="flex h-full flex-col justify-center gap-6 max-w-lg">
-              <div>
-                <p className="mb-1 text-[10px] font-black uppercase tracking-[0.18em] text-violet-400">Step 4 of 5</p>
-                <h2 className="text-3xl font-extrabold">Request Rules</h2>
-                <p className="mt-2 text-[15px] leading-7 text-slate-400">Configure who can request songs and how the queue behaves.</p>
-              </div>
-              <div className="space-y-2.5">
-                {[
-                  { icon: Music2, key: "enableRequests", label: "Enable Requests", desc: "Allow viewers to request songs during your stream" },
-                  { icon: Shield, key: "autoPlay", label: "Auto-play Queue", desc: "Automatically start the next song when the current one ends" },
-                  { icon: Lock, key: "modsOnly", label: "Mods Only", desc: "Restrict requests to channel moderators only" },
-                  { icon: Shield, key: "filterExplicit", label: "Filter Explicit", desc: "Block explicit content from being requested" },
-                  { icon: Radio, key: "telemetryEnabled", label: "Anonymous Telemetry", desc: "Help improve Request+ with anonymous usage data" },
-                ].map(({ icon: Icon, key, label, desc }) => (
-                  <div
-                    key={key}
-                    className="flex items-center justify-between gap-4 rounded-2xl border border-white/8 bg-white/[0.03] px-5 py-4"
-                  >
-                    <div className="flex min-w-0 items-center gap-4">
-                      <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-slate-800/80 text-emerald-300">
-                        <Icon className="size-4" />
-                      </div>
-                      <div className="min-w-0">
-                        <p className="font-bold text-white">{label}</p>
-                        <p className="text-xs leading-5 text-slate-600">{desc}</p>
-                      </div>
-                    </div>
-                    <Switch checked={!!settings[key]} onChange={(v) => p({ [key]: v })} />
-                  </div>
-                ))}
-              </div>
+            <div className="setup-card"><h2>{platformNames[settings.platform] || settings.platform}</h2><p className="setup-instructions">{tx(platformNames[settings.platform] ? `SETUP_GUIDE_${settings.platform.toUpperCase()}` : "SETUP_GUIDE_UNKNOWN")}</p><button type="button" onClick={openDocs}><ExternalLink size={15} />{tx("SETUP_OPEN_GUIDE")}</button>
+              {settings.platform === "apple" && <div className="setup-token"><label htmlFor="setup-cider">{tx("CLIENT_CIDER_VERSION")}</label><select id="setup-cider" value={settings.ciderApiVersion || "3"} onChange={event => patch({ ciderApiVersion: event.target.value as "3" | "4" })}><option value="3">Cider 3</option><option value="4">Cider 4</option></select>
+                {settings.ciderApiVersion === "4" ? <><p>{tx("CLIENT_CIDER_V4_DESCRIPTION")}</p><button type="button" onClick={() => void run(async () => { const token = await api.setupCiderToken(); patch({ ciderV4AppToken: token }); await save(); }, "CLIENT_CIDER_CONNECT_FAILED")}>{tx(busy ? "CLIENT_CIDER_V4_WAITING" : "CLIENT_CIDER_V4_CONNECT")}</button></> : <><label htmlFor="setup-cider-token">{tx("CLIENT_CIDER_TOKEN")}</label><input id="setup-cider-token" type="password" autoComplete="off" value={settings.appleMusicAppToken || ""} onChange={event => patch({ appleMusicAppToken: event.target.value })} /></>}
+              </div>}
             </div>
-          )}
-
-          {/* Done */}
-          {step === 4 && (
-            <div className="flex h-full flex-col items-center justify-center gap-7">
-              <div className="flex size-20 items-center justify-center rounded-3xl bg-gradient-to-br from-fuchsia-500 to-emerald-500 shadow-2xl shadow-emerald-900/60">
-                <Check className="size-10 text-white" />
-              </div>
-              <div className="text-center space-y-2">
-                <h2 className="text-4xl font-extrabold">All set!</h2>
-                <p className="max-w-sm text-[15px] leading-7 text-slate-400">
-                  Request+ is configured and ready. Hit Finish to start accepting song requests from your viewers.
-                </p>
-              </div>
-              <div className="w-full max-w-sm rounded-2xl border border-white/10 bg-white/[0.03] p-5">
-                <div className="flex items-center justify-between gap-4">
-                  <div className="min-w-0">
-                    <p className="font-bold text-white">Documentation</p>
-                    <p className="mt-0.5 text-sm text-slate-600">Everything you need to get started</p>
-                    <p className="mt-0.5 text-xs text-slate-700 font-mono">docs.requestplus.xyz</p>
-                  </div>
-                  <button
-                    onClick={() => api?.yesnt("https://docs.requestplus.xyz", "_blank")}
-                    className="shrink-0 rounded-xl bg-gradient-to-r from-violet-600 to-emerald-600 px-4 py-2 text-sm font-bold text-white transition-all hover:from-violet-500 hover:to-emerald-500"
-                  >
-                    Open Docs
-                  </button>
-                </div>
-              </div>
+            <div className="setup-card"><div className="setup-row"><h2>{tx("SETUP_MUSIC_CHECK")}</h2>{indicator(music, tx(music ? "SETUP_TRACK_RECEIVED" : "SETUP_WAITING_MUSIC"))}</div><p>{tx("SETUP_PLAY_HINT")}</p><button type="button" onClick={checkMusic}><RefreshCw size={15} />{tx("SETUP_CHECK_MUSIC")}</button>{music && status?.track && <p className="setup-track">{status.track.title} · {status.track.artist}</p>}</div>
+          </>}
+          {step === 3 && <div className="setup-card setup-rule-list">
+            {toggle("enableRequests", "CLIENT_ENABLE_REQUESTS", "CLIENT_ENABLE_REQUESTS_DESC")}
+            {toggle("autoPlay", "CLIENT_MOD_QUEUE_TITLE", "OOBE_RULE_MOD_QUEUE_DESC")}
+            {toggle("modsOnly", "CLIENT_MODS_ONLY", "CLIENT_MODS_ONLY_DESC")}
+            {toggle("subsOnly", "CLIENT_SUBS_ONLY", "CLIENT_SUBS_ONLY_DESC")}
+            {toggle("requestLimitEnabled", "CLIENT_LIMIT_PER_USER", "CLIENT_LIMIT_PER_USER_DESC")}
+            {settings.requestLimitEnabled && <label className="setup-toggle"><strong>{tx("CLIENT_REQUEST_LIMIT")}</strong><input aria-label={tx("CLIENT_REQUEST_LIMIT")} type="number" min={1} step={1} value={settings.requestLimit} onChange={event => patch({ requestLimit: Math.max(1, Math.floor(Number(event.target.value) || 1)) })} /></label>}
+            {toggle("autoAcceptSearchResults", "CLIENT_AUTO_ACCEPT_SEARCH", "CLIENT_AUTO_ACCEPT_SEARCH_DESC")}
+            {toggle("filterExplicit", "OOBE_RULE_FILTER_EXPLICIT_TITLE", "OOBE_RULE_FILTER_EXPLICIT_DESC")}
+            {toggle("telemetryEnabled", "OOBE_RULE_TELEMETRY_TITLE", "OOBE_RULE_TELEMETRY_DESC")}
+            {toggle("reducedMotion", "CLIENT_REDUCED_MOTION", "CLIENT_REDUCED_MOTION_DESC")}
+          </div>}
+          {step === 4 && <>
+            <div className="setup-card"><h2>{tx("SETUP_LOCAL_FILE")}</h2><ol><li>{tx("SETUP_OBS_1")}</li><li>{tx("SETUP_OBS_2")}</li><li>{tx("SETUP_OBS_3")}</li></ol><label htmlFor="setup-overlay-path">{tx("SETUP_LOCAL_FILE")}</label><div className="setup-copy"><input id="setup-overlay-path" readOnly value={status?.overlayPath || ""} /><button type="button" disabled={!status?.overlayPath} onClick={copy}><Copy size={16} />{tx("SETUP_COPY")}</button></div></div>
+            <div className="setup-card"><div className="setup-row"><h2>{tx("SETUP_PREVIEW")}</h2>{indicator(!!status?.overlay, tx(status?.overlay ? "SETUP_OVERLAY_CONNECTED" : "SETUP_OVERLAY_WAIT"))}</div>
+              <label htmlFor="setup-overlay-theme">{tx("CLIENT_OVERLAY_SETTINGS_TITLE")}</label>
+              <select id="setup-overlay-theme" value={settings.theme} disabled={busy} onChange={event => selectTheme(event.target.value)}>
+                {!overlayThemes.some(theme => theme.value === settings.theme) && <option value={settings.theme}>{settings.theme}</option>}
+                {overlayThemes.map(theme => <option key={theme.value} value={theme.value}>{tx(theme.label)}</option>)}
+              </select>
+              {status?.previewUrl && <iframe key={previewRevision} title={tx("SETUP_PREVIEW")} className="setup-preview" src={status.previewUrl} sandbox="allow-scripts" />}
+              <p className="setup-note">{tx("SETUP_PREVIEW_HINT")}</p>
+              <label className="setup-toggle"><span>{tx("SETUP_OVERLAY_CONFIRM")}</span><input type="checkbox" checked={overlayConfirmed} onChange={event => setOverlayConfirmed(event.target.checked)} /></label>
             </div>
-          )}
-        </div>
-
-        {/* Ã¢â€â‚¬Ã¢â€â‚¬ Footer nav Ã¢â€â‚¬Ã¢â€â‚¬ */}
-        <div className="shrink-0 flex items-center justify-between border-t border-white/[0.06] bg-slate-950/40 px-8 py-4 backdrop-blur-sm">
-          <button
-            onClick={() => setStep((s) => Math.max(0, s - 1))}
-            disabled={step === 0}
-            className="flex h-10 items-center gap-2 rounded-xl bg-white/8 px-5 text-sm font-bold text-white transition-colors disabled:opacity-30 hover:bg-white/12"
-          >
-            <ArrowLeft className="size-4" />
-            {t("OOBE_BACK", locale)}
-          </button>
-          <div className="flex items-center gap-1.5">
-            {STEPS.map((_, i) => (
-              <span
-                key={i}
-                className={`block rounded-full transition-all duration-300 ${
-                  i === step ? "w-5 h-1.5 bg-emerald-400" : i < step ? "size-1.5 bg-emerald-400/50" : "size-1.5 bg-white/20"
-                }`}
-              />
-            ))}
-          </div>
-          <button
-            onClick={goNext}
-            disabled={saving}
-            className="flex h-10 items-center gap-2 rounded-xl bg-gradient-to-r from-fuchsia-600 to-emerald-500 px-6 text-sm font-bold text-white shadow-lg transition-all disabled:opacity-60 hover:from-fuchsia-500 hover:to-emerald-400"
-          >
-              {step === STEPS.length - 1 ? (saving ? t("OOBE_SAVING", locale) : t("OOBE_FINISH", locale)) : t("OOBE_NEXT", locale)}
-            {step === STEPS.length - 1 ? <Check className="size-4" /> : <ArrowRight className="size-4" />}
-          </button>
-        </div>
-      </div>
+          </>}
+          {step === 5 && <>
+            <div className="setup-card"><h2>{tx(ready ? "SETUP_READY" : "SETUP_REMAINING")}</h2><div className="setup-checklist">{steps.slice(1, 5).map((key, index) => <button type="button" key={key} onClick={() => navigate(index + 1)}>{indicator(completed[index + 1], tx(`SETUP_STEP_${key}`))}<ChevronRight size={16} /></button>)}</div></div>
+            <div className="setup-card"><h2>{tx("SETUP_FIRST_REQUEST")}</h2><p>{tx("SETUP_TEST_HINT")}</p><code>!sr {settings.platform === "spotify" ? "https://open.spotify.com/track/…" : settings.platform === "youtube" ? "https://music.youtube.com/watch?v=…" : settings.platform === "apple" ? "https://music.apple.com/…" : "https://soundcloud.com/…"}</code><p className="setup-note">{tx("SETUP_TEST_LINK_HINT")}</p>
+              <button type="button" className="setup-primary" disabled={!linked || !music || !status?.cloud || !settings.enableRequests} onClick={startTest}><Radio size={16} />{tx(testStarted ? "SETUP_TEST_AGAIN" : "SETUP_START_TEST")}</button>
+              {testStarted && <p role="status">{tx(status?.request?.accepted ? "SETUP_REQUEST_ACCEPTED" : status?.request ? "SETUP_REQUEST_FAILED" : "SETUP_REQUEST_WAIT")}{status?.request && <span className="setup-request-detail">{status.request.songName || status.request.code}</span>}</p>}
+              {testStarted && queue.some(item => !item.isQueued && !item.iscurrentlyPlaying) && <><p>{tx("SETUP_APPROVE_HINT")}</p>{queue.map((item, index) => !item.isQueued && !item.iscurrentlyPlaying && <button type="button" key={`${item.title}-${index}`} onClick={() => void run(async () => { if (!await api.playTrackAtIndex(index)) throw new Error("Playback failed"); })}>{tx("SETUP_APPROVE")} · {item.title}</button>)}</>}
+              {status?.request?.accepted && <label className="setup-toggle"><span>{tx("SETUP_REQUEST_CONFIRM")}</span><input type="checkbox" checked={requestConfirmed} onChange={event => setRequestConfirmed(event.target.checked)} /></label>}
+              <p className="setup-note">{tx("SETUP_TEST_TROUBLESHOOT")}</p>
+            </div>
+          </>}
+        </fieldset>}
+      </main>
+      <footer className="setup-footer"><button type="button" disabled={busy || !settings} onClick={() => finish(true)}>{tx("SETUP_SAVE_LATER")}</button><div><button type="button" disabled={busy || !settings || step === 0} onClick={() => navigate(step - 1)}>{tx("OOBE_BACK")}</button><button type="button" className="setup-primary" disabled={busy || !settings || step === 5 && !ready} onClick={() => step === 5 ? finish(false) : navigate(step + 1)}>{tx(busy ? "OOBE_SAVING" : step === 5 ? "OOBE_FINISH" : "OOBE_NEXT")}<ChevronRight size={16} /></button></div></footer>
     </div>
-  );
+  </div>;
 }
-
-// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ App Root Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬

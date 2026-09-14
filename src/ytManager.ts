@@ -60,7 +60,9 @@ class YTManager extends EventEmitter {
     private cachedRepeat: 'NONE' | 'ALL' | 'ONE' | null = null;
     private cachedShuffle: boolean | null = null;
 
-    constructor(Logger: Logger) {
+    private started = false;
+
+    constructor(Logger: Logger, autoConnect = true) {
         super();
         this.apiBaseUrl = 'http://localhost:26538/api/v1';
         this.wsBaseUrl  = 'ws://localhost:26538/api/v1/ws';
@@ -77,7 +79,13 @@ class YTManager extends EventEmitter {
             },
         });
 
-        // Load existing token or create new one
+        if (autoConnect) this.start();
+    }
+
+    /** Do not prompt for Pear authorization until this player is selected. */
+    public start(): void {
+        if (this.started) return;
+        this.started = true;
         this.initializeToken().catch((error) => {
             this.logger.warn(`[YTManager] Pear Desktop is not reachable. Make sure Pear is open and the Pear API port is set to 26538. ${this.formatErrorMessage(error)}`);
         });

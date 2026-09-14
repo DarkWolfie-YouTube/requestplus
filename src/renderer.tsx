@@ -1227,6 +1227,9 @@ export default function App() {
       }));
     });
 
+    const removeSettingsListener = api.onSettingsChanged?.((next: AppSettings) => {
+      setSettings(previous => ({ ...previous, ...next }));
+    });
     api.loadSettings?.().then((s: any) => {
       if (s) setSettings((prev) => ({ ...prev, ...s }));
     });
@@ -1270,6 +1273,7 @@ export default function App() {
     }).catch(() => setQueueItems([]));
 
     api.preload?.();
+    return () => removeSettingsListener?.();
   }, []);
 
   useEffect(() => {

@@ -19,7 +19,7 @@ import { TrackData } from './websocket';
 
 import logger from './logger';
 import { 
-  authManager, 
+  authManager, apiClient,
   setupDeepLinkHandling, 
   setupAuthEventListeners
 } from './authmanager';
@@ -32,6 +32,8 @@ import PlaybackHandler, { songInfo } from './playbackHandler';
 import GTSHandler from './gtsHandler';
 import AMHandler from './amhandler';
 import WindowHandler from './window';
+import { setupPatch, finishSetup, SetupRequestCheck, type SetupFinishInput, type SetupStatus, type SetupConnections } from './onboarding';
+import { WEBSITE_URL } from './config';
 import { LOCAL_PLAYBACK_WEBSOCKET_PORTS } from './localPorts';
 
 var handleStartupEvent = function() {
@@ -284,7 +286,6 @@ let tokenRefreshTimer: NodeJS.Timeout | null = null;
 let soundCloudQueueTimer: NodeJS.Timeout | null = null;
 let windowHandler: WindowHandler | null = null;
 let isCreatingMainWindow = false;
-let oobeAuthListenersRegistered = false;
 let revealMainWindowAfterCloudAuth = false;
 
 /**
@@ -826,14 +827,19 @@ async function checkHardwareBanStatus(): Promise<void> {
     });
 }
 
-async function createWindow(): Promise<void> {
+async function createWindow(allowIncompleteSetup = false): Promise<void> {
     if (isCreatingMainWindow) return;
     isCreatingMainWindow = true;
+    let createdWindow: BrowserWindow | null = null;
     try {
     await checkHardwareBanStatus();
     const currentSettings = settingsHandler.load();
-    if (currentSettings.oobeCompleted !== true) {
-        createStartupOobeWindow();
+    if (currentSettings.oobeCompleted !== true && !allowIncompleteSetup) {
+        await ensureOverlayFile();
+        settings = currentSettings;
+        const setupWindow = createStartupOobeWindow();
+        initializeLocalRuntime(setupWindow);
+        void connectSetupCloud();
         return;
     }
 
@@ -868,14 +874,16 @@ async function createWindow(): Promise<void> {
         icon: path.join(__dirname, 'assets', 'the_letter.png'),
     });
 
+    createdWindow = mainWindow;
     if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
-        mainWindow.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL);
+        const loadingWindow = mainWindow.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL);
         mainWindow.webContents.on('did-finish-load', () => {
             if (twitchUser) mainWindow?.webContents.send('twitch-auth-success', twitchUser);
             if (kickUser) mainWindow?.webContents.send('kick-auth-success', kickUser);
         });
+        await loadingWindow;
     } else {
-        mainWindow.loadFile(path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`));
+        await mainWindow.loadFile(path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`));
     }
     //load devtools
     // mainWindow.webContents.openDevTools();
@@ -890,44 +898,9 @@ async function createWindow(): Promise<void> {
     // Setup auth event listeners BEFORE deep link handling so events aren't missed
     setupAuthEventListeners(mainWindow);
     setupDeepLinkHandling(mainWindow);
-    settings = await settingsHandler.load();
-    queueHandler = new QueueHandler(Logger, mainWindow, settings);
-
-        
-    if (!WSServer) {
-        WSServer = new websocket(LOCAL_PLAYBACK_WEBSOCKET_PORTS, mainWindow, Logger);
-    }
-
-    if (!ytManager) {
-        ytManager = new YTManager(Logger);
-
-        // Push song info to renderer immediately on every WebSocket state update
-        ytManager.on('state-update', () => {
-            if (settings.platform === 'youtube') {
-                requestTrackInfo();
-            }
-        });
-    }
-
+    settings = settingsHandler.load();
+    initializeLocalRuntime(mainWindow);
     scheduleDebugSeed();
-
-    if (!amHandler) {
-        amHandler = new AMHandler(mainWindow, Logger, settings, WSServer);
-    }
-
-    
-    if (!playbackHandler) {
-        playbackHandler = new PlaybackHandler(settings.platform, WSServer, Logger, ytManager, amHandler);
-    }
-    
-  if (!apiHandler) {
-        apiHandler = new APIHandler(mainWindow, playbackHandler, Logger, settings);
-    }
-
-
-    if (!gtsHandler) {
-        gtsHandler = new GTSHandler(app, mainWindow, apiHandler, playbackHandler, Logger, settings);
-    }
 
     const token = await authManager.getValidAuthToken();
     const hardwareInfo = authManager.getHardwareInfoPublic();
@@ -1001,24 +974,142 @@ async function createWindow(): Promise<void> {
             mainWindow?.hide();
         }
     });
+    } catch (error) {
+        if (createdWindow) {
+            if (!createdWindow.isDestroyed()) createdWindow.destroy();
+            if (mainWindow === createdWindow) mainWindow = null;
+            const setupWindow = windowHandler?.getOobeWindow();
+            if (setupWindow && settings) initializeLocalRuntime(setupWindow);
+        }
+        throw error;
     } finally {
         isCreatingMainWindow = false;
     }
 }
 
-function createStartupOobeWindow(): BrowserWindow {
-    if (!windowHandler) {
-        windowHandler = new WindowHandler(app.getPath('userData'), async () => {
-            await createWindow();
+/** Local services belong to the app; setup and the player share one instance. */
+function initializeLocalRuntime(window: BrowserWindow): void {
+    if (!queueHandler) queueHandler = new QueueHandler(Logger, window, settings);
+    else queueHandler.setWindow(window);
+    if (!WSServer) WSServer = new websocket(LOCAL_PLAYBACK_WEBSOCKET_PORTS, window, Logger);
+    if (!ytManager) {
+        ytManager = new YTManager(Logger, false);
+        ytManager.on('state-update', () => {
+            if (settings.platform === 'youtube') void requestTrackInfo().catch(() => { musicObserved.at = 0; });
         });
     }
+    if (!amHandler) amHandler = new AMHandler(window, Logger, settings, WSServer);
+    else amHandler.setWindow(window);
+    if (!playbackHandler) playbackHandler = new PlaybackHandler(settings.platform, WSServer, Logger, ytManager, amHandler);
+    if (!apiHandler) apiHandler = new APIHandler(window, playbackHandler, Logger, settings);
+    else apiHandler.setWindow(window);
+    if (!gtsHandler) gtsHandler = new GTSHandler(app, window, apiHandler, playbackHandler, Logger, settings);
+    applySettingsToRuntime(settings);
+}
 
-    const oobeWindow = windowHandler.createOobeWindow();
-    if (!oobeAuthListenersRegistered) {
-        setupAuthEventListeners(oobeWindow);
-        setupDeepLinkHandling(oobeWindow);
-        oobeAuthListenersRegistered = true;
+async function connectSetupCloud(): Promise<void> {
+    try {
+        const token = await authManager.getValidAuthToken();
+        const hardware = authManager.getHardwareInfoPublic();
+        if (token && hardware && !websocketManager.isAuthenticated()) {
+            await websocketManager.connect(token.token, hardware.deviceId);
+            scheduleTokenRefresh(token.expiresAt);
+        }
+    } catch (error) { Logger?.warn('Setup cloud connection unavailable:', error); }
+}
+
+const setupRequestCheck = new SetupRequestCheck();
+const resetSetupTest = () => setupRequestCheck.reset();
+authManager.on('auth-logout', resetSetupTest);
+authManager.on('auth-success', resetSetupTest);
+let musicObserved = { platform: '', at: 0 };
+
+function setupSnapshot(): SetupStatus {
+    const selected = settings?.platform || 'spotify';
+    const bridge = !['spotify', 'soundcloud'].includes(selected) ||
+        !!WSServer?.getClientsByType(selected).some(client => client.ws.readyState === 1) && WSServer.hasRecentTrack(selected);
+    const music = bridge && musicObserved.platform === selected && Date.now() - musicObserved.at < 10000;
+    const track = playbackHandler?.currentSong;
+    return {
+        cloud: websocketManager.isConnected() && websocketManager.isAuthenticated(),
+        platform: selected, music,
+        track: music && track?.title ? { title: track.title, artist: track.artist, cover: track.cover } : null,
+        overlay: !!apiHandler?.isOverlayConnected(),
+        overlayPath: overlayPath || '', previewUrl: apiHandler?.getOverlayPreviewUrl() || null,
+        request: setupRequestCheck.result,
+    };
+}
+
+async function setupConnections(): Promise<SetupConnections> {
+    const token = await authManager.getValidAuthToken();
+    const hardware = authManager.getHardwareInfoPublic();
+    if (!token || !hardware) throw new Error('Sign in to check linked channels');
+    apiClient.setCredentials(token.token, hardware.deviceId);
+    return apiClient.getConnections();
+}
+
+function persistSetup(patch: unknown): void {
+    const current = settingsHandler.load();
+    const changes = setupPatch(patch);
+    const next = { ...current, ...changes };
+    if (!settingsHandler.save(next)) throw new Error('Failed to save setup');
+    if (Object.keys(changes).some(key => key !== 'oobeRulesReviewed' && next[key] !== current[key])) resetSetupTest();
+    settings = next;
+    applySettingsToRuntime(next);
+    mainWindow?.webContents.send('settings-updated-from-main', next);
+}
+
+ipcMain.handle('oobe:status', () => setupSnapshot());
+ipcMain.handle('oobe:connections', () => setupConnections());
+ipcMain.handle('oobe:dashboard', () => shell.openExternal(`${WEBSITE_URL}/dashboard`));
+ipcMain.handle('oobe:save-draft', (_event, patch: unknown) => persistSetup(patch));
+ipcMain.handle('oobe:begin-test', () => setupRequestCheck.start());
+// Observe the real request pipeline, including rejections. No synthetic chat messages.
+for (const event of ['song-request', 'song-search-request']) {
+    websocketManager.prependListener(event, (message: WebSocketMessage) => setupRequestCheck.observe(message.messageId));
+}
+websocketManager.on('message-sent', (message: WebSocketMessage) => setupRequestCheck.respond(message));
+
+ipcMain.handle('oobe:open', async () => {
+    await ensureOverlayFile();
+    settings = settingsHandler.load();
+    const window = createStartupOobeWindow();
+    if (!playbackHandler) initializeLocalRuntime(window);
+});
+let finishingSetup = false;
+ipcMain.handle('oobe:complete', async (_event, input: SetupFinishInput) => {
+    if (finishingSetup) throw new Error('Setup is already being saved');
+    finishingSetup = true;
+    try {
+        await finishSetup(input, {
+            persistDraft: persistSetup,
+            load: () => settingsHandler.load(),
+            save: next => {
+                if (!settingsHandler.save(next)) throw new Error('Failed to save setup');
+                settings = next;
+            },
+            status: setupSnapshot,
+            connections: setupConnections,
+            openClient: () => createWindow(true),
+            closeSetup: () => { windowHandler?.getOobeWindow()?.close(); resetSetupTest(); },
+        });
+        return true;
+    } finally { finishingSetup = false; }
+});
+
+function createStartupOobeWindow(): BrowserWindow {
+    if (!windowHandler) {
+        windowHandler = new WindowHandler(app.getPath('userData'));
     }
+
+    const isNew = !windowHandler.getOobeWindow();
+    if (isNew) resetSetupTest();
+    const oobeWindow = windowHandler.createOobeWindow();
+    if (isNew) oobeWindow.once('closed', () => {
+        if ((!mainWindow || mainWindow.isDestroyed()) && !finishingSetup) app.quit();
+    });
+    setupAuthEventListeners(oobeWindow);
+    setupDeepLinkHandling(oobeWindow);
 
     return oobeWindow;
 }
@@ -1054,6 +1145,7 @@ function showMainWindow(): void {
 }
 
 function applySettingsToRuntime(updatedSettings: Settings): void {
+    if (updatedSettings.platform === 'youtube') ytManager?.start();
     playbackHandler?.updateSettings(updatedSettings.platform);
     apiHandler?.updateSettings(updatedSettings);
     gtsHandler?.updateSettings(updatedSettings);
@@ -1122,6 +1214,11 @@ async function promptHardwareAccelerationRestart(): Promise<void> {
     }
 }
 
+ipcMain.handle('oobe:cider-token', async (): Promise<string> => {
+    if (!amHandler) throw new Error('Setup is still starting');
+    return amHandler.requestCiderV2Token();
+});
+
 ipcMain.handle('cider:request-token', async (): Promise<string> => {
     const token = await amHandler.requestCiderV2Token();
     settings = { ...settings, platform: 'apple', ciderApiVersion: '4', ciderV4AppToken: token };
@@ -1138,11 +1235,13 @@ ipcMain.on('settings-updated', (event: Electron.IpcMainEvent, updatedSettings: S
     applySettingsToRuntime(updatedSettings);
 });
 
-ipcMain.handle('window-minimize', (): void => {
-    if (mainWindow) mainWindow.minimize();
+ipcMain.handle('window-minimize', (event): void => {
+    BrowserWindow.fromWebContents(event.sender)?.minimize();
 });
 
-ipcMain.handle('window-close', async (): Promise<void> => {
+ipcMain.handle('window-close', async (event): Promise<void> => {
+    const sender = BrowserWindow.fromWebContents(event.sender);
+    if (sender && sender !== mainWindow) { sender.close(); return; }
     if (!mainWindow) return;
 
     const response = await sendModal(
@@ -1521,10 +1620,10 @@ ipcMain.handle('channel-point:delete', async (_event: Electron.IpcMainInvokeEven
 });
 
 app.whenReady().then(async () => {
-    if (!(global as any).ISAUTHING) {
-        Logger = new logger();
-        (global as any).Logger = Logger;
-    }
+    // Auth-link launches must not touch the running client's log files.
+    const loggingEnabled = !(global as any).ISAUTHING;
+    Logger = new logger(loggingEnabled);
+    (global as any).Logger = Logger;
     await createWindow();
 });
 
@@ -1628,18 +1727,25 @@ ipcMain.handle('auth:refresh', async () => {
 });
 
 
+let readingTrack = false;
 async function requestTrackInfo(): Promise<void> {
-    if (!playbackHandler) return;
+    if (!playbackHandler || readingTrack) return;
+    readingTrack = true;
+    const readingPlatform = settings.platform;
+    try {
     const info = await playbackHandler.getCurrentSong();
+    if (readingPlatform !== settings.platform) return;
 
     if (!info) return;
+    if (info.title && info.id) musicObserved = { platform: settings.platform, at: Date.now() };
     currentSongInformation = { ...info };
     mainWindow?.webContents.send('song-info', currentSongInformation);
-    monitorTrackProgress(currentSongInformation);
+    await monitorTrackProgress(currentSongInformation);
     checkCurrentlyPlayingTrack(currentSongInformation);
     if (settings.platform === 'soundcloud' && !soundCloudQueueTimer) {
         scheduleSoundCloudQueueAdvance();
     }
+    } finally { readingTrack = false; }
 }
 
 function sendToast(message: string, type: 'info' | 'success' | 'error' | 'warning' = 'info', duration: number = 5000): void {
@@ -1665,7 +1771,7 @@ function updateIntervalForSongInfo(): void {
         clearInterval(songIntervalID);
     }
     songIntervalID = setInterval(() => {
-        requestTrackInfo();
+        void requestTrackInfo().catch(() => { musicObserved.at = 0; });
     }, 1000);
 }
 

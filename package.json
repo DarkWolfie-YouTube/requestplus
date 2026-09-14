@@ -14,7 +14,8 @@
     "publish:update:gui": "node --env-file-if-exists=.env.publisher scripts/bunny-upload-gui.mjs",
     "publish": "electron-forge publish",
     "lint": "echo \"No linting configured\"",
-    "build:appx": "node build-appx.js"
+    "build:appx": "node build-appx.js",
+    "test:oobe": "node --test tests/onboarding.test.mjs"
   },
   "repository": {
     "type": "git",

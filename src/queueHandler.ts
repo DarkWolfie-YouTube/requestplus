@@ -34,6 +34,8 @@ class QueueHandler {
     private mainWindow: BrowserWindow;
     private settings: Settings;
     
+    public setWindow(window: BrowserWindow): void { this.mainWindow = window; }
+
     constructor(logger: Logger, mainWindow: BrowserWindow, settings: Settings) {
         this.logger = logger;
         this.mainWindow = mainWindow;
