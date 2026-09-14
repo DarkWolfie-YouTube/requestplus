@@ -106,6 +106,8 @@ interface ElectronAPI {
 
   // Debug function
   debug: () => void;
+
+  isMac: () => Promise<boolean>;
 }
 
 // Create the API object
@@ -285,7 +287,10 @@ const electronAPI: ElectronAPI = {
     console.log('Debug function called from preload');
     console.log(await ipcRenderer.invoke('auth:getStatus'));
     console.log(await ipcRenderer.invoke('auth:getHardwareInfo'));
-  }
+  },
+
+  isMac: () => ipcRenderer.invoke('IsMac'),
+
 };
 
 // Expose the API to the renderer process

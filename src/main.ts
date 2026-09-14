@@ -1341,6 +1341,10 @@ ipcMain.handle('song-skip', async (): Promise<void> => {
     }
 });
 
+ipcMain.handle('IsMac', async (): Promise<boolean> => {
+    return process.platform === 'darwin';
+});
+
 ipcMain.handle('play-track-at-index', async (event: Electron.IpcMainInvokeEvent, index: number): Promise<boolean> => {
     if (!queueHandler) return false;
 
