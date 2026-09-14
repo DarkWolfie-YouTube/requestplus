@@ -1,3 +1,6 @@
+import { sendModal } from './uiDialogs';
+export { sendModal, resolveModal } from './uiDialogs';
+import { installedUpdateChannel, recordPendingUpdate, clearPendingUpdate } from './installedUpdate';
 import { app, BrowserWindow, shell } from 'electron';
 import fetch from 'node-fetch';
 import { createHash } from 'node:crypto';
@@ -19,7 +22,7 @@ const UPDATE_REQUEST_TIMEOUT_MS = 10_000;
 const COMPILED_UPDATE_CHANNEL = typeof __REQUESTPLUS_RELEASE_CHANNEL__ === 'string'
     ? __REQUESTPLUS_RELEASE_CHANNEL__
     : 'stable';
-const INSTALLED_UPDATE_CHANNEL = validChannel(COMPILED_UPDATE_CHANNEL)
+const DEFAULT_UPDATE_CHANNEL = validChannel(COMPILED_UPDATE_CHANNEL)
     ? COMPILED_UPDATE_CHANNEL
     : 'stable';
 
@@ -77,30 +80,6 @@ let settings: UpdateSettings = {
 };
 
 // ── Web-UI modal helpers ────────────────────────────────────────────────────
-
-const pendingModals = new Map<string, (response: number) => void>();
-
-/** Send a modal to the renderer and resolve with the index of the button clicked. */
-export function sendModal(window: BrowserWindow | null, title: string, message: string, buttons: string[]): Promise<number> {
-    return new Promise((resolve) => {
-        if (!window || window.isDestroyed()) {
-            resolve(0);
-            return;
-        }
-        const id = Math.random().toString(36).substring(2);
-        pendingModals.set(id, resolve);
-        window.webContents.send('show-modal', { id, title, message, buttons });
-    });
-}
-
-/** Called from main.ts when the renderer sends back a modal-response event. */
-export function resolveModal(id: string, response: number): void {
-    const resolver = pendingModals.get(id);
-    if (resolver) {
-        resolver(response);
-        pendingModals.delete(id);
-    }
-}
 
 /** Shared terms-of-service modal flow used for both first-run and updates. */
 async function showTermsFlow(window: BrowserWindow | null, termsUrl: string, termsVersion: string): Promise<void> {
@@ -473,7 +452,7 @@ async function scheduleWindowsBranchSwitch(
             resolve();
         });
     });
-    logger.info(`Scheduled reinstall from ${INSTALLED_UPDATE_CHANNEL} to ${selectedChannel}`);
+    logger.info(`Scheduled reinstall from ${installedUpdateChannel(DEFAULT_UPDATE_CHANNEL)} to ${selectedChannel}`);
     app.quit();
 }
 
@@ -493,7 +472,7 @@ async function openUpdateInstaller(
         window,
         switchingChannel ? 'Switch Request+ Update Feed' : 'Request+ Update Ready',
         squirrelSwitch
-            ? `Request+ will close, remove the ${INSTALLED_UPDATE_CHANNEL} build, and install the ${selectedChannel} build (${releaseVersion}). Your settings will be kept.`
+            ? `Request+ will close, remove the ${installedUpdateChannel(DEFAULT_UPDATE_CHANNEL)} build, and install the ${selectedChannel} build (${releaseVersion}). Your settings will be kept.`
             : switchingChannel
                 ? `The ${selectedChannel} build (${releaseVersion}) has been downloaded and verified. Open its installer now?`
                 : `Request+ ${releaseVersion} has been downloaded and verified. Open the installer now?`,
@@ -504,13 +483,18 @@ async function openUpdateInstaller(
         return;
     }
 
-    if (squirrelSwitch) {
-        await scheduleWindowsBranchSwitch(destination, selectedChannel, logger);
-        return;
+    recordPendingUpdate(selectedChannel, releaseVersion);
+    try {
+        if (squirrelSwitch) {
+            await scheduleWindowsBranchSwitch(destination, selectedChannel, logger);
+            return;
+        }
+        const openError = await shell.openPath(destination);
+        if (openError) throw new Error(openError);
+    } catch (error) {
+        clearPendingUpdate();
+        throw error;
     }
-
-    const openError = await shell.openPath(destination);
-    if (openError) throw new Error(openError);
     await sendToastWithDelay(window, 'Update installer opened.', 'success', 3000, 100);
 }
 
@@ -531,9 +515,9 @@ async function checkForUpdates(window: BrowserWindow | null, logger: Logger): Pr
                 : 'stable';
         const channels = [selectedChannel];
         const nativeBranch = selectedChannel;
-        const switchingChannel = selectedChannel !== INSTALLED_UPDATE_CHANNEL;
+        const switchingChannel = selectedChannel !== installedUpdateChannel(DEFAULT_UPDATE_CHANNEL);
         logger.info(
-            `Using update feed: ${selectedChannel}; installed feed: ${INSTALLED_UPDATE_CHANNEL}` +
+            `Using update feed: ${selectedChannel}; installed feed: ${installedUpdateChannel(DEFAULT_UPDATE_CHANNEL)}` +
             (switchingChannel ? '; branch reinstall required' : '')
         );
         if (process.windowsStore || process.mas) {
@@ -557,7 +541,7 @@ async function checkForUpdates(window: BrowserWindow | null, logger: Logger): Pr
 
             const selected = selectNewestUpdate(responses);
             if (selected?.release && selected.latestVersion) {
-                if (!switchingChannel && await checkForNativeUpdate(nativeBranch, window, logger)) {
+                if (!switchingChannel && await checkForNativeUpdate(nativeBranch, window, logger, selected.latestVersion)) {
                     logger.info(`Started Forge native update check on the ${nativeBranch} branch`);
                 } else {
                     const releaseType = selected.channel === 'stable' ? 'release' : `${selected.channel} release`;
