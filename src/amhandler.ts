@@ -175,6 +175,8 @@ export default class AMHandler {
     private readonly tokenRequestCooldownMs = 10000;
     private readonly appImageUrl = "https://requestplus.xyz/hotlink-ok/logo.png";
 
+    public setWindow(window: BrowserWindow): void { this.mainWindow = window; }
+
     constructor(mainWindow: BrowserWindow, logger: Logger, settings: Settings, localWebSocket?: WebSocketServer) {
         this.mainWindow = mainWindow;
         this.logger = logger;
@@ -297,6 +299,7 @@ export default class AMHandler {
     }
 
     private emitSongInfo(songInfo: AMCurrentSongObject): void {
+        if (this.mainWindow.isDestroyed()) return;
         this.mainWindow.webContents.send("song-info", {
             id: songInfo.playParams.catalogId || songInfo.playParams.id || "",
             title: songInfo.name || "Unknown Title",

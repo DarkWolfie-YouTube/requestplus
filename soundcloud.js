@@ -553,19 +553,24 @@
   }
 
   /**
-   * Initializes the WebSocket client to connect to a server on port 443.
+   * Initializes the WebSocket client, falling back if the legacy port is blocked.
    */
   const initializePlaybackAPI = async () => {
     const delayTime = 200;
     await delay(delayTime);
 
     let ws;
+    const playbackPorts = [443, 45923];
+    let playbackPortIndex = 0;
     const connect = async () => {
-      ws = new WebSocket("ws://localhost:443");
+      const playbackPort = playbackPorts[playbackPortIndex];
+      let connected = false;
+      ws = new WebSocket(`ws://127.0.0.1:${playbackPort}`);
       ws.binaryType = "arraybuffer";
 
       ws.onopen = () => {
-        console.log("Request+|Connected to WebSocket server");
+        connected = true;
+        console.log(`Request+|Connected to WebSocket server on port ${playbackPort}`);
         maybePlayPendingTrack();
         sendCurrentTrack(ws);
         if (window.requestPlusSoundCloudInterval) {
@@ -700,6 +705,9 @@
       };
 
       ws.onclose = async () => {
+        if (!connected) {
+          playbackPortIndex = (playbackPortIndex + 1) % playbackPorts.length;
+        }
         if (window.requestPlusSoundCloudInterval) {
           clearInterval(window.requestPlusSoundCloudInterval);
           window.requestPlusSoundCloudInterval = null;

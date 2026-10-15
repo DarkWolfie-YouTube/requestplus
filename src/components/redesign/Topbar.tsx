@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { X, Minus } from "lucide-react";
 import { toast } from "sonner";
 
-export function Topbar({ title = "Request+" }: { title?: string }) {
+export function Topbar({ title = "Request+", isMac }: { title?: string, isMac?: boolean }) {
   const api = () => (window as any).api;
 
   useEffect(() => {
@@ -22,24 +22,29 @@ export function Topbar({ title = "Request+" }: { title?: string }) {
         className="flex h-full flex-1 cursor-move select-none items-center px-4"
         style={{ WebkitAppRegion: "drag" } as any}
       >
-        <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-violet-400/80">{title}</span>
+        {isMac && (
+          <center>
+            <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-violet-400/80 px-43">{title}</span>
+          </center>
+        )}
+        {!isMac && <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-violet-400/80">{title}</span>}
       </div>
-      <div className="flex h-full items-center" style={{ WebkitAppRegion: "no-drag" } as any}>
-        <button
-          onClick={() => api()?.minimize?.()}
-          className="flex h-8 w-10 items-center justify-center text-slate-500 transition-colors hover:bg-slate-800/80 hover:text-slate-200"
-          aria-label="Minimize"
-        >
-          <Minus className="size-3" />
-        </button>
-        <button
-          onClick={() => api()?.close?.()}
-          className="flex h-8 w-10 items-center justify-center text-slate-500 transition-colors hover:bg-red-500/80 hover:text-white"
-          aria-label="Close"
-        >
-          <X className="size-3" />
-        </button>
-      </div>
+        {!isMac && (
+          <div className="flex h-full items-center" style={{ WebkitAppRegion: "no-drag" } as any}>
+            <button
+              onClick={() => api()?.minimize?.()}
+              className="flex h-8 w-10 items-center justify-center text-slate-500 transition-colors hover:bg-slate-800/80 hover:text-slate-200"
+              aria-label="Minimize">
+              <Minus className="size-3" />
+            </button>
+            <button
+              onClick={() => api()?.close?.()}
+              className="flex h-8 w-10 items-center justify-center text-slate-500 transition-colors hover:bg-red-500/80 hover:text-white"
+              aria-label="Close">
+              <X className="size-3" />
+            </button>
+          </div>
+        )}
     </div>
   );
 }

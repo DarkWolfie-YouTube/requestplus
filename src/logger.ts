@@ -9,7 +9,8 @@ class Logger {
     private logFilePath: string;
     private logLevel: string;
 
-    constructor() {
+    constructor(private readonly enabled = true) {
+        if (!enabled) return;
         // Make sure app is ready before accessing userData path
         if (!app.isReady()) {
             throw new Error('Logger must be initialized after app is ready');
@@ -85,6 +86,7 @@ class Logger {
      * @param args - Arguments to log
      */
     info(...args: any[]): void {
+        if (!this.enabled) return;
         const formattedMessage = this.formatLogMessage('info', ...args);
         this.writeToLog(formattedMessage);
     }
@@ -94,6 +96,7 @@ class Logger {
      * @param args - Arguments to log
      */
     error(...args: any[]): void {
+        if (!this.enabled) return;
         const formattedMessage = this.formatLogMessage('error', ...args);
         this.writeToLog(formattedMessage);
     }
@@ -103,6 +106,7 @@ class Logger {
      * @param args - Arguments to log
      */
     warn(...args: any[]): void {
+        if (!this.enabled) return;
         const formattedMessage = this.formatLogMessage('warn', ...args);
         this.writeToLog(formattedMessage);
     }
@@ -111,6 +115,7 @@ class Logger {
      * Clear the log file
      */
     async clearLogs(): Promise<void> {
+        if (!this.enabled) return;
         try {
             await fs.promises.writeFile(this.logFilePath, '');
         } catch (error) {
@@ -122,6 +127,7 @@ class Logger {
      * Clear the Log File Folder to clear space on the drive.
      */
     async clearLogFolder(): Promise<void> {
+        if (!this.enabled) return;
         try {
             await fs.promises.rm(this.logFolderPath, { recursive: true, force: true });
         } catch (error) {

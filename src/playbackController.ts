@@ -29,6 +29,7 @@ export interface PlaybackControllerDeps {
     getAmHandler: () => AMHandler | null;
     getQueueHandler: () => QueueHandler | null;
     getCurrentTrackId2: () => string | null;
+    setAwaitingStartTrackId: (trackId: string) => void;
     getQueueItemTrackId: (item: QueueItem) => string;
     /** Cached volume (0..1); seeds the relative-volume accumulator. */
     getCurrentVolume: () => number;
@@ -57,7 +58,7 @@ export class PlaybackController {
     }
 
     /** song-play */
-    async playPause(): Promise<void> {
+    async play(): Promise<void> {
         const platform = this.platform;
         const WSServer = this.deps.getWSServer();
         const ytManager = this.deps.getYtManager();
@@ -66,7 +67,7 @@ export class PlaybackController {
         if (platform === 'spotify' && WSServer) {
             WSServer.WSSendToType({ command: 'PlayPause' } as WSCommand, 'spotify');
         } else if (platform === 'youtube' && ytManager) {
-            await ytManager.playPause();
+            await ytManager.play();
         } else if (platform === 'apple' && amHandler) {
             await amHandler.playPause();
         } else if (platform === 'soundcloud' && WSServer) {
@@ -74,7 +75,7 @@ export class PlaybackController {
         }
     }
 
-    /** song-pause (kept identical to the original — also a PlayPause toggle) */
+    /** song-pause */
     async pause(): Promise<void> {
         const platform = this.platform;
         const WSServer = this.deps.getWSServer();
@@ -84,7 +85,7 @@ export class PlaybackController {
         if (platform === 'spotify' && WSServer) {
             WSServer.WSSendToType({ command: 'PlayPause' } as WSCommand, 'spotify');
         } else if (platform === 'youtube' && ytManager) {
-            await ytManager.playPause();
+            await ytManager.pause();
         } else if (platform === 'apple' && amHandler) {
             await amHandler.playPause();
         }
@@ -122,13 +123,19 @@ export class PlaybackController {
                         const queued = await ytManager.addItemToQueueById(videoId);
                         if (queued) {
                             await queueHandler.setTrackAsQueued(queueHandler.findTrackById(nextTrack.id));
+                            this.deps.setAwaitingStartTrackId(nextTrack.id);
                             Logger.info(`Skip: fed "${nextTrack.title}" to the player`);
                         }
                     }
                     let ready = await ytManager.waitUntilQueuedNext(videoId, 5000);
                     if (!ready) {
-                        // The first insert may not have landed; re-feed once and re-check.
-                        await ytManager.addItemToQueueById(videoId);
+                        // The first insert may not have landed. Only re-feed if the
+                        // request isn't already in the player queue, otherwise we'd add
+                        // a duplicate copy.
+                        const state = await ytManager.getQueueState();
+                        if (!state?.videoIds.includes(videoId)) {
+                            await ytManager.addItemToQueueById(videoId);
+                        }
                         ready = await ytManager.waitUntilQueuedNext(videoId, 3000);
                     }
                     // Only advance once our request is actually next. A blind next() on

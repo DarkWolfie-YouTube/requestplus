@@ -283,6 +283,7 @@ class WebSocketManager extends EventEmitter {
 
     (global as any).Logger.info('[WebSocket] Sending message:', data.type);
     this.ws.send(JSON.stringify(data));
+    this.emit('message-sent', data);
   }
 
   public sendProbe(data: WebSocketMessage) {

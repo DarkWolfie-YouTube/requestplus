@@ -1,3 +1,4 @@
+import { overlayThemes } from "../../onboarding";
 import { useEffect, useState } from "react";
 import { Music, Settings, List, X, Minus, Play, Pause, SkipBack, SkipForward, Heart, Shuffle, Repeat, Repeat1, Volume2, Trash2, Check, Copy, Eye, Headphones, ListChecks, Lock, Radio, Shield, Sparkles, UserRound, ExternalLink, RefreshCw, LogOut, User as UserIcon, ArrowLeft, ArrowRight, Music2, LayoutGrid } from "lucide-react";
 import { toast } from "sonner";
@@ -45,6 +46,10 @@ export function SettingsView({ settings, setSettings, user, setUser, overlayPath
   const [channelPointLoading, setChannelPointLoading] = useState(false);
   const [channelPointSaving, setChannelPointSaving] = useState(false);
   const [ciderTokenLoading, setCiderTokenLoading] = useState(false);
+  const [updateChannel, setUpdateChannelState] = useState("stable");
+  const [updateChannels, setUpdateChannels] = useState<string[]>(["stable", "beta"]);
+  const [updateChannelsLoading, setUpdateChannelsLoading] = useState(true);
+  const [updateChannelSaving, setUpdateChannelSaving] = useState(false);
   const [channelPointForm, setChannelPointForm] = useState({
     title: "Song Requests",
     prompt: "Redeem this to request a song through Request+.",
@@ -132,6 +137,76 @@ export function SettingsView({ settings, setSettings, user, setUser, overlayPath
     if (settings.useChannelPoints) void refreshChannelPoint();
   }, [settings.useChannelPoints]);
 
+  useEffect(() => {
+    let active = true;
+    const loadUpdateFeeds = async () => {
+      try {
+        const [savedResult, availableResult] = await Promise.allSettled([
+          api()?.getUpdateSettings?.(),
+          api()?.getUpdateChannels?.(),
+        ]);
+        if (!active) return;
+        const saved = savedResult.status === "fulfilled" ? savedResult.value : undefined;
+        const available = availableResult.status === "fulfilled" ? availableResult.value : undefined;
+        const channels = Array.isArray(available) && available.length > 0
+          ? available
+          : ["stable", "beta"];
+        const selected = typeof saved?.channel === "string"
+          ? saved.channel
+          : saved?.checkPreReleases
+            ? "beta"
+            : "stable";
+        setUpdateChannels(channels.includes(selected) ? channels : [selected, ...channels]);
+        setUpdateChannelState(selected);
+      } catch (error) {
+        console.warn("Could not load update feeds; using built-in feeds:", error);
+      } finally {
+        if (active) setUpdateChannelsLoading(false);
+      }
+    };
+    void loadUpdateFeeds();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const selectUpdateChannel = async (channel: string) => {
+    if (!/^[a-z0-9][a-z0-9-]{0,29}$/.test(channel)) {
+      toast.error("That update feed name is invalid.");
+      return;
+    }
+
+    const updateApi = api();
+    if (typeof updateApi?.setUpdateChannel !== "function") {
+      toast.error("Update feed settings are unavailable in this app session.");
+      return;
+    }
+
+    const previous = updateChannel;
+    setUpdateChannelState(channel);
+    setUpdateChannelSaving(true);
+    try {
+      await updateApi.setUpdateChannel(channel);
+      toast.success(`Update feed changed to ${formatChannelName(channel)}.`);
+    } catch (error) {
+      setUpdateChannelState(previous);
+      console.error("Failed to save update feed:", error);
+      toast.error("Failed to change the update feed.");
+      return;
+    } finally {
+      setUpdateChannelSaving(false);
+    }
+
+    if (channel !== previous && typeof updateApi.checkForUpdates === "function") {
+      try {
+        await updateApi.checkForUpdates();
+      } catch (error) {
+        console.error("Failed to check the selected update feed:", error);
+        toast.error("The update feed changed, but its update check failed.");
+      }
+    }
+  };
+
   const createChannelPoint = async () => {
     const title = channelPointForm.title.trim();
     if (!title || !api()?.createChannelPointReward) {
@@ -195,22 +270,7 @@ export function SettingsView({ settings, setSettings, user, setUser, overlayPath
 
   const isMultiPlatform = settings.platform in multiPlatformMembers;
 
-  const themes = [
-    { value: 'default', label: t("CLIENT_THEME_DEFAULT", locale) },
-    { value: 'custom', label: t("CLIENT_THEME_CUSTOM", locale) },
-    { value: 'gojo', label: t("CLIENT_THEME_GOJO", locale) },
-    { value: 'hologram', label: t("CLIENT_THEME_HOLOGRAM", locale) },
-    { value: 'mdev', label: t("CLIENT_THEME_MDEV", locale) },
-    { value: 'moonkingbean', label: t("CLIENT_THEME_MOONKINGBEAN", locale) },
-    { value: 'twinGhost', label: t("CLIENT_THEME_TWINGHOST", locale) },
-    { value: 'nowplaying-default', label: t("CLIENT_THEME_NOWPLAYING_DEFAULT", locale) },
-    { value: 'nowplaying-custom', label: t("CLIENT_THEME_NOWPLAYING_CUSTOM", locale) },
-    { value: 'nowplaying-gojo', label: t("CLIENT_THEME_NOWPLAYING_GOJO", locale) },
-    { value: 'nowplaying-hologram', label: t("CLIENT_THEME_NOWPLAYING_HOLOGRAM", locale) },
-    { value: 'nowplaying-mdev', label: t("CLIENT_THEME_NOWPLAYING_MDEV", locale) },
-    { value: 'nowplaying-moonkingbean', label: t("CLIENT_THEME_NOWPLAYING_MOONKINGBEAN", locale) },
-    { value: 'nowplaying-twinGhost', label: t("CLIENT_THEME_NOWPLAYING_TWINGHOST", locale) }
-  ];
+  const themes = overlayThemes.map(theme => ({ value: theme.value, label: t(theme.label, locale) }));
 
   return (
     <div className="relative flex h-full flex-col overflow-hidden bg-slate-950">
@@ -227,6 +287,8 @@ export function SettingsView({ settings, setSettings, user, setUser, overlayPath
             <p className="text-[11px] text-violet-400">Request+</p>
           </div>
         </div>
+
+        <button type="button" className="w-full rounded-xl border border-violet-400/30 bg-slate-800 px-4 py-3 text-sm text-white" onClick={() => void api().openSetup().catch(() => toast.error(t("SETUP_ACTION_FAILED", locale)))}>{t("SETUP_REOPEN", locale)}</button>
 
         {/* Account */}
         <Section title={t("CLIENT_ACCOUNT_TITLE", locale)}>
@@ -430,7 +492,7 @@ export function SettingsView({ settings, setSettings, user, setUser, overlayPath
 
         {/* Modules */}
         <Section title={t("CLIENT_MODULES_TITLE", locale)} desc={t("CLIENT_MODULES_DESC", locale)}>
-          <ToggleRow label={t("CLIENT_MOD_QUEUE_TITLE", locale)} desc={t("CLIENT_MOD_QUEUE_DESC", locale)} checked={!!settings.autoPlay} onChange={(v) => p({ autoPlay: v })} />
+          {<ToggleRow label={t("CLIENT_MOD_QUEUE_TITLE", locale)} desc={t("CLIENT_MOD_QUEUE_DESC", locale)} checked={!!settings.autoPlay} onChange={(v) => p({ autoPlay: v })} />}
           <ToggleRow label={t("CLIENT_GTS_TITLE", locale)} desc={t("CLIENT_GTS_DESC", locale)} checked={!!settings.gtsEnabled} onChange={(v) => p({ gtsEnabled: v })} />
           {settings.platform !== "youtube" && (
             <ToggleRow label={t("CLIENT_FILTER_EXPLICIT", locale)} desc={t("CLIENT_FILTER_EXPLICIT_DESC", locale)} checked={!!settings.filterExplicit} onChange={(v) => p({ filterExplicit: v })} />
@@ -543,6 +605,57 @@ export function SettingsView({ settings, setSettings, user, setUser, overlayPath
           </div>
         </Section>
 
+        {/* Updates */}
+        <Section title="Updates" desc="Choose which release feed Request+ checks for updates.">
+          <div className="space-y-3 p-4">
+            <label htmlFor="update-feed" className="block text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">
+              Update feed
+            </label>
+            <select
+              id="update-feed"
+              value={updateChannel}
+              disabled={updateChannelsLoading || updateChannelSaving}
+              onChange={(event) => void selectUpdateChannel(event.target.value)}
+              className="w-full rounded-xl border border-violet-500/20 bg-slate-950/70 px-3 py-2.5 text-sm font-semibold text-white focus:outline-none focus:ring-1 focus:ring-violet-500 disabled:cursor-wait disabled:opacity-60"
+            >
+              {updateChannels.map((channel) => (
+                <option key={channel} value={channel} className="bg-slate-900">
+                  {formatChannelName(channel)}{channel === "stable" ? " (recommended)" : ""}
+                </option>
+              ))}
+            </select>
+            <p className="text-[11px] leading-[1.5] text-slate-600">
+              Stable receives production releases. Switching feeds reinstalls that branch even when its version number matches the installed build.
+            </p>
+            <button
+              onClick={async () => {
+                if (api()?.checkForUpdates) await api().checkForUpdates();
+                else toast.info(t("CLIENT_UPDATE_CHECK_UNAVAILABLE", locale));
+              }}
+              className="flex w-full items-center justify-center gap-2 rounded-xl bg-slate-800 px-4 py-2.5 text-sm font-bold text-white transition-colors hover:bg-slate-700"
+            >
+              <RefreshCw className="size-3.5" />
+              {t("CLIENT_CHECK_UPDATES", locale)}
+            </button>
+          </div>
+        </Section>
+
+        {/* Performance */}
+        <Section title={t("CLIENT_PERFORMANCE_TITLE", locale)}>
+          <ToggleRow
+            label={t("CLIENT_REDUCED_MOTION", locale)}
+            desc={t("CLIENT_REDUCED_MOTION_DESC", locale)}
+            checked={!!settings.reducedMotion}
+            onChange={(v) => p({ reducedMotion: v })}
+          />
+          <ToggleRow
+            label={t("CLIENT_HARDWARE_ACCELERATION", locale)}
+            desc={t("CLIENT_HARDWARE_ACCELERATION_DESC", locale)}
+            checked={settings.hardwareAcceleration !== false}
+            onChange={(v) => p({ hardwareAcceleration: v })}
+          />
+        </Section>
+
         {/* Privacy */}
         <Section title={t("CLIENT_PRIVACY_TITLE", locale)}>
           <ToggleRow label={t("CLIENT_TELEMETRY", locale)} desc={t("CLIENT_TELEMETRY_DESC", locale)} checked={!!settings.telemetryEnabled} onChange={(v) => p({ telemetryEnabled: v })} />
@@ -559,21 +672,19 @@ export function SettingsView({ settings, setSettings, user, setUser, overlayPath
               <ExternalLink className="size-3.5" />
               {t("CLIENT_VISIT_WEBSITE", locale)}
             </button>
-            <button
-              onClick={async () => {
-                if (api()?.checkForUpdates) await api().checkForUpdates();
-                else toast.info(t("CLIENT_UPDATE_CHECK_UNAVAILABLE", locale));
-              }}
-              className="flex w-full items-center justify-center gap-2 rounded-xl bg-slate-800/50 px-4 py-2 text-xs font-bold text-slate-500 transition-colors hover:bg-slate-800 hover:text-slate-300"
-            >
-              <RefreshCw className="size-3.5" />
-              {t("CLIENT_CHECK_UPDATES", locale)}
-            </button>
           </div>
         </Section>
       </div>
     </div>
   );
+}
+
+function formatChannelName(channel: string): string {
+  return channel
+    .split("-")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
 }
 
 // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Onboarding Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
