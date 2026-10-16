@@ -3,7 +3,11 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 
 interface Installation { channel: string; version: string; fingerprint: string }
-interface InstallState { installed?: Installation; pending?: Installation }
+interface InstallState {
+    lastInstalledBranch?: string;
+    installed?: Installation;
+    pending?: Installation;
+}
 const validChannel = (value: unknown): value is string => typeof value === 'string' && /^[a-z0-9][a-z0-9-]{0,29}$/.test(value);
 
 // Include the app bundle, not just Electron's executable (which may be identical across releases).
@@ -27,6 +31,12 @@ export function resolveInstalledChannel(state: InstallState, current: Omit<Insta
     if (pending && validChannel(pending.channel) && pending.version === current.version && pending.fingerprint !== current.fingerprint) {
         return { ...current, channel: pending.channel };
     }
+    // Once an updater-driven installation has been confirmed, retain its branch
+    // independently of the app version and bundle timestamps. This prevents a
+    // later check of the same branch from being mistaken for a branch switch.
+    if (validChannel(state.lastInstalledBranch)) {
+        return { ...current, channel: state.lastInstalledBranch };
+    }
     const installed = state.installed;
     if (installed && validChannel(installed.channel) && installed.version === current.version && installed.fingerprint === current.fingerprint) return installed;
     return { ...current, channel: compiled };
@@ -37,7 +47,11 @@ export function installedUpdateChannel(compiled: string): string {
     const state = read();
     const installed = resolveInstalledChannel(state, { version: app.getVersion(), fingerprint: fingerprint() }, compiled);
     const confirmed = state.pending?.version === installed.version && state.pending.fingerprint !== installed.fingerprint && state.pending.channel === installed.channel;
-    write({ installed, ...(confirmed ? {} : { pending: state.pending }) });
+    write({
+        lastInstalledBranch: installed.channel,
+        installed,
+        ...(confirmed ? {} : { pending: state.pending }),
+    });
     return installed.channel;
 }
 
