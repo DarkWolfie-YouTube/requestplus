@@ -504,8 +504,7 @@ async function openUpdateInstaller(
     const selectedChannel = selected.channel;
     const releaseVersion = selected.latestVersion ?? selected.release?.version ?? app.getVersion();
     const squirrelSwitch = switchingChannel &&
-        squirrelUpdateExecutable() !== null &&
-        !compareVersions(app.getVersion(), releaseVersion);
+        squirrelUpdateExecutable() !== null;
     const choice = await sendModal(
         window,
         switchingChannel ? 'Switch Request+ Update Feed' : 'Request+ Update Ready',
