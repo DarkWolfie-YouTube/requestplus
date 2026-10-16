@@ -454,6 +454,7 @@ async function scheduleWindowsBranchSwitch(
         'cmd.exe',
         ['/d', '/s', '/c', helperCommand],
         {
+            detached: true,
             stdio: 'ignore',
             windowsHide: true,
             env: { ...process.env, ...windowsBranchSwitchEnvironment(switchOptions) },
