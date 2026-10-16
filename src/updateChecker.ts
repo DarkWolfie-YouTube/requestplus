@@ -507,17 +507,13 @@ async function openUpdateInstaller(
 ): Promise<void> {
     const selectedChannel = selected.channel;
     const releaseVersion = selected.latestVersion ?? selected.release?.version ?? app.getVersion();
-    const squirrelSwitch = switchingChannel &&
-        squirrelUpdateExecutable() !== null;
     const choice = await sendModal(
         window,
         switchingChannel ? 'Switch Request+ Update Feed' : 'Request+ Update Ready',
-        squirrelSwitch
-            ? `Request+ will close, remove the ${installedUpdateChannel(DEFAULT_UPDATE_CHANNEL)} build, and install the ${selectedChannel} build (${releaseVersion}). Your settings will be kept.`
-            : switchingChannel
-                ? `The ${selectedChannel} build (${releaseVersion}) has been downloaded and verified. Open its installer now?`
-                : `Request+ ${releaseVersion} has been downloaded and verified. Open the installer now?`,
-        [squirrelSwitch ? 'Restart and switch' : 'Open installer', 'Later']
+        switchingChannel
+            ? `The ${selectedChannel} build (${releaseVersion}) has been downloaded and verified. Request+ will close and run its installer.`
+            : `Request+ ${releaseVersion} has been downloaded and verified. Open its installer now?`,
+        ['Run installer', 'Later']
     );
     if (choice !== 0) {
         await sendToastWithDelay(window, 'Update downloaded. You can install it from your temporary files.', 'info', 5000, 100);
@@ -526,12 +522,23 @@ async function openUpdateInstaller(
 
     recordPendingUpdate(selectedChannel, releaseVersion);
     try {
-        if (squirrelSwitch) {
-            await scheduleWindowsBranchSwitch(destination, selectedChannel, logger);
-            return;
+        if (process.platform === 'win32' && path.extname(destination).toLowerCase() === '.exe') {
+            const installer = spawn(destination, [], {
+                detached: true,
+                stdio: 'ignore',
+                windowsHide: false,
+            });
+            await new Promise<void>((resolve, reject) => {
+                installer.once('error', reject);
+                installer.once('spawn', resolve);
+            });
+            installer.unref();
+            logger.info(`Started ${selectedChannel} branch installer: ${destination}`);
+            app.quit();
+        } else {
+            const openError = await shell.openPath(destination);
+            if (openError) throw new Error(openError);
         }
-        const openError = await shell.openPath(destination);
-        if (openError) throw new Error(openError);
     } catch (error) {
         clearPendingUpdate();
         throw error;
