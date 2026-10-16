@@ -588,7 +588,6 @@ class AuthManager extends EventEmitter {
     if (!token) return 'en';
     try {
       apiClient.setCredentials(token.token, this.hardwareInfo!.deviceId);
-      console.log(await apiClient.fetchLocale())
       return await apiClient.fetchLocale();
     } catch {
       return 'en';
@@ -602,92 +601,52 @@ export const authManager = AuthManager.getInstance();
 /**
  * Setup deep link handling in main process
  */
-export function setupDeepLinkHandling(mainWindow: BrowserWindow) {
-  // Handle the protocol on macOS
+let deepLinksRegistered = false;
+let authEventsRegistered = false;
+const authWindows = new Set<BrowserWindow>();
+
+export function setupDeepLinkHandling(window: BrowserWindow) {
+  if (deepLinksRegistered) return;
+  deepLinksRegistered = true;
   app.on('open-url', (event, url) => {
     event.preventDefault();
-    authManager.handleDeepLink(url);
+    void authManager.handleDeepLink(url);
   });
-
-  // Handle the protocol on Windows/Linux
-  const gotTheLock = app.requestSingleInstanceLock();
-
-  if (!gotTheLock) {
-    log.info('[DeepLink] Another instance is already running');
-    app.quit();
-  } else {
-    app.on('second-instance', (event, commandLine, workingDirectory) => {
-      // Someone tried to run a second instance, focus our window instead
-      if (mainWindow) {
-        if (mainWindow.isMinimized()) mainWindow.restore();
-        mainWindow.focus();
-      }
-
-      // Check if a deep link was passed
-      const url = commandLine.find(arg => arg.startsWith(`${PROTOCOL}://`));
-      if (url) {
-        authManager.handleDeepLink(url);
-      }
-    });
-  }
-
-  // Handle deep link on Windows/Linux when the app is launched by the protocol.
+  if (!app.requestSingleInstanceLock()) { app.quit(); return; }
+  app.on('second-instance', (_event, commandLine) => {
+    const target = BrowserWindow.getFocusedWindow() || [...authWindows].find(item => !item.isDestroyed());
+    if (target && !target.isDestroyed()) {
+      if (target.isMinimized()) target.restore();
+      target.show();
+      target.focus();
+    }
+    const url = commandLine.find(arg => arg.startsWith(`${PROTOCOL}://`));
+    if (url) void authManager.handleDeepLink(url);
+  });
   if (process.platform !== 'darwin') {
     const url = process.argv.find(arg => arg.startsWith(`${PROTOCOL}://`));
-    if (url) {
-      authManager.handleDeepLink(url);
-    }
+    if (url) void authManager.handleDeepLink(url);
   }
 }
 
-/**
- * Example event listeners for auth events
- */
-export function setupAuthEventListeners(mainWindow: BrowserWindow) {
-  authManager.on('auth-started', () => {
-    log.info('[Auth Event] Authentication flow started');
-    mainWindow.webContents.send('auth-status', { status: 'started' });
-  });
-
-  authManager.on('auth-success', (token: AuthToken) => {
-    log.info('[Auth Event] Authentication successful');
-    if (!mainWindow || mainWindow.isDestroyed()) return;
-    mainWindow.webContents.send('auth-status', {
-      status: 'success',
-      token: token.token,
-      deviceId: token.deviceId
-    });
-  });
-
-  authManager.on('auth-error', (error: { error: string }) => {
-    log.info('[Auth Event] Authentication error:', error);
-    mainWindow.webContents.send('auth-status', { 
-      status: 'error', 
-      error: error.error 
-    });
-  });
-
-  authManager.on('auth-logout', () => {
-    log.info('[Auth Event] User logged out');
-    mainWindow.webContents.send('auth-status', { status: 'logged-out' });
-  });
-
-  authManager.on('auth-restored', (token: AuthToken) => {
-    log.info('[Auth Event] Authentication restored from disk');
-    mainWindow.webContents.send('auth-status', { 
-      status: 'restored', 
-      token: token.token,
-      deviceId: token.deviceId
-    });
-  });
-
-  authManager.on('auth-refreshed', (token: AuthToken) => {
-    log.info('[Auth Event] Token refreshed');
-    mainWindow.webContents.send('auth-status', { 
-      status: 'refreshed', 
-      token: token.token 
-    });
-  });
+export function setupAuthEventListeners(window: BrowserWindow) {
+  if (!authWindows.has(window)) {
+    authWindows.add(window);
+    window.once('closed', () => authWindows.delete(window));
+  }
+  if (authEventsRegistered) return;
+  authEventsRegistered = true;
+  const broadcast = (status: string) => {
+    for (const target of authWindows) {
+      if (!target.isDestroyed()) target.webContents.send('auth-status', { status });
+    }
+  };
+  authManager.on('auth-started', () => broadcast('started'));
+  authManager.on('auth-success', () => broadcast('success'));
+  authManager.on('auth-error', () => broadcast('error'));
+  authManager.on('auth-logout', () => broadcast('logged-out'));
+  authManager.on('auth-restored', () => broadcast('restored'));
+  authManager.on('auth-refreshed', () => broadcast('refreshed'));
 }
 
 class APIClient {
@@ -744,6 +703,7 @@ class APIClient {
 
     const response = await fetch(url, {
       ...options,
+      signal: options.signal || AbortSignal.timeout(10000),
       headers
     });
 
@@ -758,6 +718,10 @@ class APIClient {
   /**
    * Get user profile
    */
+  public async getConnections(): Promise<import('./onboarding').SetupConnections> {
+    return this.request('/me/connections', { signal: AbortSignal.timeout(10000) });
+  }
+
   public async getProfile(): Promise<ProfileResponse> {
     return this.request<ProfileResponse>('/desktop/profile');
   }

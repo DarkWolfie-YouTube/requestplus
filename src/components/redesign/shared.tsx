@@ -29,7 +29,8 @@ export interface AppSettings {
   platform: string; filterExplicit: boolean; gtsEnabled: boolean;
   theme: string; appleMusicAppToken: string; ciderApiVersion: "3" | "4";
   ciderV4AppToken: string; primarySearchPlatform: string;
-  showNotifications: boolean; [key: string]: any;
+  showNotifications: boolean; reducedMotion?: boolean; hardwareAcceleration?: boolean;
+  [key: string]: any;
 }
 
 export const fmt = (ms: number) => {
@@ -42,7 +43,7 @@ export function TrackArt({ cover, title, artist, className = "" }: { cover: stri
   // Reset the error latch when the cover changes, otherwise one failed load
   // pins the placeholder for every subsequent track (the component isn't remounted).
   useEffect(() => { setErr(false); }, [cover]);
-  const hue = ((title.charCodeAt(0) || 65) * 47 + (artist.charCodeAt(0) || 65) * 19) % 360;
+  const hue = ((title?.charCodeAt(0) || 65) * 47 + (artist?.charCodeAt(0) || 65) * 19) % 360;
 
   if (cover && !err) {
     return <img src={cover} alt={`${title} - ${artist}`} className={`${className} object-cover`} onError={() => setErr(true)} />;
@@ -64,12 +65,21 @@ export function Switch({ checked, onChange }: { checked: boolean; onChange: (val
   );
 }
 
+// Glow color stops are pre-faded radial gradients rather than a solid fill run through
+// filter: blur(). An animated blur() forces the compositor to re-rasterize the blur pass
+// every frame; a gradient is a plain paint the GPU composites cheaply instead.
+const BLOB_GRADIENTS = {
+  violet: "radial-gradient(circle at center, rgba(124,58,237,0.9) 0%, rgba(124,58,237,0.45) 35%, rgba(124,58,237,0) 70%)",
+  emerald: "radial-gradient(circle at center, rgba(16,185,129,0.9) 0%, rgba(16,185,129,0.45) 35%, rgba(16,185,129,0) 70%)",
+  cyan: "radial-gradient(circle at center, rgba(6,182,212,0.9) 0%, rgba(6,182,212,0.45) 35%, rgba(6,182,212,0) 70%)",
+};
+
 export function Blobs({ opacity = "opacity-20" }: { opacity?: string }) {
   return (
     <div className={`pointer-events-none absolute inset-0 overflow-hidden ${opacity}`}>
-      <div className="blob absolute -left-10 -top-10 h-80 w-80 rounded-full bg-violet-600 blur-[80px]" />
-      <div className="blob d2 absolute -right-10 top-16 h-80 w-80 rounded-full bg-emerald-500 blur-[80px]" />
-      <div className="blob d4 absolute -bottom-16 left-24 h-96 w-96 rounded-full bg-cyan-500 blur-[80px]" />
+      <div className="blob absolute -left-10 -top-10 h-80 w-80 rounded-full" style={{ background: BLOB_GRADIENTS.violet }} />
+      <div className="blob d2 absolute -right-10 top-16 h-80 w-80 rounded-full" style={{ background: BLOB_GRADIENTS.emerald }} />
+      <div className="blob d4 absolute -bottom-16 left-24 h-96 w-96 rounded-full" style={{ background: BLOB_GRADIENTS.cyan }} />
     </div>
   );
 }

@@ -1,3 +1,6 @@
+import { sendModal } from './uiDialogs';
+export { sendModal, resolveModal } from './uiDialogs';
+import { installedUpdateChannel, recordPendingUpdate, clearPendingUpdate } from './installedUpdate';
 import { app, BrowserWindow, shell } from 'electron';
 import fetch from 'node-fetch';
 import { createHash } from 'node:crypto';
@@ -10,6 +13,7 @@ import { Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { setTimeout as wait } from 'node:timers/promises';
 import { checkForNativeUpdate } from './nativeUpdater';
+import { windowsBranchSwitchArguments, windowsBranchSwitchEnvironment } from './windowsBranchSwitch';
 
 declare const __REQUESTPLUS_RELEASE_CHANNEL__: string;
 
@@ -19,7 +23,7 @@ const UPDATE_REQUEST_TIMEOUT_MS = 10_000;
 const COMPILED_UPDATE_CHANNEL = typeof __REQUESTPLUS_RELEASE_CHANNEL__ === 'string'
     ? __REQUESTPLUS_RELEASE_CHANNEL__
     : 'stable';
-const INSTALLED_UPDATE_CHANNEL = validChannel(COMPILED_UPDATE_CHANNEL)
+const DEFAULT_UPDATE_CHANNEL = validChannel(COMPILED_UPDATE_CHANNEL)
     ? COMPILED_UPDATE_CHANNEL
     : 'stable';
 
@@ -77,30 +81,6 @@ let settings: UpdateSettings = {
 };
 
 // ── Web-UI modal helpers ────────────────────────────────────────────────────
-
-const pendingModals = new Map<string, (response: number) => void>();
-
-/** Send a modal to the renderer and resolve with the index of the button clicked. */
-function sendModal(window: BrowserWindow | null, title: string, message: string, buttons: string[]): Promise<number> {
-    return new Promise((resolve) => {
-        if (!window || window.isDestroyed()) {
-            resolve(0);
-            return;
-        }
-        const id = Math.random().toString(36).substring(2);
-        pendingModals.set(id, resolve);
-        window.webContents.send('show-modal', { id, title, message, buttons });
-    });
-}
-
-/** Called from main.ts when the renderer sends back a modal-response event. */
-export function resolveModal(id: string, response: number): void {
-    const resolver = pendingModals.get(id);
-    if (resolver) {
-        resolver(response);
-        pendingModals.delete(id);
-    }
-}
 
 /** Shared terms-of-service modal flow used for both first-run and updates. */
 async function showTermsFlow(window: BrowserWindow | null, termsUrl: string, termsVersion: string): Promise<void> {
@@ -446,34 +426,74 @@ async function scheduleWindowsBranchSwitch(
         throw new Error('The selected Windows branch does not provide an executable installer');
     }
 
-    const helperPath = path.join(
+    const logPath = path.join(
         app.getPath('temp'),
         'requestplus-updates',
-        `switch-to-${selectedChannel}.ps1`
+        `switch-to-${selectedChannel}.log`
     );
-    fs.writeFileSync(helperPath, [
-        "$ErrorActionPreference = 'Stop'",
-        'Start-Sleep -Seconds 2',
-        "$uninstall = Start-Process -FilePath $args[0] -ArgumentList @('--uninstall', '--silent') -WindowStyle Hidden -PassThru",
-        '$uninstall.WaitForExit()',
-        "if ($uninstall.ExitCode -ne 0) { throw \"Request+ uninstall failed with exit code $($uninstall.ExitCode)\" }",
-        'Start-Sleep -Seconds 2',
-        'Start-Process -FilePath $args[1]'
-    ].join('\r\n'), 'utf8');
+    const launchExecutable = path.join(path.dirname(updateExecutable), path.basename(process.execPath));
+    // A log from a previous attempt must not satisfy this run's startup handshake.
+    await rm(logPath, { force: true });
 
+    const switchOptions = {
+        updateExecutable,
+        installerPath,
+        parentPid: process.pid,
+        launchExecutable,
+        logPath,
+    };
+
+    const helper = spawn(
+        'powershell.exe',
+        windowsBranchSwitchArguments(),
+        {
+            stdio: 'ignore',
+            windowsHide: true,
+            env: { ...process.env, ...windowsBranchSwitchEnvironment(switchOptions) },
+        }
+    );
     await new Promise<void>((resolve, reject) => {
-        const helper = spawn(
-            'powershell.exe',
-            ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', helperPath, updateExecutable, installerPath],
-            { detached: true, stdio: 'ignore', windowsHide: true }
-        );
         helper.once('error', reject);
         helper.once('spawn', () => {
-            helper.unref();
             resolve();
         });
     });
-    logger.info(`Scheduled reinstall from ${INSTALLED_UPDATE_CHANNEL} to ${selectedChannel}`);
+    // The spawn event only confirms that Windows created powershell.exe. A hard
+    // app exit immediately afterward can win the scheduling race and terminate
+    // the child before the script executes. Wait for its first log write, which
+    // occurs before it begins waiting for this Request+ process to close.
+    const readyDeadline = Date.now() + 10_000;
+    while (Date.now() < readyDeadline) {
+        if (helper.exitCode !== null) {
+            throw new Error(`The branch-switch helper exited before startup (code ${helper.exitCode})`);
+        }
+        try {
+            if ((await stat(logPath)).size > 0) break;
+        } catch {
+            // The helper has not reached its first log write yet.
+        }
+        await wait(100);
+    }
+    let helperReady = false;
+    try {
+        helperReady = (await stat(logPath)).size > 0;
+    } catch {
+        // Report a useful error below.
+    }
+    if (!helperReady) {
+        throw new Error('The branch-switch helper did not start within 10 seconds');
+    }
+    // A normal hidden Windows child survives its parent. `detached: true`
+    // causes Windows PowerShell to exit 0 without evaluating the command on
+    // some Windows builds, so release the event-loop reference only after the
+    // startup log proves that the script is running.
+    helper.unref();
+    logger.info(
+        `Scheduled reinstall from ${installedUpdateChannel(DEFAULT_UPDATE_CHANNEL)} to ${selectedChannel}; ` +
+        `helper log: ${logPath}`
+    );
+    // Quit only after the detached helper confirms it is alive. The helper waits
+    // for this PID and then verifies that Squirrel removed the old app directory.
     app.quit();
 }
 
@@ -487,13 +507,12 @@ async function openUpdateInstaller(
     const selectedChannel = selected.channel;
     const releaseVersion = selected.latestVersion ?? selected.release?.version ?? app.getVersion();
     const squirrelSwitch = switchingChannel &&
-        squirrelUpdateExecutable() !== null &&
-        !compareVersions(app.getVersion(), releaseVersion);
+        squirrelUpdateExecutable() !== null;
     const choice = await sendModal(
         window,
         switchingChannel ? 'Switch Request+ Update Feed' : 'Request+ Update Ready',
         squirrelSwitch
-            ? `Request+ will close, remove the ${INSTALLED_UPDATE_CHANNEL} build, and install the ${selectedChannel} build (${releaseVersion}). Your settings will be kept.`
+            ? `Request+ will close, remove the ${installedUpdateChannel(DEFAULT_UPDATE_CHANNEL)} build, and install the ${selectedChannel} build (${releaseVersion}). Your settings will be kept.`
             : switchingChannel
                 ? `The ${selectedChannel} build (${releaseVersion}) has been downloaded and verified. Open its installer now?`
                 : `Request+ ${releaseVersion} has been downloaded and verified. Open the installer now?`,
@@ -504,13 +523,18 @@ async function openUpdateInstaller(
         return;
     }
 
-    if (squirrelSwitch) {
-        await scheduleWindowsBranchSwitch(destination, selectedChannel, logger);
-        return;
+    recordPendingUpdate(selectedChannel, releaseVersion);
+    try {
+        if (squirrelSwitch) {
+            await scheduleWindowsBranchSwitch(destination, selectedChannel, logger);
+            return;
+        }
+        const openError = await shell.openPath(destination);
+        if (openError) throw new Error(openError);
+    } catch (error) {
+        clearPendingUpdate();
+        throw error;
     }
-
-    const openError = await shell.openPath(destination);
-    if (openError) throw new Error(openError);
     await sendToastWithDelay(window, 'Update installer opened.', 'success', 3000, 100);
 }
 
@@ -531,9 +555,9 @@ async function checkForUpdates(window: BrowserWindow | null, logger: Logger): Pr
                 : 'stable';
         const channels = [selectedChannel];
         const nativeBranch = selectedChannel;
-        const switchingChannel = selectedChannel !== INSTALLED_UPDATE_CHANNEL;
+        const switchingChannel = selectedChannel !== installedUpdateChannel(DEFAULT_UPDATE_CHANNEL);
         logger.info(
-            `Using update feed: ${selectedChannel}; installed feed: ${INSTALLED_UPDATE_CHANNEL}` +
+            `Using update feed: ${selectedChannel}; installed feed: ${installedUpdateChannel(DEFAULT_UPDATE_CHANNEL)}` +
             (switchingChannel ? '; branch reinstall required' : '')
         );
         if (process.windowsStore || process.mas) {
@@ -557,7 +581,7 @@ async function checkForUpdates(window: BrowserWindow | null, logger: Logger): Pr
 
             const selected = selectNewestUpdate(responses);
             if (selected?.release && selected.latestVersion) {
-                if (!switchingChannel && await checkForNativeUpdate(nativeBranch, window, logger)) {
+                if (!switchingChannel && await checkForNativeUpdate(nativeBranch, window, logger, selected.latestVersion)) {
                     logger.info(`Started Forge native update check on the ${nativeBranch} branch`);
                 } else {
                     const releaseType = selected.channel === 'stable' ? 'release' : `${selected.channel} release`;

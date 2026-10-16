@@ -1,4 +1,6 @@
-import { app, autoUpdater, BrowserWindow, dialog } from 'electron';
+import { sendModal } from './uiDialogs';
+import { recordPendingUpdate } from './installedUpdate';
+import { app, autoUpdater, BrowserWindow } from 'electron';
 import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
@@ -15,6 +17,7 @@ let listenersRegistered = false;
 let updaterWindow: BrowserWindow | null = null;
 let updaterLogger: NativeUpdaterLogger | null = null;
 let currentFeed: string | null = null;
+let pendingRelease: { channel: string; version: string } | null = null;
 let checkInProgress = false;
 let macDeveloperIdSignature: boolean | undefined;
 
@@ -31,7 +34,8 @@ export function isNativeUpdaterSupported(): boolean {
 export async function checkForNativeUpdate(
     branch: string,
     window: BrowserWindow | null,
-    logger: NativeUpdaterLogger
+    logger: NativeUpdaterLogger,
+    targetVersion?: string
 ): Promise<boolean> {
     if (!isNativeUpdaterSupported()) {
         if (app.isPackaged && process.platform === 'darwin' && !process.mas) {
@@ -51,6 +55,7 @@ export async function checkForNativeUpdate(
         return true;
     }
     checkInProgress = true;
+    pendingRelease = targetVersion ? { channel: branch, version: targetVersion } : null;
 
     const platform = process.platform === 'win32' ? 'windows' : 'macos';
     const feedBase = `${UPDATE_FEED_ROOT}/${encodeURIComponent(branch)}/${platform}/${process.arch}`;
@@ -145,26 +150,17 @@ function registerUpdaterListeners(): void {
     autoUpdater.on('update-downloaded', async (_event, _notes, releaseName) => {
         checkInProgress = false;
         updaterLogger?.info(`Native update downloaded: ${releaseName}`);
-        const result = updaterWindow && !updaterWindow.isDestroyed()
-            ? await dialog.showMessageBox(updaterWindow, {
-                type: 'info',
-                buttons: ['Restart and Install', 'Later'],
-                defaultId: 0,
-                cancelId: 1,
-                title: 'Request+ Update Ready',
-                message: 'A Request+ update has finished downloading.',
-                detail: 'Restart Request+ now to install it. If you choose Later, it will be applied after you close the app.'
-            })
-            : await dialog.showMessageBox({
-                type: 'info',
-                buttons: ['Restart and Install', 'Later'],
-                defaultId: 0,
-                cancelId: 1,
-                title: 'Request+ Update Ready',
-                message: 'A Request+ update has finished downloading.'
-            });
+        try {
+            if (pendingRelease) recordPendingUpdate(pendingRelease.channel, pendingRelease.version);
+        } catch (error) { updaterLogger?.error('Could not record the downloaded update branch', error); }
+        const result = await sendModal(
+            updaterWindow,
+            'Request+ Update Ready',
+            'A Request+ update has finished downloading. Restart Request+ now to install it. If you choose Later, it will be applied after you close the app.',
+            ['Restart and Install', 'Later']
+        );
 
-        if (result.response === 0) {
+        if (result === 0) {
             autoUpdater.quitAndInstall();
         }
     });

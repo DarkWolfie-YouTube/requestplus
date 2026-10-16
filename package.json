@@ -1,7 +1,7 @@
 {
   "name": "requestplus",
   "productName": "Request+",
-  "version": "3.1.1-discord",
+  "version": "3.1.2-discord",
   "description": "Supercharged Music Overlay for Streamers!",
   "main": ".vite/build/main.js",
   "scripts": {
@@ -14,11 +14,12 @@
     "publish:update:gui": "node --env-file-if-exists=.env.publisher scripts/bunny-upload-gui.mjs",
     "publish": "electron-forge publish",
     "lint": "echo \"No linting configured\"",
-    "build:appx": "node build-appx.js"
+    "build:appx": "node build-appx.js",
+    "test:oobe": "node --test tests/onboarding.test.mjs"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/DarkWolfie-YouTube/requestplus.git"
+    "url": "https://git.darkwolfie.com/DarkWolfie-YouTube/requestplus.git"
   },
   "keywords": [],
   "author": "Quil DayTrack",
