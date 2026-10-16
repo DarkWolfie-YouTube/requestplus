@@ -443,9 +443,16 @@ async function scheduleWindowsBranchSwitch(
         logPath,
     };
 
-    const helper = spawn(
+    const helperCommand = [
+        'start',
+        '""',
+        '/b',
         'powershell.exe',
-        windowsBranchSwitchArguments(),
+        ...windowsBranchSwitchArguments(),
+    ].join(' ');
+    const helper = spawn(
+        'cmd.exe',
+        ['/d', '/s', '/c', helperCommand],
         {
             stdio: 'ignore',
             windowsHide: true,
@@ -458,15 +465,10 @@ async function scheduleWindowsBranchSwitch(
             resolve();
         });
     });
-    // The spawn event only confirms that Windows created powershell.exe. A hard
-    // app exit immediately afterward can win the scheduling race and terminate
-    // the child before the script executes. Wait for its first log write, which
-    // occurs before it begins waiting for this Request+ process to close.
+    // cmd.exe start launches PowerShell independently from Request+. Wait for
+    // the helper's first log write before allowing the app to exit.
     const readyDeadline = Date.now() + 10_000;
     while (Date.now() < readyDeadline) {
-        if (helper.exitCode !== null) {
-            throw new Error(`The branch-switch helper exited before startup (code ${helper.exitCode})`);
-        }
         try {
             if ((await stat(logPath)).size > 0) break;
         } catch {
@@ -483,10 +485,8 @@ async function scheduleWindowsBranchSwitch(
     if (!helperReady) {
         throw new Error('The branch-switch helper did not start within 10 seconds');
     }
-    // A normal hidden Windows child survives its parent. `detached: true`
-    // causes Windows PowerShell to exit 0 without evaluating the command on
-    // some Windows builds, so release the event-loop reference only after the
-    // startup log proves that the script is running.
+    // The cmd.exe launcher exits after handing the helper to Windows. Release
+    // its event-loop reference after the startup log proves the handoff worked.
     helper.unref();
     logger.info(
         `Scheduled reinstall from ${installedUpdateChannel(DEFAULT_UPDATE_CHANNEL)} to ${selectedChannel}; ` +
