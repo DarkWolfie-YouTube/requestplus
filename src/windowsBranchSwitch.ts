@@ -1,5 +1,4 @@
 export interface WindowsBranchSwitchOptions {
-    helperPath: string;
     updateExecutable: string;
     installerPath: string;
     parentPid: number;
@@ -8,29 +7,29 @@ export interface WindowsBranchSwitchOptions {
 }
 
 /**
- * Keep every path as its own PowerShell argument. Besides handling spaces and
- * plus signs correctly, named parameters make a detached helper much easier to
- * diagnose than interpolating paths into a command string.
+ * Encode the script as UTF-16LE and keep all dynamic values out of the command
+ * line so Windows PowerShell never has to re-parse Squirrel paths containing
+ * spaces and plus signs.
  */
-export function windowsBranchSwitchArguments(options: WindowsBranchSwitchOptions): string[] {
+export function windowsBranchSwitchArguments(): string[] {
     return [
         '-NoProfile',
         '-NonInteractive',
         '-ExecutionPolicy',
         'Bypass',
-        '-File',
-        options.helperPath,
-        '-UpdateExe',
-        options.updateExecutable,
-        '-InstallerPath',
-        options.installerPath,
-        '-ParentPid',
-        String(options.parentPid),
-        '-LaunchExe',
-        options.launchExecutable,
-        '-LogPath',
-        options.logPath,
+        '-EncodedCommand',
+        Buffer.from(WINDOWS_BRANCH_SWITCH_SCRIPT, 'utf16le').toString('base64'),
     ];
+}
+
+export function windowsBranchSwitchEnvironment(options: WindowsBranchSwitchOptions): NodeJS.ProcessEnv {
+    return {
+        REQUESTPLUS_SWITCH_UPDATE_EXE: options.updateExecutable,
+        REQUESTPLUS_SWITCH_INSTALLER: options.installerPath,
+        REQUESTPLUS_SWITCH_PARENT_PID: String(options.parentPid),
+        REQUESTPLUS_SWITCH_LAUNCH_EXE: options.launchExecutable,
+        REQUESTPLUS_SWITCH_LOG: options.logPath,
+    };
 }
 
 /**
@@ -40,13 +39,11 @@ export function windowsBranchSwitchArguments(options: WindowsBranchSwitchOptions
  * helper waits for both Request+ and the old app directories before installing.
  */
 export const WINDOWS_BRANCH_SWITCH_SCRIPT = [
-    'param(',
-    '    [Parameter(Mandatory=$true)][string]$UpdateExe,',
-    '    [Parameter(Mandatory=$true)][string]$InstallerPath,',
-    '    [Parameter(Mandatory=$true)][int]$ParentPid,',
-    '    [Parameter(Mandatory=$true)][string]$LaunchExe,',
-    '    [Parameter(Mandatory=$true)][string]$LogPath',
-    ')',
+    '$UpdateExe = $env:REQUESTPLUS_SWITCH_UPDATE_EXE',
+    '$InstallerPath = $env:REQUESTPLUS_SWITCH_INSTALLER',
+    '$ParentPid = [int]$env:REQUESTPLUS_SWITCH_PARENT_PID',
+    '$LaunchExe = $env:REQUESTPLUS_SWITCH_LAUNCH_EXE',
+    '$LogPath = $env:REQUESTPLUS_SWITCH_LOG',
     "$ErrorActionPreference = 'Stop'",
     'function Write-SwitchLog([string]$Message) {',
     '    Add-Content -LiteralPath $LogPath -Value ("[{0:o}] {1}" -f (Get-Date), $Message) -Encoding UTF8',

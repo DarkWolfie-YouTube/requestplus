@@ -13,7 +13,7 @@ import { Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { setTimeout as wait } from 'node:timers/promises';
 import { checkForNativeUpdate } from './nativeUpdater';
-import { WINDOWS_BRANCH_SWITCH_SCRIPT, windowsBranchSwitchArguments } from './windowsBranchSwitch';
+import { windowsBranchSwitchArguments, windowsBranchSwitchEnvironment } from './windowsBranchSwitch';
 
 declare const __REQUESTPLUS_RELEASE_CHANNEL__: string;
 
@@ -426,32 +426,31 @@ async function scheduleWindowsBranchSwitch(
         throw new Error('The selected Windows branch does not provide an executable installer');
     }
 
-    const helperPath = path.join(
-        app.getPath('temp'),
-        'requestplus-updates',
-        `switch-to-${selectedChannel}.ps1`
-    );
     const logPath = path.join(
         app.getPath('temp'),
         'requestplus-updates',
         `switch-to-${selectedChannel}.log`
     );
     const launchExecutable = path.join(path.dirname(updateExecutable), path.basename(process.execPath));
-    fs.writeFileSync(helperPath, WINDOWS_BRANCH_SWITCH_SCRIPT, 'utf8');
     // A log from a previous attempt must not satisfy this run's startup handshake.
     await rm(logPath, { force: true });
 
+    const switchOptions = {
+        updateExecutable,
+        installerPath,
+        parentPid: process.pid,
+        launchExecutable,
+        logPath,
+    };
+
     const helper = spawn(
         'powershell.exe',
-        windowsBranchSwitchArguments({
-            helperPath,
-            updateExecutable,
-            installerPath,
-            parentPid: process.pid,
-            launchExecutable,
-            logPath,
-        }),
-        { detached: true, stdio: 'ignore', windowsHide: true }
+        windowsBranchSwitchArguments(),
+        {
+            stdio: 'ignore',
+            windowsHide: true,
+            env: { ...process.env, ...windowsBranchSwitchEnvironment(switchOptions) },
+        }
     );
     await new Promise<void>((resolve, reject) => {
         helper.once('error', reject);
@@ -484,6 +483,10 @@ async function scheduleWindowsBranchSwitch(
     if (!helperReady) {
         throw new Error('The branch-switch helper did not start within 10 seconds');
     }
+    // A normal hidden Windows child survives its parent. `detached: true`
+    // causes Windows PowerShell to exit 0 without evaluating the command on
+    // some Windows builds, so release the event-loop reference only after the
+    // startup log proves that the script is running.
     helper.unref();
     logger.info(
         `Scheduled reinstall from ${installedUpdateChannel(DEFAULT_UPDATE_CHANNEL)} to ${selectedChannel}; ` +
