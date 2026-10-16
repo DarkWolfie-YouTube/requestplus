@@ -28,10 +28,12 @@ interface SettingsState {
   theme: string;
   enableRequests: boolean;
   modsOnly: boolean;
+  requestLimitEnabled: boolean;
   requestLimit: number;
   autoPlay: boolean;
   autoAcceptSearchResults: boolean;
   useChannelPoints: boolean;
+  channelPointRequestsEnabled: boolean;
   platform: string;
   filterExplicit: boolean;
   telemetryEnabled: boolean;
@@ -530,6 +532,42 @@ export function Settings({
                 />
               </div>
 
+              <div className="space-y-3 p-3 bg-slate-900/30 rounded-lg">
+                <div className="flex items-center justify-between gap-4">
+                  <div className="space-y-0.5">
+                    <Label className="text-white">{t('CLIENT_LIMIT_PER_USER', locale)}</Label>
+                    <p className="text-xs text-gray-400">
+                      {t('CLIENT_LIMIT_PER_USER_DESC', locale)}
+                    </p>
+                  </div>
+                  <Switch
+                    checked={settings.requestLimitEnabled || false}
+                    onCheckedChange={(checked) =>
+                      setSettings({...settings, requestLimitEnabled: checked})
+                    }
+                  />
+                </div>
+
+                {settings.requestLimitEnabled && (
+                  <div className="space-y-2 border-t border-slate-700/60 pt-3">
+                    <Label className="text-white" htmlFor="requestLimit">{t('CLIENT_REQUEST_LIMIT', locale)}</Label>
+                    <Input
+                      id="requestLimit"
+                      type="number"
+                      min={1}
+                      value={settings.requestLimit || 1}
+                      onChange={(event) =>
+                        setSettings({
+                          ...settings,
+                          requestLimit: Math.max(1, Number.parseInt(event.target.value, 10) || 1)
+                        })
+                      }
+                      className="bg-slate-900/50 border-purple-500/30 text-white"
+                    />
+                  </div>
+                )}
+              </div>
+
               <div className="flex items-center justify-between p-3 bg-slate-900/30 rounded-lg">
                 <div className="space-y-0.5">
                   <Label className="text-white">{t('CLIENT_AUTO_ACCEPT_SEARCH', locale)}</Label>
@@ -574,6 +612,22 @@ export function Settings({
                           <p className="text-sm text-green-200">{t('CLIENT_CHANNEL_POINTS_CREATED_STATUS', locale)}</p>
                           <p className="mt-1 break-all text-xs text-green-100/80">{channelPointId}</p>
                         </div>
+
+                        <div className="flex items-center justify-between gap-4 rounded-lg border border-slate-700/60 bg-slate-950/40 p-3">
+                          <div className="space-y-0.5">
+                            <Label className="text-white">{t('CLIENT_CHANNEL_POINT_REQUESTS_TITLE', locale)}</Label>
+                            <p className="text-xs text-gray-400">
+                              {t('CLIENT_CHANNEL_POINT_REQUESTS_DESC', locale)}
+                            </p>
+                          </div>
+                          <Switch
+                            checked={settings.channelPointRequestsEnabled ?? true}
+                            onCheckedChange={(checked) =>
+                              setSettings({...settings, channelPointRequestsEnabled: checked})
+                            }
+                          />
+                        </div>
+
                         <button
                           type="button"
                           onClick={deleteChannelPoint}
@@ -935,7 +989,7 @@ export function Settings({
             <div>
               <h3 className="text-white font-medium">{t('CLIENT_ABOUT_TITLE', locale)}</h3>
               <p className="text-sm text-gray-400">
-                Version 2.3.0 • Built for streamers by streamers
+                Version 3.0.3 • Built for streamers by streamers
               </p>
             </div>
 

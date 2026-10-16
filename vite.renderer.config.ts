@@ -6,5 +6,13 @@ export default defineConfig(async () => {
   
   return {
     plugins: [react(), tailwindcss()],
+    build: {
+      rollupOptions: {
+        input: {
+          main_window: 'index.html',
+          oobe_window: 'oobe.html',
+        },
+      },
+    },
   };
 });

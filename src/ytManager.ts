@@ -60,7 +60,9 @@ class YTManager extends EventEmitter {
     private cachedRepeat: 'NONE' | 'ALL' | 'ONE' | null = null;
     private cachedShuffle: boolean | null = null;
 
-    constructor(Logger: Logger) {
+    private started = false;
+
+    constructor(Logger: Logger, autoConnect = true) {
         super();
         this.apiBaseUrl = 'http://localhost:26538/api/v1';
         this.wsBaseUrl  = 'ws://localhost:26538/api/v1/ws';
@@ -77,7 +79,13 @@ class YTManager extends EventEmitter {
             },
         });
 
-        // Load existing token or create new one
+        if (autoConnect) this.start();
+    }
+
+    /** Do not prompt for Pear authorization until this player is selected. */
+    public start(): void {
+        if (this.started) return;
+        this.started = true;
         this.initializeToken().catch((error) => {
             this.logger.warn(`[YTManager] Pear Desktop is not reachable. Make sure Pear is open and the Pear API port is set to 26538. ${this.formatErrorMessage(error)}`);
         });
@@ -180,7 +188,7 @@ class YTManager extends EventEmitter {
             return response.data;
         } catch (error: any) {
             if (error.response?.status === 401) {
-                console.log(`[YTManager] ${endpoint || 'Request'} got 401, refreshing token and retrying`);
+                this.logger.warn(`[YTManager] ${endpoint || 'Request'} got 401, refreshing token and retrying`);
                 // Token expired, get new one and retry once
                 await this.newToken();
                 try {
@@ -191,7 +199,7 @@ class YTManager extends EventEmitter {
                     }
                     return retryResponse.data;
                 } catch (retryError: any) {
-                    console.error(`[YTManager] ${endpoint || 'Request'} retry failed:`, retryError.message);
+                    this.logger.error(`[YTManager] ${endpoint || 'Request'} retry failed: ${retryError.message}`);
                     return null;
                 }
             }
@@ -209,9 +217,12 @@ class YTManager extends EventEmitter {
         }
 
         try {
-            this.ws = new WebSocket(this.wsBaseUrl, {
-                headers: { 'Authorization': `Bearer ${this.token}` }
-            });
+            // Pear authenticates the WS handshake via a ?token= query param, NOT the
+            // Authorization header — sending the header alone makes Pear accept the
+            // upgrade and then immediately close the socket with 1008 Unauthorized.
+            // (The same token still works as a Bearer header for the REST endpoints.)
+            const wsUrl = `${this.wsBaseUrl}?token=${encodeURIComponent(this.token)}`;
+            this.ws = new WebSocket(wsUrl);
 
             this.ws.on('open', () => {
                 this.wsConnected = true;
@@ -225,9 +236,19 @@ class YTManager extends EventEmitter {
             this.ws.on('message', (data: WebSocket.Data) => {
                 try {
                     const msg = JSON.parse(data.toString()) as { type: string; [key: string]: any };
-                    console.log('[YTManager] WS message received:', msg);
 
                     switch (msg.type) {
+                        case 'PLAYER_INFO':
+                            // Pear's full-state snapshot: song + transport state in one frame.
+                            // This is the event Pear actually emits on song/state changes.
+                            if (msg.song) {
+                                this.cachedSong = { ...msg.song, elapsedSeconds: msg.position ?? msg.song.elapsedSeconds ?? 0 };
+                            }
+                            if (typeof msg.repeat === 'string') this.cachedRepeat = msg.repeat as 'NONE' | 'ALL' | 'ONE';
+                            if (typeof msg.shuffle === 'boolean') this.cachedShuffle = msg.shuffle;
+                            this.emit('state-update', this.cachedSong);
+                            break;
+
                         case 'VIDEO_CHANGED':
                             // Full song object provided — replace cache entirely
                             this.cachedSong = { ...msg.song, elapsedSeconds: msg.position ?? 0 };
@@ -280,10 +301,14 @@ class YTManager extends EventEmitter {
                 }
             });
 
-            this.ws.on('close', () => {
+            this.ws.on('close', (code: number, reason: Buffer) => {
                 this.wsConnected = false;
-                this.logger.warn('[YTManager] WebSocket disconnected, reconnecting in 5s');
+                this.logger.warn(`[YTManager] WebSocket disconnected (code=${code} reason=${JSON.stringify(reason?.toString() || '')}), reconnecting in 5s`);
                 this.scheduleWSReconnect();
+            });
+
+            this.ws.on('unexpected-response', (_req, res: any) => {
+                this.logger.warn(`[YTManager] WebSocket upgrade rejected: HTTP ${res?.statusCode}`);
             });
 
             this.ws.on('error', (err: Error) => {
@@ -316,11 +341,19 @@ class YTManager extends EventEmitter {
     // ── REST fallbacks ────────────────────────────────────────────────────────
 
     async getCurrentSong(): Promise<songData | null> {
-        return this.makeAuthenticatedRequest<songData>(() =>
+        const song = await this.makeAuthenticatedRequest<songData>(() =>
             this.instance.get('/song', {
                 headers: { 'Authorization': `Bearer ${this.token}` }
             }), '/song'
         );
+
+        // Pear answers 204 No Content while it is still starting up and no track
+        // is loaded yet. makeAuthenticatedRequest turns that into the `true`
+        // sentinel it uses for the control endpoints, which have no body — but
+        // `true` is not song data. It survives a plain truthiness check and every
+        // field read off it is undefined, which is how a missing title reached the
+        // renderer and how "not paused" turned into "playing".
+        return song && typeof song === 'object' ? song : null;
     }
 
     async getVolume(): Promise<volumeState | null> {
@@ -364,6 +397,42 @@ class YTManager extends EventEmitter {
     }
 
     // Control methods
+    /**
+     * Pear reports isPaused:false for a track it has only loaded, so a toggle from
+     * that state goes towards pause and the first play never happens — the button
+     * looks dead until the track has been started once inside Pear. Asking for the
+     * direction explicitly avoids guessing against a state Pear reports wrongly.
+     */
+    async play(): Promise<void> {
+        await this.makeAuthenticatedRequest(() =>
+            this.instance.post('/play', {}, {
+                headers: { 'Authorization': `Bearer ${this.token}` }
+            }), '/play'
+        );
+        this.refreshSongStateSoon();
+    }
+
+    async pause(): Promise<void> {
+        await this.makeAuthenticatedRequest(() =>
+            this.instance.post('/pause', {}, {
+                headers: { 'Authorization': `Bearer ${this.token}` }
+            }), '/pause'
+        );
+        this.refreshSongStateSoon();
+    }
+
+    /** Pear does not always push a state change, so re-read shortly after a command. */
+    private refreshSongStateSoon(): void {
+        setTimeout(() => {
+            this.getCurrentSong().then(song => {
+                if (song) {
+                    this.cachedSong = song;
+                    this.emit('state-update', this.cachedSong);
+                }
+            }).catch(() => {});
+        }, 800);
+    }
+
     async playPause(): Promise<void> {
         await this.makeAuthenticatedRequest(() =>
             this.instance.post('/toggle-play', {}, {
@@ -387,6 +456,7 @@ class YTManager extends EventEmitter {
                 headers: { 'Authorization': `Bearer ${this.token}` }
             }), '/next'
         );
+        this.refreshCurrentSongSoon();
     }
 
     async previous(): Promise<void> {
@@ -395,6 +465,23 @@ class YTManager extends EventEmitter {
                 headers: { 'Authorization': `Bearer ${this.token}` }
             }), '/previous'
         );
+        this.refreshCurrentSongSoon();
+    }
+
+    /**
+     * After a track-changing command, the WS VIDEO_CHANGED event may be missing
+     * (e.g. Pear closed the socket). Pull the fresh song via REST so the cache and
+     * any listeners reflect the new track without waiting for the next poll tick.
+     */
+    private refreshCurrentSongSoon(): void {
+        setTimeout(() => {
+            this.getCurrentSong().then(song => {
+                if (song) {
+                    this.cachedSong = song;
+                    this.emit('state-update', this.cachedSong);
+                }
+            }).catch(() => {});
+        }, 500);
     }
 
     async toggleLike(): Promise<void> {
@@ -458,6 +545,54 @@ class YTManager extends EventEmitter {
             }), `/queue/${videoId}`
         );
         return result !== null && result !== undefined;
+    }
+
+    /** Pull the per-item renderer out of YTM's nested queue item shape. */
+    private static queueItemRenderer(item: any): any {
+        return item?.playlistPanelVideoRenderer
+            ?? item?.playlistPanelVideoWrapperRenderer?.primaryRenderer?.playlistPanelVideoRenderer
+            ?? null;
+    }
+
+    /**
+     * Read Pear's live play queue. Returns the ordered videoIds and the index of
+     * the track currently playing (the one flagged `selected`), or null on error.
+     */
+    async getQueueState(): Promise<{ selectedIndex: number; videoIds: string[] } | null> {
+        const data = await this.makeAuthenticatedRequest<any>(() =>
+            this.instance.get('/queue', {
+                headers: { 'Authorization': `Bearer ${this.token}` }
+            }), '/queue'
+        );
+        if (!data || !Array.isArray(data.items)) return null;
+
+        const videoIds: string[] = [];
+        let selectedIndex = -1;
+        data.items.forEach((item: any, i: number) => {
+            const renderer = YTManager.queueItemRenderer(item);
+            videoIds.push(renderer?.videoId ?? '');
+            if (renderer?.selected) selectedIndex = i;
+        });
+        return { selectedIndex, videoIds };
+    }
+
+    /**
+     * Poll the queue until `videoId` sits immediately after the currently playing
+     * track. POST /queue returns 200 before YTM actually applies the insert, so
+     * waiting for the queue to reflect it (instead of a blind delay) lets a
+     * following next() reliably land on our request rather than YTM autoplay.
+     * Returns true once confirmed, false if it didn't appear within the timeout.
+     */
+    async waitUntilQueuedNext(videoId: string, timeoutMs = 5000): Promise<boolean> {
+        const start = Date.now();
+        while (Date.now() - start < timeoutMs) {
+            const state = await this.getQueueState();
+            if (state && state.selectedIndex >= 0 && state.videoIds[state.selectedIndex + 1] === videoId) {
+                return true;
+            }
+            await new Promise(resolve => setTimeout(resolve, 300));
+        }
+        return false;
     }
 
     /** Fetch title + author for a video ID via YouTube's public oEmbed API (no auth needed). */

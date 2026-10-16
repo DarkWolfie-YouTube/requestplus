@@ -1,10 +1,17 @@
-import { app, BrowserWindow, ipcMain, dialog, shell, MessageBoxOptions, MessageBoxReturnValue, net, session, Tray, Menu} from 'electron';
+import { app, BrowserWindow, ipcMain, shell, MessageBoxOptions, MessageBoxReturnValue, net, session, Tray, Menu} from 'electron';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { setTimeout as wait } from 'node:timers/promises';
-import { checkForUpdates, resolveModal } from './updateChecker';
+import {
+    checkForUpdates,
+    getAvailableUpdateChannels,
+    getSettings,
+    resolveModal,
+    sendModal,
+    setPreReleaseCheck,
+    setUpdateChannel
+} from './updateChecker';
 import QueueHandler, { Queue, QueueItem } from './queueHandler';
-import { updateElectronApp } from 'update-electron-app';
 
 //Handlers
 import websocket from './websocket';
@@ -12,7 +19,7 @@ import { TrackData } from './websocket';
 
 import logger from './logger';
 import { 
-  authManager, 
+  authManager, apiClient,
   setupDeepLinkHandling, 
   setupAuthEventListeners
 } from './authmanager';
@@ -24,6 +31,10 @@ import { songData, YTManager } from './ytManager';
 import PlaybackHandler, { songInfo } from './playbackHandler';
 import GTSHandler from './gtsHandler';
 import AMHandler from './amhandler';
+import WindowHandler from './window';
+import { setupPatch, finishSetup, SetupRequestCheck, type SetupFinishInput, type SetupStatus, type SetupConnections } from './onboarding';
+import { WEBSITE_URL } from './config';
+import { LOCAL_PLAYBACK_WEBSOCKET_PORTS } from './localPorts';
 
 var handleStartupEvent = function() {
   if (process.platform !== 'win32') {
@@ -54,7 +65,22 @@ var handleStartupEvent = function() {
 };
 
 handleStartupEvent();
-updateElectronApp();
+
+// Must run before app 'ready' fires, so hardware acceleration can only be toggled
+// here via a direct settings.json read rather than through the SettingsHandler
+// instance created later during app startup.
+(function applyStartupHardwareAccelerationSetting(): void {
+    try {
+        const settingsPath = path.join(app.getPath('userData'), 'settings.json');
+        if (!fs.existsSync(settingsPath)) return;
+        const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'));
+        if (settings.hardwareAcceleration === false) {
+            app.disableHardwareAcceleration();
+        }
+    } catch (error) {
+        console.error('Failed to read hardwareAcceleration startup setting:', error);
+    }
+})();
 
 
 // Type definitions
@@ -85,7 +111,8 @@ interface WSCommand {
 }
 
 interface UpdateSettings {
-    preRelease?: boolean;
+    checkPreReleases: boolean;
+    channel: string;
     [key: string]: any;
 }
 
@@ -155,6 +182,64 @@ function sendSongRequestResponse(message: WebSocketMessage, code: string, extra:
     });
 }
 
+function sendSongSearchResponse(message: WebSocketMessage, code: string, extra: Record<string, any> = {}): void {
+    websocketManager.send({
+        type: 'song_search_response',
+        message: code,
+        username: message.username,
+        msgID: message.messageId,
+        platform: message.platform,
+        channel: message.channel,
+        ...extra
+    });
+}
+
+function getActiveRequestCountForUser(username: string | undefined): number {
+    if (!queueHandler || !username) return 0;
+
+    const normalizedUsername = username.trim().toLowerCase();
+    if (!normalizedUsername) return 0;
+
+    return queueHandler.getQueue().items.filter((item) => {
+        return String(item.requestedBy || '').trim().toLowerCase() === normalizedUsername;
+    }).length;
+}
+
+function isPrivilegedRequester(message: WebSocketMessage): boolean {
+    const tags = message.tags || {};
+    const badges = tags.badges || message.badges || {};
+
+    return Boolean(
+        tags.mod ||
+        tags.broadcaster ||
+        tags.isBroadcaster ||
+        tags.vip ||
+        badges.broadcaster ||
+        badges.moderator ||
+        badges.vip ||
+        message.isMod ||
+        message.isBroadcaster ||
+        message.isVip
+    );
+}
+
+function getSongRequestRejection(message: WebSocketMessage): { code: string; limit?: number } | null {
+    if (!settings.enableRequests) {
+        return { code: 'ERR_RP_DISABLED' };
+    }
+
+    if (isPrivilegedRequester(message)) return null;
+
+    if (!settings.requestLimitEnabled) return null;
+
+    const limit = Math.max(1, Number(settings.requestLimit || 1));
+    if (getActiveRequestCountForUser(message.username) >= limit) {
+        return { code: 'ERR_REQUEST_LIMIT', limit };
+    }
+
+    return null;
+}
+
 
 // Global variables with proper typing
 let WSServer: websocket;
@@ -173,6 +258,22 @@ let queueHandler: QueueHandler;
 let currentTrackId: string | null = null;
 let currentTrackId2: string | null = null;
 let autoQueueTriggered: boolean = false;
+/**
+ * Request that was handed to the player and is expected to start next.
+ *
+ * Every player takes a handoff as "play next" rather than as "append" (YouTube
+ * sends INSERT_AFTER_CURRENT_VIDEO, Cider posts to /queue/add-next), so a second
+ * handoff would insert itself in front of this one and skip it. Request+ therefore
+ * hands over one request at a time and waits for it to actually start.
+ *
+ * Cleared on every track change: whatever happened, this request either started
+ * or the player moved past it, so nothing is left waiting. Only ever one at a
+ * time, which is what makes clearing it on the first track change correct.
+ */
+let awaitingStartTrackId: string | null = null;
+/** Number of test requests still to be seeded on startup (see getDebugSeedCount). */
+let debugSeedPending: number = 0;
+let youtubeAdvanceTimer: NodeJS.Timeout | null = null;
 let lastTrackProgress: number = 0;
 let ytManager: YTManager;
 let playbackHandler: PlaybackHandler;
@@ -183,6 +284,17 @@ let tray: Tray | null = null;
 let isQuitting: boolean = false;
 let tokenRefreshTimer: NodeJS.Timeout | null = null;
 let soundCloudQueueTimer: NodeJS.Timeout | null = null;
+let windowHandler: WindowHandler | null = null;
+let isCreatingMainWindow = false;
+let revealMainWindowAfterCloudAuth = false;
+
+/**
+ * How long to wait for a connected client to return song search results.
+ * Generous on purpose: the lookup goes out to the streaming service, so on a slow
+ * connection it can take several seconds. Giving up early makes Request+ answer
+ * the viewer before the music app has responded.
+ */
+const SEARCH_RESULT_TIMEOUT_MS = 15000;
 
 function getQueueItemTrackId(item: QueueItem): string {
     const requestedBySuffix = `-${item.requestedBy}`;
@@ -215,6 +327,23 @@ function normalizeQueueText(value: string | null | undefined): string {
         .replace(/\s+/g, ' ');
 }
 
+// YouTube Music labels its auto-generated audio uploads with a "- Topic" artist
+// suffix; strip it so "The Butcher Sisters - Topic" matches "The Butcher Sisters".
+function stripTopicSuffix(value: string): string {
+    return value.replace(/\s*-\s*topic$/, '').trim();
+}
+
+// Drop decoration noise ("(Offizielles Musikvideo)", "[Official Video]", etc.)
+// and punctuation so a requested music-video title can be compared against the
+// cleaned-up title YouTube Music reports for the same song.
+function stripTitleDecorations(value: string): string {
+    return value
+        .replace(/[([{][^)\]}]*[)\]}]/g, ' ')
+        .replace(/\b(official|offiziell|offizielles|music|musikvideo|video|audio|lyric|lyrics|visualizer|hd|hq|4k|mv)\b/g, ' ')
+        .replace(/[^a-z0-9]+/g, ' ')
+        .trim();
+}
+
 function queueItemMatchesTrack(item: QueueItem, trackData: TrackData, trackId: string): boolean {
     const queueTrackId = normalizeTrackIdForQueueMatch(getQueueItemTrackId(item));
     if (queueTrackId && trackId && queueTrackId === trackId) {
@@ -230,7 +359,49 @@ function queueItemMatchesTrack(item: QueueItem, trackData: TrackData, trackId: s
     const trackTitle = normalizeQueueText(trackData.title || trackData.name);
     const trackArtist = normalizeQueueText(trackData.artist || trackData.artistName || (trackData as any).artist_name);
 
-    return Boolean(itemTitle && itemArtist && itemTitle === trackTitle && itemArtist === trackArtist);
+    if (itemTitle && itemArtist && itemTitle === trackTitle && itemArtist === trackArtist) {
+        return true;
+    }
+
+    // YouTube Music swaps a requested "official video" for its own "- Topic"
+    // upload, which carries a DIFFERENT videoId and a cleaned-up title/artist.
+    // Without this lenient fallback the playing track never maps back to the
+    // queued request, so it's never marked playing or removed and the queue
+    // fills up with stuck "Queued" entries.
+    if (item.platform === 'youtube') {
+        const qTitle = stripTitleDecorations(itemTitle);
+        const tTitle = stripTitleDecorations(trackTitle);
+        const qArtist = stripTopicSuffix(itemArtist);
+        const tArtist = stripTopicSuffix(trackArtist);
+
+        const artistMatches = Boolean(qArtist && tArtist &&
+            (qArtist === tArtist || qArtist.includes(tArtist) || tArtist.includes(qArtist)));
+
+        // Compare titles by tokens: every word of the shorter title must appear
+        // in the longer one (so "Party Sahne" matches "Ski Aggu - Party Sahne
+        // (prod. ...)"). oEmbed reports the uploader's channel handle as the
+        // "artist" (e.g. "aggu31"), which almost never equals YTM's real artist
+        // field — so a solid title match alone counts; the artist match only
+        // serves to let very short titles through.
+        const qTokens = qTitle.split(' ').filter(Boolean);
+        const tTokens = tTitle.split(' ').filter(Boolean);
+        const [fewTokens, manyTokens] = qTokens.length <= tTokens.length ? [qTokens, tTokens] : [tTokens, qTokens];
+        const manySet = new Set(manyTokens);
+        const titleTokensMatch = fewTokens.length > 0 && fewTokens.every(tok => manySet.has(tok));
+        const shorterTitleLen = fewTokens.join('').length;
+
+        // A single shared title word (e.g. "Perfect", "Holiday") is too weak to
+        // claim a queue item on its own — two unrelated songs could share it. So
+        // a multi-word title can match on title alone, but a single-word title
+        // additionally needs a corroborating artist match.
+        const multiWordTitle = fewTokens.length >= 2 && shorterTitleLen >= 6;
+
+        if (titleTokensMatch && (multiWordTitle || artistMatches)) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 function getTrackIdFromTrackData(trackData: TrackData): string | null {
@@ -274,6 +445,8 @@ async function monitorTrackProgress(trackData: songInfo): Promise<void> {
     if (currentTrackId === trackId && lastTrackProgress > 0 && progress + 5000 < lastTrackProgress) {
         currentTrackId2 = null;
         autoQueueTriggered = false;
+        awaitingStartTrackId = null;
+        clearYoutubeAdvanceTimer();
         Logger.info(`Playback progress restarted for same track: ${trackId}`);
     }
 
@@ -292,8 +465,22 @@ async function monitorTrackProgress(trackData: songInfo): Promise<void> {
 
     if (currentTrackId !== trackId) {
         currentTrackId = trackId;
-        currentTrackId2 = null;
+        // Note: we deliberately do NOT reset currentTrackId2 here. YouTube Music
+        // sometimes swaps a song's videoId mid-playback (official video → "- Topic"
+        // audio), which counts as a new track. Keeping currentTrackId2 lets the
+        // "already handled" guard in checkCurrentlyPlayingTrack suppress a second
+        // "Now Playing" toast for the same queued item across that swap.
         autoQueueTriggered = false;
+        // The handed-over request either starts now or the player moved past it.
+        // Either way nothing is waiting any more, so the next handoff may go out.
+        if (awaitingStartTrackId) {
+            const awaited = queue.items.find(item => item.id === awaitingStartTrackId);
+            if (awaited && normalizeTrackIdForQueueMatch(getQueueItemTrackId(awaited)) !== normalizeTrackIdForQueueMatch(trackId)) {
+                Logger.warn(`Player moved on without playing "${awaited.title}"; it stays queued but no longer blocks the auto-queue`);
+            }
+            awaitingStartTrackId = null;
+        }
+        clearYoutubeAdvanceTimer();
         lastTrackProgress = progress;
         Logger.info(`New track detected: ${trackId}`);
         checkCurrentlyPlayingTrack(trackData);
@@ -326,42 +513,70 @@ async function autoQueueNextTrack(): Promise<void> {
         return;
     }
 
-    const nextTrack = queue.items[0];
+    // Give the request that was already handed over its chance to start before
+    // looking for the next one. Handing over a second one now would insert it in
+    // front of the first and skip it.
+    if (awaitingStartTrackId) {
+        Logger.info('Auto-queue: a request is still waiting to start; skipping this round');
+        return;
+    }
+
+    // Pick the first request that hasn't already been handed to the player and
+    // isn't the track currently playing. Taking items[0] blindly re-queued a
+    // song that was already on its way, so it got added — and played — twice.
+    const nextTrack = queueHandler.getNextTrackToQueue();
+    if (!nextTrack) {
+        Logger.info('No un-queued tracks left to auto-add');
+        return;
+    }
 
     try {
-        if (settings.platform === 'spotify') {
-            if (nextTrack.platform === 'spotify') {
-                WSServer.WSSendToType({
-                    command: 'addTrack',
-                    data: { uri: `spotify:track:${getQueueItemTrackId(nextTrack)}` }
-                }, 'spotify');
+        // Only mark the request as queued once it was actually handed to the
+        // player. Marking on failure (or when no platform branch matched) would
+        // leave it stuck on the "Queued" badge while it never reaches playback.
+        let dispatched = false;
+        if (settings.platform === 'spotify' && nextTrack.platform === 'spotify') {
+            WSServer.WSSendToType({
+                command: 'addTrack',
+                data: { uri: `spotify:track:${getQueueItemTrackId(nextTrack)}` }
+            }, 'spotify');
+            dispatched = true;
+        } else if (settings.platform === 'apple' && nextTrack.platform === 'apple') {
+            await amHandler.queueTrack(getQueueItemTrackId(nextTrack));
+            dispatched = true;
+        } else if (settings.platform === 'youtube' && ytManager && nextTrack.platform === 'youtube') {
+            const youtubeVideoId = getQueueItemTrackId(nextTrack);
+            dispatched = await ytManager.addItemToQueueById(youtubeVideoId);
+            if (dispatched) {
+                // YouTube Music's autoplay sometimes stalls (or starts radio) instead
+                // of playing the request we just inserted, so playback gets stuck when
+                // the current track ends. Arm a one-shot safety net that actively
+                // advances to our request iff the player is genuinely stuck at the end.
+                scheduleYoutubeEndAdvance(youtubeVideoId);
             }
-        } else if (settings.platform === 'apple') {
-            if (nextTrack.platform === 'apple') {
-                amHandler.queueTrack(getQueueItemTrackId(nextTrack));
-            }
-        } else if (settings.platform === 'youtube' && ytManager) {
-            if (nextTrack.platform === 'youtube') {
-                await ytManager.addItemToQueueById(getQueueItemTrackId(nextTrack));
-            }
-        } else if (settings.platform === 'soundcloud') {
-            if (nextTrack.platform === 'soundcloud') {
-                WSServer.WSSendToType({
-                    command: 'addTrack',
-                    data: { url: getQueueItemTrackId(nextTrack), forcePlay: true }
-                } as WSCommand, 'soundcloud');
-            }
+        } else if (settings.platform === 'soundcloud' && nextTrack.platform === 'soundcloud') {
+            WSServer.WSSendToType({
+                command: 'addTrack',
+                data: { url: getQueueItemTrackId(nextTrack), forcePlay: true }
+            } as WSCommand, 'soundcloud');
+            dispatched = true;
+        }
+
+        if (!dispatched) {
+            Logger.warn(`Auto-queue: could not hand "${nextTrack.title}" to the player; leaving it pending`);
+            return;
         }
 
         Logger.info(`Auto-queued track: ${nextTrack.title} by ${nextTrack.artist}`);
-        
+
         sendToast(
             `Auto-queued: ${nextTrack.title} by ${nextTrack.artist}`,
             'info',
             4000
         );
 
-        await queueHandler.setTrackAsQueued(0);
+        await queueHandler.setTrackAsQueued(queueHandler.findTrackById(nextTrack.id));
+        awaitingStartTrackId = nextTrack.id;
 
     } catch (error) {
         Logger.error('Error auto-queueing track:', error);
@@ -394,6 +609,57 @@ function scheduleSoundCloudQueueAdvance(): void {
     }, delayMs);
 }
 
+function clearYoutubeAdvanceTimer(): void {
+    if (youtubeAdvanceTimer) {
+        clearTimeout(youtubeAdvanceTimer);
+        youtubeAdvanceTimer = null;
+    }
+}
+
+/**
+ * Safety net for YouTube auto-advance. Request+ pre-queues the next request ~10s
+ * before the current track ends and normally relies on YouTube Music to auto-play
+ * it. When YTM's autoplay stalls (it would otherwise start radio, or autoplay is
+ * off) playback gets stuck on the finished track. We schedule a one-shot check for
+ * just after the natural end; forceYoutubeAdvanceIfStalled only acts if the player
+ * is genuinely stuck on the ended track with our request queued right after it.
+ */
+function scheduleYoutubeEndAdvance(queuedVideoId: string): void {
+    clearYoutubeAdvanceTimer();
+    const current = currentSongInformation;
+    if (!current || !current.id || !current.duration) return;
+    const currentVideoId = current.id;
+    const remaining = current.duration - current.progress; // ms
+    // Fire shortly after the song would naturally end, giving YTM's own autoplay
+    // the first chance — if it worked, the check below is a no-op.
+    const delay = Math.max(0, remaining) + 750;
+    youtubeAdvanceTimer = setTimeout(() => {
+        youtubeAdvanceTimer = null;
+        void forceYoutubeAdvanceIfStalled(currentVideoId, queuedVideoId);
+    }, delay);
+}
+
+async function forceYoutubeAdvanceIfStalled(currentVideoId: string, queuedVideoId: string): Promise<void> {
+    if (!ytManager) return;
+    try {
+        const song = await ytManager.getCurrentSong();
+        // Player already moved on (autoplay worked) — nothing to do.
+        if (!song || song.videoId !== currentVideoId) return;
+        // Same track but not actually at its end (paused or seeked back) — never cut
+        // a song that is still playing.
+        if ((song.songDuration - song.elapsedSeconds) > 3) return;
+        const state = await ytManager.getQueueState();
+        if (!state || state.selectedIndex < 0) return;
+        // Only advance when our request is genuinely the very next item, so we never
+        // fall through to YouTube Music's radio/autoplay.
+        if (state.videoIds[state.selectedIndex + 1] !== queuedVideoId) return;
+        Logger.info(`Auto-advance: YouTube stalled at the end of ${currentVideoId}; advancing to queued request ${queuedVideoId}`);
+        await ytManager.next();
+    } catch (error) {
+        Logger.error('Auto-advance: end-of-track check failed', error);
+    }
+}
+
 async function checkCurrentlyPlayingTrack(trackData: TrackData): Promise<void> {
     if (!queueHandler || !trackData) return;
 
@@ -408,37 +674,56 @@ async function checkCurrentlyPlayingTrack(trackData: TrackData): Promise<void> {
         if (currentTrackId2 === matchingQueueItemId) {
             return;
         }
+        // currentTrackId2 can be cleared spuriously — e.g. the progress-rewind
+        // guard firing when YouTube Music swaps a song's videoId mid-play (MV ->
+        // "- Topic"). If this item is already flagged as playing, just re-sync the
+        // claim instead of toasting and scheduling its removal a second time.
+        if (queue.items[matchingTrackIndex].iscurrentlyPlaying) {
+            currentTrackId2 = matchingQueueItemId;
+            return;
+        }
         const progress = trackData.progress || 0;
         const duration = trackData.duration || 0;
         const restartWindow = Math.min(15000, Math.max(3000, duration * 0.25));
 
-        if (currentTrackId === normalizedTrackId && currentTrackId2 && progress > restartWindow) {
+        // Only defer if the track we already claimed is the one actually playing
+        // right now (same song, well past its start). currentTrackId2 is no longer
+        // reset on every videoId change, so without this check a genuinely new
+        // queued song that's first seen mid-progress would be wrongly suppressed
+        // and left stuck as "Queued".
+        const claimedItem = currentTrackId2 ? queue.items.find(it => it.id === currentTrackId2) : undefined;
+        const claimedTrackIsPlaying = Boolean(claimedItem &&
+            normalizeTrackIdForQueueMatch(getQueueItemTrackId(claimedItem)) === normalizedTrackId);
+
+        if (claimedTrackIsPlaying && progress > restartWindow) {
             Logger.info(`Same track is still playing for ${currentTrackId2}; waiting before handling ${matchingQueueItemId}`);
             return;
         }
 
         Logger.info(`Currently playing track matches queue item at index ${matchingTrackIndex}`);
-        if (matchingTrackIndex !== 0) {
-          Logger.info('Song is not at the top of the queue. Stopping.') 
-          return; 
-        }
-        
-        await queueHandler.setCurrentlyPlaying(matchingTrackIndex);
-        
+
+        // Claim this track synchronously, before any await, so the WS ticks that
+        // fire while setCurrentlyPlaying() is pending don't all pass the guard
+        // above and show the "Now Playing" toast three or four times.
+        currentTrackId2 = matchingQueueItemId;
+
         const track = queue.items[matchingTrackIndex];
+        await queueHandler.setCurrentlyPlaying(matchingTrackIndex);
+
         sendToast(
             `Now Playing from Queue: ${track.title}`,
             'success',
             3000
         );
         Logger.info(`Now playing from queue: ${track.title} by ${track.artist}`);
-        
-        currentTrackId2 = matchingQueueItemId;
 
+        // Drop it from the pending queue shortly after it starts playing. The
+        // long 10s delay made finished songs look like they were "stuck" in the
+        // queue; a short grace still lets the "Now Playing" highlight register.
         setTimeout(async () => {
             await queueHandler.removeFromQueueById(matchingQueueItemId);
             Logger.info(`Removed played track from queue: ${track.title}`);
-        }, 10000);
+        }, 2500);
     }
 }
 
@@ -491,49 +776,87 @@ async function ensureOverlayFile(): Promise<string> {
     return targetPath;
 }
 
-async function createWindow(): Promise<void> {
-    
-    const customSession = session.fromPartition('persist:api-session', { cache: false });
-    
-    customSession.setCertificateVerifyProc((request, callback) => {
-        if (request.hostname === 'api.requestplus.xyz') {
-            callback(0); // 0 = success, bypass verification
-        } else {
-            callback(-3); // -3 = use default verification
-        }
-    });
-    const request = net.request({
-        method: 'GET',
-        url: 'https://api.requestplus.xyz/hardware/check?id=' + authManager.getHardwareInfoPublic()?.deviceId,
-        session: customSession
-    });
+async function checkHardwareBanStatus(): Promise<void> {
+    await authManager.ready();
 
-    request.on('response', (response) => {
-        let body = '';
-        response.on('data', (chunk) => { body += chunk; });
-        response.on('end', () => {
-            try {
-                const data = JSON.parse(body);
-                if (data.banned) app.quit();
-            } catch (e) {
-                if (Logger) Logger.error('Error parsing response:', e);
-                app.quit();
-            }
+    const hardwareInfo = authManager.getHardwareInfoPublic();
+    if (!hardwareInfo?.deviceId) {
+        Logger?.warn('[Main] Skipping hardware ban check because device ID is unavailable.');
+        return;
+    }
+
+    await new Promise<void>((resolve) => {
+        let settled = false;
+        const finish = () => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timeout);
+            resolve();
+        };
+        const timeout = setTimeout(() => {
+            Logger?.warn('[Main] Hardware ban check timed out; continuing startup.');
+            request.abort();
+            finish();
+        }, 5000);
+        const request = net.request({
+            method: 'GET',
+            url: 'https://api.requestplus.xyz/hardware/check?id=' + encodeURIComponent(hardwareInfo.deviceId)
         });
-    });
 
-    request.on('error', (error) => {
-        if (Logger) Logger.error('Error checking hardware ban status:', error);
-        app.quit();
-    });
+        request.on('response', (response) => {
+            let body = '';
+            response.on('data', (chunk) => { body += chunk; });
+            response.on('end', () => {
+                try {
+                    const data = JSON.parse(body);
+                    if (data.banned) app.quit();
+                } catch (e) {
+                    Logger?.error('[Main] Error parsing hardware ban response:', e);
+                } finally {
+                    finish();
+                }
+            });
+        });
 
-    request.end();
+        request.on('error', (error) => {
+            Logger?.error('[Main] Error checking hardware ban status:', error);
+            finish();
+        });
+
+        request.end();
+    });
+}
+
+async function createWindow(allowIncompleteSetup = false): Promise<void> {
+    if (isCreatingMainWindow) return;
+    isCreatingMainWindow = true;
+    let createdWindow: BrowserWindow | null = null;
+    try {
+    await checkHardwareBanStatus();
+    const currentSettings = settingsHandler.load();
+    if (currentSettings.oobeCompleted !== true && !allowIncompleteSetup) {
+        await ensureOverlayFile();
+        settings = currentSettings;
+        const setupWindow = createStartupOobeWindow();
+        initializeLocalRuntime(setupWindow);
+        void connectSetupCloud();
+        return;
+    }
+
+    if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.setMinimumSize(400, 800);
+        mainWindow.setSize(400, 800);
+        showMainWindow();
+        return;
+    }
 
     await ensureOverlayFile();
 
     mainWindow = new BrowserWindow({
-        width: 600,
-        height: 1000,
+        width: 400,
+        height: 800,
+        minWidth: 400,
+        minHeight: 800,
         webPreferences: {
             nodeIntegration: false,
             contextIsolation: true,
@@ -547,71 +870,58 @@ async function createWindow(): Promise<void> {
         titleBarStyle: 'hidden',
         titleBarOverlay: false,
         resizable: false,
+        show: false,
         icon: path.join(__dirname, 'assets', 'the_letter.png'),
     });
-    
+
+    createdWindow = mainWindow;
     if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
-        mainWindow.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL);
+        const loadingWindow = mainWindow.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL);
         mainWindow.webContents.on('did-finish-load', () => {
             if (twitchUser) mainWindow?.webContents.send('twitch-auth-success', twitchUser);
             if (kickUser) mainWindow?.webContents.send('kick-auth-success', kickUser);
         });
+        await loadingWindow;
     } else {
-        mainWindow.loadFile(path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`));
+        await mainWindow.loadFile(path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`));
     }
     //load devtools
     // mainWindow.webContents.openDevTools();
     
     if (!(global as any).ISAUTHING) {
-        await checkForUpdates(mainWindow, Logger);
+        // Run the update/terms check in the background. It calls the Request+
+        // update service and api.requestplus.xyz/termsUpdate and must never
+        // block the window/local API from starting if an endpoint stalls.
+        void checkForUpdates(mainWindow, Logger).catch((err) => Logger?.error('[Main] checkForUpdates failed:', err));
     }
 
     // Setup auth event listeners BEFORE deep link handling so events aren't missed
     setupAuthEventListeners(mainWindow);
     setupDeepLinkHandling(mainWindow);
-    settings = await settingsHandler.load();
-    queueHandler = new QueueHandler(Logger, mainWindow, settings);
+    settings = settingsHandler.load();
+    initializeLocalRuntime(mainWindow);
+    scheduleDebugSeed();
 
-        
-    if (!WSServer && !(global as any).ISAUTHING) {
-        WSServer = new websocket(443, mainWindow, Logger);
-    }
-    
-    if (!ytManager) {
-        ytManager = new YTManager(Logger);
-
-        // Push song info to renderer immediately on every WebSocket state update
-        ytManager.on('state-update', () => {
-            if (settings.platform === 'youtube') {
-                requestTrackInfo();
-            }
-        });
-    }
-
-    if (!amHandler) {
-        amHandler = new AMHandler(mainWindow, Logger, settings, WSServer);
-    }
-
-    
-    if (!playbackHandler) {
-        playbackHandler = new PlaybackHandler(settings.platform, WSServer, Logger, ytManager, amHandler);
-    }
-    
     const token = await authManager.getValidAuthToken();
     const hardwareInfo = authManager.getHardwareInfoPublic();
-    
+
     if (token && hardwareInfo) {
-      websocketManager.connect(token.token, hardwareInfo.deviceId);
+      revealMainWindowAfterCloudAuth = true;
+      websocketManager.connect(token.token, hardwareInfo.deviceId).catch((error) => {
+        Logger?.warn('[Main] Cloud websocket connection failed after local startup; reconnect will continue in the background:', error);
+      });
       scheduleTokenRefresh(token.expiresAt);
-    }
-
-  if (!apiHandler && !(global as any).ISAUTHING) {
-        apiHandler = new APIHandler(mainWindow, playbackHandler, Logger, settings);
-    }
-    
-
-    if (!gtsHandler) {
-        gtsHandler = new GTSHandler(app, mainWindow, apiHandler, playbackHandler, Logger, settings);
+      revealMainWindowWhenCloudAuthenticated();
+      // Safety net: never leave the window hidden if cloud auth is slow or
+      // unreachable (e.g. an API outage). Show it after a short grace period.
+      setTimeout(() => {
+        if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.isVisible()) {
+          showMainWindow();
+        }
+      }, 8000);
+    } else {
+      Logger?.info('[Main] No auth token available; local API server is running without cloud websocket.');
+      showMainWindow();
     }
     
     updateIntervalForSongInfo();
@@ -629,8 +939,7 @@ async function createWindow(): Promise<void> {
             {
                 label: 'Show Request+',
                 click: () => {
-                    mainWindow?.show();
-                    mainWindow?.focus();
+                    showMainWindow();
                 }
             },
             { type: 'separator' },
@@ -651,7 +960,7 @@ async function createWindow(): Promise<void> {
             if (mainWindow?.isVisible()) {
                 mainWindow.focus();
             } else {
-                mainWindow?.show();
+                showMainWindow();
             }
         });
     } catch (error) {
@@ -665,11 +974,198 @@ async function createWindow(): Promise<void> {
             mainWindow?.hide();
         }
     });
+    } catch (error) {
+        if (createdWindow) {
+            if (!createdWindow.isDestroyed()) createdWindow.destroy();
+            if (mainWindow === createdWindow) mainWindow = null;
+            const setupWindow = windowHandler?.getOobeWindow();
+            if (setupWindow && settings) initializeLocalRuntime(setupWindow);
+        }
+        throw error;
+    } finally {
+        isCreatingMainWindow = false;
+    }
+}
+
+/** Local services belong to the app; setup and the player share one instance. */
+function initializeLocalRuntime(window: BrowserWindow): void {
+    if (!queueHandler) queueHandler = new QueueHandler(Logger, window, settings);
+    else queueHandler.setWindow(window);
+    if (!WSServer) WSServer = new websocket(LOCAL_PLAYBACK_WEBSOCKET_PORTS, window, Logger);
+    if (!ytManager) {
+        ytManager = new YTManager(Logger, false);
+        ytManager.on('state-update', () => {
+            if (settings.platform === 'youtube') void requestTrackInfo().catch(() => { musicObserved.at = 0; });
+        });
+    }
+    if (!amHandler) amHandler = new AMHandler(window, Logger, settings, WSServer);
+    else amHandler.setWindow(window);
+    if (!playbackHandler) playbackHandler = new PlaybackHandler(settings.platform, WSServer, Logger, ytManager, amHandler);
+    if (!apiHandler) apiHandler = new APIHandler(window, playbackHandler, Logger, settings);
+    else apiHandler.setWindow(window);
+    if (!gtsHandler) gtsHandler = new GTSHandler(app, window, apiHandler, playbackHandler, Logger, settings);
+    applySettingsToRuntime(settings);
+}
+
+async function connectSetupCloud(): Promise<void> {
+    try {
+        const token = await authManager.getValidAuthToken();
+        const hardware = authManager.getHardwareInfoPublic();
+        if (token && hardware && !websocketManager.isAuthenticated()) {
+            await websocketManager.connect(token.token, hardware.deviceId);
+            scheduleTokenRefresh(token.expiresAt);
+        }
+    } catch (error) { Logger?.warn('Setup cloud connection unavailable:', error); }
+}
+
+const setupRequestCheck = new SetupRequestCheck();
+const resetSetupTest = () => setupRequestCheck.reset();
+authManager.on('auth-logout', resetSetupTest);
+authManager.on('auth-success', resetSetupTest);
+let musicObserved = { platform: '', at: 0 };
+
+function setupSnapshot(): SetupStatus {
+    const selected = settings?.platform || 'spotify';
+    const bridge = !['spotify', 'soundcloud'].includes(selected) ||
+        !!WSServer?.getClientsByType(selected).some(client => client.ws.readyState === 1) && WSServer.hasRecentTrack(selected);
+    const music = bridge && musicObserved.platform === selected && Date.now() - musicObserved.at < 10000;
+    const track = playbackHandler?.currentSong;
+    return {
+        cloud: websocketManager.isConnected() && websocketManager.isAuthenticated(),
+        platform: selected, music,
+        track: music && track?.title ? { title: track.title, artist: track.artist, cover: track.cover } : null,
+        overlay: !!apiHandler?.isOverlayConnected(),
+        overlayPath: overlayPath || '', previewUrl: apiHandler?.getOverlayPreviewUrl() || null,
+        request: setupRequestCheck.result,
+    };
+}
+
+async function setupConnections(): Promise<SetupConnections> {
+    const token = await authManager.getValidAuthToken();
+    const hardware = authManager.getHardwareInfoPublic();
+    if (!token || !hardware) throw new Error('Sign in to check linked channels');
+    apiClient.setCredentials(token.token, hardware.deviceId);
+    return apiClient.getConnections();
+}
+
+function persistSetup(patch: unknown): void {
+    const current = settingsHandler.load();
+    const changes = setupPatch(patch);
+    const next = { ...current, ...changes };
+    if (!settingsHandler.save(next)) throw new Error('Failed to save setup');
+    if (Object.keys(changes).some(key => key !== 'oobeRulesReviewed' && next[key] !== current[key])) resetSetupTest();
+    settings = next;
+    applySettingsToRuntime(next);
+    mainWindow?.webContents.send('settings-updated-from-main', next);
+}
+
+ipcMain.handle('oobe:status', () => setupSnapshot());
+ipcMain.handle('oobe:connections', () => setupConnections());
+ipcMain.handle('oobe:dashboard', () => shell.openExternal(`${WEBSITE_URL}/dashboard`));
+ipcMain.handle('oobe:save-draft', (_event, patch: unknown) => persistSetup(patch));
+ipcMain.handle('oobe:begin-test', () => setupRequestCheck.start());
+// Observe the real request pipeline, including rejections. No synthetic chat messages.
+for (const event of ['song-request', 'song-search-request']) {
+    websocketManager.prependListener(event, (message: WebSocketMessage) => setupRequestCheck.observe(message.messageId));
+}
+websocketManager.on('message-sent', (message: WebSocketMessage) => setupRequestCheck.respond(message));
+
+ipcMain.handle('oobe:open', async () => {
+    await ensureOverlayFile();
+    settings = settingsHandler.load();
+    const window = createStartupOobeWindow();
+    if (!playbackHandler) initializeLocalRuntime(window);
+});
+let finishingSetup = false;
+ipcMain.handle('oobe:complete', async (_event, input: SetupFinishInput) => {
+    if (finishingSetup) throw new Error('Setup is already being saved');
+    finishingSetup = true;
+    try {
+        await finishSetup(input, {
+            persistDraft: persistSetup,
+            load: () => settingsHandler.load(),
+            save: next => {
+                if (!settingsHandler.save(next)) throw new Error('Failed to save setup');
+                settings = next;
+            },
+            status: setupSnapshot,
+            connections: setupConnections,
+            openClient: () => createWindow(true),
+            closeSetup: () => { windowHandler?.getOobeWindow()?.close(); resetSetupTest(); },
+        });
+        return true;
+    } finally { finishingSetup = false; }
+});
+
+function createStartupOobeWindow(): BrowserWindow {
+    if (!windowHandler) {
+        windowHandler = new WindowHandler(app.getPath('userData'));
+    }
+
+    const isNew = !windowHandler.getOobeWindow();
+    if (isNew) resetSetupTest();
+    const oobeWindow = windowHandler.createOobeWindow();
+    if (isNew) oobeWindow.once('closed', () => {
+        if ((!mainWindow || mainWindow.isDestroyed()) && !finishingSetup) app.quit();
+    });
+    setupAuthEventListeners(oobeWindow);
+    setupDeepLinkHandling(oobeWindow);
+
+    return oobeWindow;
+}
+
+function revealMainWindowWhenCloudAuthenticated(): boolean {
+    if (!mainWindow || mainWindow.isDestroyed()) {
+        return false;
+    }
+
+    if (revealMainWindowAfterCloudAuth && !websocketManager.isAuthenticated()) {
+        revealMainWindowAfterCloudAuth = true;
+        mainWindow.hide();
+        Logger?.info('[Main] Main window reveal deferred until cloud websocket authentication completes.');
+        return false;
+    }
+
+    revealMainWindowAfterCloudAuth = false;
+    mainWindow.show();
+    mainWindow.focus();
+    return true;
+}
+
+/**
+ * Show the window unconditionally. Used for explicit user actions (tray, re-open)
+ * and the no-token/offline path — there deferring on cloud auth would otherwise
+ * leave the UI permanently unreachable.
+ */
+function showMainWindow(): void {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    revealMainWindowAfterCloudAuth = false;
+    mainWindow.show();
+    mainWindow.focus();
+}
+
+function applySettingsToRuntime(updatedSettings: Settings): void {
+    if (updatedSettings.platform === 'youtube') ytManager?.start();
+    playbackHandler?.updateSettings(updatedSettings.platform);
+    apiHandler?.updateSettings(updatedSettings);
+    gtsHandler?.updateSettings(updatedSettings);
+    amHandler?.updateSettings(updatedSettings);
+
+    if (playbackHandler) {
+        updateIntervalForSongInfo();
+    }
 }
 
 
 
 // IPC Handlers
+// Renderer errors never reached the log before, so a crashed UI looked like a
+// silent black window. DevTools are disabled in packaged builds, so this channel
+// is the only way these errors become visible to a user reporting a problem.
+ipcMain.on('renderer-error', (_event, payload: { message?: string; stack?: string; componentStack?: string | null }) => {
+    Logger?.error(`[Renderer] ${payload?.message || 'Unknown render error'}`, payload?.stack || '', payload?.componentStack || '');
+});
+
 ipcMain.handle('load-settings', async (): Promise<Settings> => {
     return settingsHandler.load();
 });
@@ -685,29 +1181,49 @@ ipcMain.handle('ytTest', async (): Promise<songData> => {
 
 ipcMain.handle('save-settings', (event: Electron.IpcMainInvokeEvent, settinga: Settings): Promise<void> => {
     return new Promise((resolve, reject) => {
+        const hardwareAccelerationChanged =
+            (settings.hardwareAcceleration !== false) !== (settinga.hardwareAcceleration !== false);
         var saved = settingsHandler.save(settinga);
 
         if (saved) {
             settings = settinga;
-            playbackHandler.updateSettings(settings.platform);
-            apiHandler.updateSettings(settings);
-            gtsHandler.updateSettings(settings);
-            amHandler.updateSettings(settings);
-            updateIntervalForSongInfo();
+            applySettingsToRuntime(settings);
             resolve();
+
+            if (hardwareAccelerationChanged) {
+                void promptHardwareAccelerationRestart();
+            }
         } else {
             reject(new Error('Failed to save settings'));
         }
     });
 });
 
+/** Hardware acceleration can only be toggled at startup, so ask before applying it live. */
+async function promptHardwareAccelerationRestart(): Promise<void> {
+    const response = await sendModal(
+        mainWindow,
+        'Restart required',
+        'Hardware acceleration changes only take effect after Request+ restarts. Restart now?',
+        ['Restart Now', 'Later']
+    );
+    if (response === 0) {
+        isQuitting = true;
+        app.relaunch();
+        app.exit(0);
+    }
+}
+
+ipcMain.handle('oobe:cider-token', async (): Promise<string> => {
+    if (!amHandler) throw new Error('Setup is still starting');
+    return amHandler.requestCiderV2Token();
+});
+
 ipcMain.handle('cider:request-token', async (): Promise<string> => {
     const token = await amHandler.requestCiderV2Token();
     settings = { ...settings, platform: 'apple', ciderApiVersion: '4', ciderV4AppToken: token };
     settingsHandler.save(settings);
-    amHandler.updateSettings(settings);
-    apiHandler.updateSettings(settings);
-    gtsHandler.updateSettings(settings);
+    applySettingsToRuntime(settings);
     mainWindow?.webContents.send('settings-updated-from-main', settings);
     return token;
 });
@@ -716,20 +1232,30 @@ ipcMain.on('settings-updated', (event: Electron.IpcMainEvent, updatedSettings: S
     Logger?.info('Settings updated');
     settings = updatedSettings;
     settingsHandler.save(updatedSettings);
-    playbackHandler.updateSettings(updatedSettings.platform);
-    apiHandler.updateSettings(updatedSettings);
-    gtsHandler.updateSettings(updatedSettings);
-    amHandler.updateSettings(updatedSettings);
-    updateIntervalForSongInfo();
+    applySettingsToRuntime(updatedSettings);
 });
 
-ipcMain.handle('window-minimize', (): void => {
-    if (mainWindow) mainWindow.minimize();
+ipcMain.handle('window-minimize', (event): void => {
+    BrowserWindow.fromWebContents(event.sender)?.minimize();
 });
 
-ipcMain.handle('window-close', async (): Promise<void> => {
-    if (mainWindow) {
-        await mainWindow.hide();
+ipcMain.handle('window-close', async (event): Promise<void> => {
+    const sender = BrowserWindow.fromWebContents(event.sender);
+    if (sender && sender !== mainWindow) { sender.close(); return; }
+    if (!mainWindow) return;
+
+    const response = await sendModal(
+        mainWindow,
+        'Close Request+',
+        'Do you want to keep Request+ running in the background, or quit it completely?',
+        ['Run in Background', 'Quit Completely']
+    );
+
+    if (response === 1) {
+        isQuitting = true;
+        app.quit();
+    } else {
+        mainWindow.hide();
     }
 });
 
@@ -739,7 +1265,7 @@ ipcMain.handle('song-play', async (): Promise<void> => {
     if (platform === 'spotify' && WSServer) {
         WSServer.WSSendToType({ command: 'PlayPause' } as WSCommand, 'spotify');
     } else if (platform === 'youtube' && ytManager) {
-        await ytManager.playPause();
+        await ytManager.play();
     } else if (platform === 'apple' && amHandler) {
         await amHandler.playPause();
     } else if (platform === 'soundcloud' && WSServer) {
@@ -753,7 +1279,7 @@ ipcMain.handle('song-pause', async (): Promise<void> => {
     if (platform === 'spotify' && WSServer) {
         WSServer.WSSendToType({ command: 'PlayPause' } as WSCommand, 'spotify');
     } else if (platform === 'youtube' && ytManager) {
-        await ytManager.playPause();
+        await ytManager.pause();
     } else if (platform === 'apple' && amHandler) {
         await amHandler.playPause();
     }
@@ -765,21 +1291,49 @@ ipcMain.handle('song-skip', async (): Promise<void> => {
     if (platform === 'spotify' && WSServer) {
         WSServer.WSSendToType({ command: 'Next' } as WSCommand, 'spotify');
     } else if (platform === 'youtube' && ytManager) {
-        // Push the next queued request into Pear before skipping so it plays immediately.
-        // Exclude the track that's currently playing — otherwise skip would re-add and
-        // replay the same song from the start.
+        // Advance to the next request in queue order (skip only the track playing
+        // right now). A hard next() jumps straight to YouTube Music's autoplay
+        // up-next, which wins the race against our freshly-inserted song. So feed
+        // the request, then actively wait until Pear's queue actually shows it as
+        // the track right after the current one before calling next(). POST /queue
+        // returns before YTM applies the insert, so polling the queue (instead of
+        // a blind delay) makes next() reliably land on our request.
+        let advanceToNext = true; // empty queue: let YouTube Music advance normally
         if (queueHandler) {
             const nextTrack = queueHandler.getQueue().items.find(
-                item => !item.isQueued && item.id !== currentTrackId2
+                item => item.id !== currentTrackId2 && !item.iscurrentlyPlaying
             );
             if (nextTrack) {
-                const queued = await ytManager.addItemToQueueById(getQueueItemTrackId(nextTrack));
-                if (queued) {
-                    await queueHandler.setTrackAsQueued(queueHandler.getQueue().items.indexOf(nextTrack));
+                const videoId = getQueueItemTrackId(nextTrack);
+                if (!nextTrack.isQueued) {
+                    const queued = await ytManager.addItemToQueueById(videoId);
+                    if (queued) {
+                        await queueHandler.setTrackAsQueued(queueHandler.findTrackById(nextTrack.id));
+                        awaitingStartTrackId = nextTrack.id;
+                        Logger.info(`Skip: fed "${nextTrack.title}" to the player`);
+                    }
                 }
+                let ready = await ytManager.waitUntilQueuedNext(videoId, 5000);
+                if (!ready) {
+                    // The first insert may not have landed. Only re-feed if the
+                    // request isn't already in the player queue, otherwise we'd add
+                    // a duplicate copy.
+                    const state = await ytManager.getQueueState();
+                    if (!state?.videoIds.includes(videoId)) {
+                        await ytManager.addItemToQueueById(videoId);
+                    }
+                    ready = await ytManager.waitUntilQueuedNext(videoId, 3000);
+                }
+                // Only advance once our request is actually next. A blind next() on
+                // timeout can fall through to YouTube Music's autoplay/radio — the very
+                // race this guards against — so skip next() and let the user retry.
+                advanceToNext = ready;
+                Logger.info(`Skip: "${nextTrack.title}" ${ready ? 'is now the next track in Pear' : 'did not become next within timeout; not advancing (would risk YouTube radio)'}`);
             }
         }
-        await ytManager.next();
+        if (advanceToNext) {
+            await ytManager.next();
+        }
     } else if (platform === 'apple' && amHandler) {
         await amHandler.nextTrack();
     } else if (platform === 'soundcloud' && WSServer) {
@@ -787,9 +1341,84 @@ ipcMain.handle('song-skip', async (): Promise<void> => {
     }
 });
 
-ipcMain.handle('play-track-at-index', async (event: Electron.IpcMainInvokeEvent, index: number): Promise<void> => {
-    const platform = settings.platform
-    autoQueueNextTrack();
+ipcMain.handle('IsMac', async (): Promise<boolean> => {
+    return process.platform === 'darwin';
+});
+
+ipcMain.handle('play-track-at-index', async (event: Electron.IpcMainInvokeEvent, index: number): Promise<boolean> => {
+    if (!queueHandler) return false;
+
+    const queue = queueHandler.getQueue();
+    if (index < 0 || index >= queue.items.length) {
+        Logger.warn(`play-track-at-index: invalid index ${index}`);
+        return false;
+    }
+
+    const track = queue.items[index];
+    const trackId = track.id;
+
+    // Don't re-feed a track that's already playing or already handed to the
+    // player — clicking it again would add a duplicate to the playlist.
+    if (track.iscurrentlyPlaying || track.isQueued) {
+        Logger.info(`play-track-at-index: ${track.title} is already ${track.iscurrentlyPlaying ? 'playing' : 'queued'}; ignoring`);
+        return true;
+    }
+
+    // Only ever hand one request to the player at a time. A second click while
+    // something is still waiting to start would be inserted in front of it and
+    // skip it. So the click only pulls this request to the head of the waiting
+    // list; the auto-queue hands it over once the slot is free. It also stays
+    // un-queued and therefore still movable.
+    if (awaitingStartTrackId && awaitingStartTrackId !== trackId) {
+        const waiting = queue.items.find(item => item.id === awaitingStartTrackId);
+        Logger.info(`play-track-at-index: "${waiting?.title ?? awaitingStartTrackId}" is still waiting to start; only moving "${track.title}" up`);
+        await queueHandler.moveToFrontById(trackId);
+        return true;
+    }
+
+    const platform = settings.platform;
+    try {
+        if (platform === 'youtube' && ytManager) {
+            const youtubeVideoId = getQueueItemTrackId(track);
+            const queued = await ytManager.addItemToQueueById(youtubeVideoId);
+            if (!queued) return false;
+            // A manual pick is inserted as "play next" and then relies on YouTube
+            // Music advancing at the end of the current track, exactly like the
+            // auto-queue does. Arm the same safety net here: without it a stalled
+            // autoplay leaves awaitingStartTrackId set, which blocks the auto-queue
+            // for good. song-skip does not need this — it calls next() itself.
+            scheduleYoutubeEndAdvance(youtubeVideoId);
+        } else if (platform === 'spotify' && WSServer) {
+            WSServer.WSSendToType({ command: 'addTrack', data: { uri: `spotify:track:${getQueueItemTrackId(track)}` } } as WSCommand, 'spotify');
+        } else if (platform === 'apple' && amHandler) {
+            await amHandler.queueTrack(getQueueItemTrackId(track));
+        } else if (platform === 'soundcloud' && WSServer) {
+            WSServer.WSSendToType({ command: 'addTrack', data: { url: getQueueItemTrackId(track), forcePlay: true } } as WSCommand, 'soundcloud');
+        } else {
+            return false;
+        }
+
+        // The queue may have been spliced (e.g. a delayed removeFromQueueById)
+        // while we awaited the player call, so re-locate by ID before marking.
+        const currentIndex = queueHandler.findTrackById(trackId);
+        if (currentIndex === -1) {
+            Logger.warn(`play-track-at-index: track disappeared before it could be marked queued: ${track.title}`);
+            return false;
+        }
+
+        await queueHandler.setTrackAsQueued(currentIndex);
+        // The players insert a manual pick as "play next" (YTM literally sends
+        // INSERT_AFTER_CURRENT_VIDEO), so it no longer belongs at the position it
+        // was requested from. Pull it to the head of the list so the queue view
+        // shows the order that will actually play.
+        await queueHandler.moveToFrontById(trackId);
+        awaitingStartTrackId = trackId;
+        Logger.info(`play-track-at-index: queued ${track.title} by ${track.artist}`);
+        return true;
+    } catch (error) {
+        Logger.error('play-track-at-index: failed to queue track', error);
+        return false;
+    }
 });
 
 ipcMain.handle('song-previous', async (): Promise<void> => {
@@ -883,21 +1512,38 @@ ipcMain.handle('get-overlay-path', (): string | null => {
     return overlayPath;
 });
 
-ipcMain.handle('check-for-updates', (): void => {
-    checkForUpdates(mainWindow, Logger);
+ipcMain.handle('oobe:openURL', async (_event, url: string): Promise<void> => {
+    const target = new URL(url);
+    if (target.protocol !== 'https:' && target.protocol !== 'http:') {
+        throw new Error('Only HTTP(S) URLs can be opened.');
+    }
+    await shell.openExternal(target.toString());
+});
+
+ipcMain.handle('check-for-updates', async (): Promise<void> => {
+    await checkForUpdates(mainWindow, Logger);
 });
 
 ipcMain.on('modal-response', (_event, id: string, response: number) => {
     resolveModal(id, response);
+    if (id.startsWith('websocket-notification-')) {
+        mainWindow?.flashFrame(false);
+    }
 });
 
 ipcMain.handle('get-update-settings', (): UpdateSettings => {
-    const { getSettings } = require('./updateChecker.js');
     return getSettings();
 });
 
+ipcMain.handle('get-update-channels', async (): Promise<string[]> => {
+    return getAvailableUpdateChannels();
+});
+
+ipcMain.handle('set-update-channel', (_event: Electron.IpcMainInvokeEvent, channel: string): void => {
+    setUpdateChannel(channel);
+});
+
 ipcMain.handle('set-pre-release-check', (event: Electron.IpcMainInvokeEvent, enabled: boolean): void => {
-    const { setPreReleaseCheck } = require('./updateChecker.js');
     setPreReleaseCheck(enabled);
 });
 
@@ -978,10 +1624,10 @@ ipcMain.handle('channel-point:delete', async (_event: Electron.IpcMainInvokeEven
 });
 
 app.whenReady().then(async () => {
-    if (!(global as any).ISAUTHING) {
-        Logger = new logger();
-        (global as any).Logger = Logger;
-    }
+    // Auth-link launches must not touch the running client's log files.
+    const loggingEnabled = !(global as any).ISAUTHING;
+    Logger = new logger(loggingEnabled);
+    (global as any).Logger = Logger;
     await createWindow();
 });
 
@@ -1009,6 +1655,10 @@ ipcMain.handle('get-queue', (): Queue => {
 
 ipcMain.handle('remove-from-queue', async  (event: Electron.IpcMainInvokeEvent, index: number): Promise<boolean> => {
     return queueHandler ? queueHandler.removeFromQueue(index) : false;
+});
+
+ipcMain.handle('move-in-queue', async (event: Electron.IpcMainInvokeEvent, from: number, to: number, expectedId?: string): Promise<boolean> => {
+    return queueHandler ? queueHandler.moveInQueue(from, to, expectedId) : false;
 });
 
 ipcMain.handle('clear-queue', async (): Promise<boolean> => {
@@ -1081,18 +1731,25 @@ ipcMain.handle('auth:refresh', async () => {
 });
 
 
+let readingTrack = false;
 async function requestTrackInfo(): Promise<void> {
-    if (!playbackHandler) return;
+    if (!playbackHandler || readingTrack) return;
+    readingTrack = true;
+    const readingPlatform = settings.platform;
+    try {
     const info = await playbackHandler.getCurrentSong();
+    if (readingPlatform !== settings.platform) return;
 
     if (!info) return;
+    if (info.title && info.id) musicObserved = { platform: settings.platform, at: Date.now() };
     currentSongInformation = { ...info };
     mainWindow?.webContents.send('song-info', currentSongInformation);
-    monitorTrackProgress(currentSongInformation);
+    await monitorTrackProgress(currentSongInformation);
     checkCurrentlyPlayingTrack(currentSongInformation);
     if (settings.platform === 'soundcloud' && !soundCloudQueueTimer) {
         scheduleSoundCloudQueueAdvance();
     }
+    } finally { readingTrack = false; }
 }
 
 function sendToast(message: string, type: 'info' | 'success' | 'error' | 'warning' = 'info', duration: number = 5000): void {
@@ -1118,11 +1775,122 @@ function updateIntervalForSongInfo(): void {
         clearInterval(songIntervalID);
     }
     songIntervalID = setInterval(() => {
-        requestTrackInfo();
+        void requestTrackInfo().catch(() => { musicObserved.at = 0; });
     }, 1000);
 }
 
 
+
+/**
+ * Search terms used to seed the queue for testing. Plain queries rather than
+ * hardcoded video IDs, so they keep resolving even if a specific upload goes away.
+ */
+const DEBUG_SEED_QUERIES = [
+    'a-ha Take On Me',
+    'Daft Punk Around the World',
+    'Fatboy Slim Praise You',
+    'Gorillaz Feel Good Inc',
+    'The Prodigy Breathe'
+];
+
+/**
+ * How many test requests to seed on startup. `npm run start:debug` passes
+ * `--debug-seed=5`; REQUESTPLUS_DEBUG_SEED=5 does the same for shells where
+ * forwarding the flag is inconvenient. 0 means no seeding.
+ */
+function getDebugSeedCount(): number {
+    const flag = process.argv.find(value => value === '--debug-seed' || value.startsWith('--debug-seed='));
+    if (flag) {
+        const value = flag.includes('=') ? Number(flag.split('=')[1]) : 5;
+        return Number.isFinite(value) && value > 0 ? Math.floor(value) : 5;
+    }
+
+    const fromEnv = Number(process.env.REQUESTPLUS_DEBUG_SEED);
+    return Number.isFinite(fromEnv) && fromEnv > 0 ? Math.floor(fromEnv) : 0;
+}
+
+/**
+ * Testing helper: fill the queue without going through Twitch or any other chat
+ * platform. Resolves each search term through the normal YouTube lookup, so the
+ * entries are real, playable requests and not dead placeholders.
+ */
+async function seedDebugQueue(count: number): Promise<number> {
+    if (!queueHandler) return 0;
+
+    if (settings.platform !== 'youtube' || !ytManager) {
+        Logger.warn(`Debug seeding: only implemented for YouTube, platform is "${settings.platform}"`);
+        sendToast('Debug seeding is only implemented for YouTube', 'error', 4000);
+        return 0;
+    }
+
+    const requested = Number.isFinite(count) ? Math.floor(count) : 5;
+    const wanted = Math.max(1, Math.min(DEBUG_SEED_QUERIES.length, requested));
+
+    let added = 0;
+    for (let i = 0; i < wanted; i++) {
+        const query = DEBUG_SEED_QUERIES[i];
+        const videoId = await ytManager.searchVideoId(query);
+        if (!videoId) {
+            Logger.warn(`Debug seeding: no result for "${query}"`);
+            continue;
+        }
+        // Distinct usernames keep the queue item ids unique (id = videoId-username).
+        const result = await queueYouTubeVideo(videoId, `debug${i + 1}`);
+        if (result) added++;
+    }
+
+    Logger.info(`Debug seeding: added ${added} test request(s)`);
+    // Silent when nothing landed — the startup path retries and would otherwise
+    // fire a toast on every attempt.
+    if (added > 0) sendToast(`Seeded ${added} test request(s)`, 'info', 3000);
+    return added;
+}
+
+/**
+ * Seed the queue on startup when `npm run start:debug` asked for it. The search
+ * behind it only answers once YouTube Music is reachable, which is well after the
+ * window opens, so this retries for a while instead of firing once and giving up.
+ */
+function scheduleDebugSeed(attempt: number = 1): void {
+    if (attempt === 1) {
+        debugSeedPending = getDebugSeedCount();
+        if (debugSeedPending <= 0) return;
+        Logger.info(`Debug seeding: ${debugSeedPending} test request(s) requested (argv: ${process.argv.join(' ')})`);
+    }
+
+    if (debugSeedPending <= 0) return;
+
+    const MAX_ATTEMPTS = 20;
+    setTimeout(async () => {
+        if (debugSeedPending <= 0) return;
+
+        if (settings.platform !== 'youtube') {
+            Logger.warn(`Debug seeding: platform is "${settings.platform}", only YouTube is supported — giving up`);
+            debugSeedPending = 0;
+            return;
+        }
+
+        const added = await seedDebugQueue(debugSeedPending);
+        if (added > 0) {
+            debugSeedPending = 0;
+            return;
+        }
+
+        if (attempt >= MAX_ATTEMPTS) {
+            Logger.warn(`Debug seeding: gave up after ${MAX_ATTEMPTS} attempts — is YouTube Music running and connected?`);
+            debugSeedPending = 0;
+            return;
+        }
+
+        Logger.info(`Debug seeding: nothing added yet (attempt ${attempt}/${MAX_ATTEMPTS}), retrying`);
+        scheduleDebugSeed(attempt + 1);
+    }, attempt === 1 ? 5000 : 3000);
+}
+
+/** Same helper on demand: `await api.debugAddQueueItem(5)` in the devtools console. */
+ipcMain.handle('debug-add-queue-item', async (event: Electron.IpcMainInvokeEvent, count: number = 5): Promise<number> => {
+    return seedDebugQueue(count);
+});
 
 ipcMain.handle('searchTest', async (): Promise<void> => {
     if (WSServer) {
@@ -1163,7 +1931,10 @@ authManager.on('auth-success', async (token) => {
   (global as any).Logger.info('[Main] Auth success, connecting WebSocket...');
   const hardwareInfo = authManager.getHardwareInfoPublic();
   if (hardwareInfo) {
-    websocketManager.connect(token.token, hardwareInfo.deviceId);
+    revealMainWindowAfterCloudAuth = true;
+    websocketManager.connect(token.token, hardwareInfo.deviceId).catch((error) => {
+      Logger?.warn('[Main] Cloud websocket connection failed after auth success; reconnect will continue in the background:', error);
+    });
   }
   scheduleTokenRefresh(token.expiresAt);
   const isExperimentalUser = await authManager.checkExperimentalUser();
@@ -1206,15 +1977,25 @@ authManager.on('auth-logout', () => {
   websocketManager.disconnect();
 });
 
+websocketManager.on('authenticated', () => {
+    if (!revealMainWindowAfterCloudAuth) return;
+    revealMainWindowWhenCloudAuthenticated();
+});
 
 websocketManager.on('notification', (message) => {
-    dialog.showMessageBox({
-        type: 'info',
+    if (!mainWindow || mainWindow.isDestroyed()) {
+        Logger?.warn('[WebSocket] Dropped notification because the main window is unavailable.');
+        return;
+    }
+
+    const id = `websocket-notification-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    mainWindow.flashFrame(true);
+    mainWindow.once('focus', () => mainWindow?.flashFrame(false));
+    mainWindow.webContents.send('show-modal', {
+        id,
+        title: String(message.title || 'Notification'),
+        message: String(message.message || 'You have a new notification.'),
         buttons: ['OK'],
-        defaultId: 0,
-        cancelId: 0,
-        title: 'Notification',
-        message: message.message || 'You have a new notification.',
     });
 });
 
@@ -1279,6 +2060,12 @@ websocketManager.on('song-request', async (message) => {
             websocketManager.send({ type: 'song_request_response', message: 'ERR_SUBS_ONLY', username: message.username, msgID: message.messageId, platform: message.platform, channel: message.channel });
             return;
         }
+    }
+
+    const rejection = getSongRequestRejection(message);
+    if (rejection) {
+        sendSongRequestResponse(message, rejection.code, rejection.limit ? { limit: rejection.limit } : {});
+        return;
     }
 
 
@@ -1419,6 +2206,12 @@ websocketManager.on('song-request', async (message) => {
 
 websocketManager.on('song-search-request', async (message) => {
     console.log('Received song search request:', message);
+    const rejection = getSongRequestRejection(message);
+    if (rejection) {
+        sendSongSearchResponse(message, rejection.code, rejection.limit ? { limit: rejection.limit } : {});
+        return;
+    }
+
     var newQuery = message.query
     if (settings.platform === 'spotify') { 
         try {
@@ -1430,12 +2223,12 @@ websocketManager.on('song-search-request', async (message) => {
             WSServer.SearchResults = [];
             WSServer.WSSendToType({ command: 'searchRequest', data: { query: newQuery } } as WSCommand, 'spotify');
 
-            let firstResult: any = null;
-            for (let attempt = 0; attempt < 20; attempt++) {
-                await wait(100);
-                firstResult = WSServer.SearchResults?.[0];
-                if (firstResult) break;
-            }
+            // Wait for the client's actual answer instead of polling for a fixed 2s.
+            // On a slow connection the lookup regularly takes longer than that, and
+            // the old loop replied "search failed" while the result was still in
+            // flight — the request then silently never made it into the queue.
+            const searchResults = await WSServer.waitForSearchResults(SEARCH_RESULT_TIMEOUT_MS);
+            const firstResult: any = searchResults?.[0] ?? null;
 
             if (!firstResult) {
                 websocketManager.send({ type: 'song_search_response', message: 'ERR_SP_SEARCH_FAILED', username: message.username, msgID: message.messageId, platform: message.platform, channel: message.channel });
@@ -1546,6 +2339,17 @@ websocketManager.on('queue-sync-request', (message) => {
     });
 });
 
+websocketManager.on('client-settings-request', (message) => {
+    const currentSettings = settings || settingsHandler.load();
+    websocketManager.send({
+        type: 'client_settings_response',
+        requestId: message.requestId,
+        platform: message.platform,
+        channel: message.channel,
+        settings: currentSettings
+    });
+});
+
 websocketManager.on('moderation-command', async (message) => {
     if (message.command === 'srremove') {
         if (!settings.autoPlay) {
@@ -1577,10 +2381,7 @@ websocketManager.on('moderation-command', async (message) => {
     if (message.command === 'srmod') {
         settings = { ...settings, modsOnly: message.action === 'disable' };
         settingsHandler.save(settings);
-        playbackHandler.updateSettings(settings.platform);
-        apiHandler.updateSettings(settings);
-        gtsHandler.updateSettings(settings);
-        amHandler.updateSettings(settings);
+        applySettingsToRuntime(settings);
         mainWindow?.webContents.send('settings-updated-from-main', settings);
         websocketManager.send({
             type: 'moderation_command_response',

@@ -5,6 +5,7 @@ import * as net from 'net';
 import * as musicmetadata from 'music-metadata';
 import { BrowserWindow } from 'electron';
 import { EventEmitter } from 'events';
+import { LOCAL_LOOPBACK_HOST } from './localPorts';
 
 // Type definitions
 interface Logger {
@@ -122,6 +123,8 @@ interface SearchAPIAlbumData {
 }
 
 class WebSocketServer extends EventEmitter {
+    private ports: readonly number[];
+    private portIndex: number;
     private port: number;
     private wss: WSS | null;
     private clients: Map<WebSocket, ClientInfo>;
@@ -132,9 +135,16 @@ class WebSocketServer extends EventEmitter {
     public lastReq: RequestData | null;
     public SearchResults: Array<SearchAPITrackData> = []
 
-    constructor(port: number, mainWindow: BrowserWindow, logger: Logger) {
+    private trackReceivedAt: Record<string, number> = {};
+    public hasRecentTrack(platform: string): boolean {
+        return Date.now() - (this.trackReceivedAt[platform] || 0) < 10000;
+    }
+
+    constructor(ports: readonly number[], mainWindow: BrowserWindow, logger: Logger) {
         super();
-        this.port = port;
+        this.ports = ports;
+        this.portIndex = 0;
+        this.port = ports[0];
         this.wss = null;
         this.clients = new Map();
         this.mainWindow = mainWindow;
@@ -153,28 +163,62 @@ class WebSocketServer extends EventEmitter {
         return [];
     }
 
+    /** Store incoming search results and wake anyone waiting for them. */
+    private setSearchResults(data: any): void {
+        this.SearchResults = this.normalizeSearchResults(data);
+        this.emit('search-results', this.SearchResults);
+    }
+
+    /**
+     * Resolve as soon as the connected client actually returns search results, or
+     * with null once `timeoutMs` elapses. This replaces fixed-interval polling,
+     * which gave up after a hard 2s budget and reported "search failed" while a
+     * slow connection was still delivering the answer.
+     */
+    public waitForSearchResults(timeoutMs = 15000): Promise<Array<SearchAPITrackData> | null> {
+        if (this.SearchResults.length > 0) {
+            return Promise.resolve(this.SearchResults);
+        }
+        return new Promise((resolve) => {
+            let timer: NodeJS.Timeout;
+            const onResults = (results: Array<SearchAPITrackData>) => {
+                clearTimeout(timer);
+                resolve(results);
+            };
+            timer = setTimeout(() => {
+                this.off('search-results', onResults);
+                resolve(null);
+            }, timeoutMs);
+            this.once('search-results', onResults);
+        });
+    }
+
     private initServer(): void {
         // First, check if the port is available
         const server = net.createServer();
         
-        server.listen(this.port, () => {
+        server.listen(this.port, LOCAL_LOOPBACK_HOST, () => {
             // Port is available, close this test server
             server.close(() => {
                 // Create WebSocket server
                 this.initWSServer();
             });
         }).on('error', (err: NodeJS.ErrnoException) => {
-            if (err.code === 'EADDRINUSE') {
-                this.logger.error(`Port ${this.port} is already in use. Attempting to close existing connections.`);
-                // Optionally, you could implement logic to find an alternative port
-            } else {
-                this.logger.error('Error starting server:', err);
+            const fallbackIndex = this.portIndex + 1;
+            if (fallbackIndex < this.ports.length) {
+                const failedPort = this.port;
+                this.portIndex = fallbackIndex;
+                this.port = this.ports[fallbackIndex];
+                this.logger.warn(`WebSocket port ${failedPort} is unavailable (${err.code ?? 'unknown'}); trying ${this.port}`);
+                this.initServer();
+                return;
             }
+            this.logger.error(`Could not start the WebSocket server on ports ${this.ports.join(' or ')}:`, err);
         });
     }
 
     private initWSServer(): void {
-        this.wss = new WSS({ port: this.port });
+        this.wss = new WSS({ port: this.port, host: LOCAL_LOOPBACK_HOST });
 
         this.wss.on('connection', (ws: WebSocket) => {
             // Initialize client with unknown type
@@ -205,6 +249,9 @@ class WebSocketServer extends EventEmitter {
                     if (client && client.type === 'unknown' && parsed.type) {
                         client.type = parsed.type;
                         this.logger.info(`Client identified from packet as type: ${parsed.type}`);
+                        if (parsed.type === 'cider') {
+                            this.emit('cider-client-connected');
+                        }
                     }
 
                     // If client hasn't identified yet, ignore other messages
@@ -222,6 +269,9 @@ class WebSocketServer extends EventEmitter {
                                 client.version = parsed.version;
                             }
                             this.logger.info(`Client identified as type: ${parsed.type}, version: ${parsed.version || 'unknown'}`);
+                            if (parsed.type === 'cider') {
+                                this.emit('cider-client-connected');
+                            }
                             ws.send(JSON.stringify({
                                 acknowledged: true,
                                 type: parsed.type
@@ -278,6 +328,7 @@ class WebSocketServer extends EventEmitter {
                         }
 
                         this.lastSInfo = data;
+                        this.trackReceivedAt.spotify = Date.now();
                         
                         // Notify main process for auto-queue monitoring
                         try {
@@ -300,7 +351,7 @@ class WebSocketServer extends EventEmitter {
 
                     if (parsed.command === "searchResults") {
                         console.log('Search Results:', parsed.data);
-                        this.SearchResults = this.normalizeSearchResults(parsed.data);
+                        this.setSearchResults(parsed.data);
                         return;
                     }
                     } else if (client && client.type === 'soundcloud') {
@@ -344,6 +395,7 @@ class WebSocketServer extends EventEmitter {
                             }
 
                             this.lastSOInfo = data;
+                            this.trackReceivedAt.soundcloud = Date.now();
                             
                             // Notify main process for auto-queue monitoring
                             try {
@@ -366,7 +418,7 @@ class WebSocketServer extends EventEmitter {
 
                         if (parsed.command === "searchResults") {
                             console.log('Search Results:', parsed.data);
-                            this.SearchResults = this.normalizeSearchResults(parsed.data);
+                            this.setSearchResults(parsed.data);
                             return;
                         }
                     }
@@ -377,6 +429,10 @@ class WebSocketServer extends EventEmitter {
             });
 
             ws.on('close', () => {
+                const client = this.clients.get(ws);
+                if (client?.type === 'cider') {
+                    this.emit('cider-client-disconnected');
+                }
                 this.clients.delete(ws);
                 this.logger.info('Client disconnected');
                 this.logger.info(`Total clients connected: ${this.clients.size}`);
@@ -384,6 +440,10 @@ class WebSocketServer extends EventEmitter {
 
             ws.on('error', (error: Error) => {
                 this.logger.error('WebSocket Client Error:', error);
+                const client = this.clients.get(ws);
+                if (client?.type === 'cider') {
+                    this.emit('cider-client-disconnected');
+                }
                 this.clients.delete(ws);
             });
         });
@@ -392,7 +452,7 @@ class WebSocketServer extends EventEmitter {
             this.logger.error('WebSocket Server Error:', error);
         });
 
-        this.logger.info(`WebSocket server started on port ${this.port}`);
+        this.logger.info(`WebSocket server started on ws://${LOCAL_LOOPBACK_HOST}:${this.port}`);
     }
 
     async WSSend(message: WSCommand): Promise<void> {

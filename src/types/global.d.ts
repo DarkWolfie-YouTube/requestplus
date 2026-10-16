@@ -28,14 +28,17 @@ interface Settings {
   theme?: string;
   enableRequests?: boolean;
   modsOnly?: boolean;
+  requestLimitEnabled?: boolean;
   requestLimit?: number;
   autoAcceptSearchResults?: boolean;
   useChannelPoints?: boolean;
+  channelPointRequestsEnabled?: boolean;
   [key: string]: any;
 }
 
 interface UpdateSettings {
   checkPreReleases: boolean;
+  channel: string;
   [key: string]: any;
 }
 
@@ -66,6 +69,8 @@ interface ElectronAPI {
   // Update system
   checkForUpdates: () => Promise<void>;
   getUpdateSettings: () => Promise<UpdateSettings>;
+  getUpdateChannels: () => Promise<string[]>;
+  setUpdateChannel: (channel: string) => Promise<void>;
   setPreReleaseCheck: (enabled: boolean) => Promise<void>;
 
   // Overlay

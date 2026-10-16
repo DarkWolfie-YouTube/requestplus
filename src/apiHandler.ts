@@ -2,9 +2,10 @@ import express, { Express, Request, Response } from 'express';
 import cors from 'cors';
 import { Settings } from './settingsHandler';
 import * as path from 'path';
-import { BrowserWindow } from 'electron';
+import { app, BrowserWindow } from 'electron';
 import PlaybackHandler from './playbackHandler';
 import type { Server } from 'node:http';
+import { LOCAL_API_PORTS, LOCAL_LOOPBACK_HOST } from './localPorts';
 
 // Type definitions
 interface TwitchUser {
@@ -47,6 +48,7 @@ interface WSServerInterface {
 interface Logger {
     info(message: string, ...args: any[]): void;
     error(message: string, ...args: any[]): void;
+    warn(message: string, ...args: any[]): void;
 }
 
 
@@ -64,6 +66,8 @@ class APIHandler {
     private callback: any;
     private server: Server | null = null;
     public hideSongFromView: boolean = false;
+
+    public setWindow(window: BrowserWindow): void { this.mainWindow = window; }
 
     constructor(
         mainWindow: BrowserWindow, 
@@ -83,6 +87,13 @@ class APIHandler {
         this.startServer();
     }
 
+    private lastOverlayPoll = 0;
+    public isOverlayConnected(): boolean { return Date.now() - this.lastOverlayPoll < 10000; }
+    public getOverlayPreviewUrl(): string | null {
+        const address = this.server?.address();
+        return address && typeof address !== 'string' ? `http://127.0.0.1:${address.port}/overlay/overlay.html?preview=1` : null;
+    }
+
     private setupMiddleware(): void {
         this.app.use(express.json());
         this.app.use(express.urlencoded({ extended: true }));
@@ -94,6 +105,7 @@ class APIHandler {
     }
 
     private setupRoutes(): void {
+        this.app.use('/overlay', express.static(path.join(app.getPath('userData'), 'overlay'), { etag: false, maxAge: 0, setHeaders: res => res.setHeader('Cache-Control', 'no-store') }));
         // Serve a simple HTML page that can extract the hash fragment
         this.app.get("/", (req: Request, res: Response): void => {
             const html = `
@@ -328,19 +340,21 @@ class APIHandler {
         
 
         this.app.get("/info", (req: Request, res: Response): void => {
+            if (req.query.source === "overlay") this.lastOverlayPoll = Date.now();
             if (this.refresh) {
-                res.json({ ...this.playbackHandler.currentSong, refresh: this.refresh });
+                res.json({ ...this.playbackHandler.currentSong, theme: this.theme, refresh: this.refresh });
                 this.refresh = false;
                 return;
             }
             if (this.hideSongFromView) {
-                res.json({ songHidden: true, gtsActive: true });
+                res.json({ songHidden: true, gtsActive: true, theme: this.theme });
                 return;
             };
-            res.json(this.playbackHandler.currentSong);
+            res.json({ ...this.playbackHandler.currentSong, theme: this.theme });
         });
 
         this.app.get("/settings", (req: Request, res: Response): void => {
+            res.setHeader('Cache-Control', 'no-store');
             res.json({ theme: this.theme });
         });
         
@@ -552,17 +566,40 @@ class APIHandler {
 
     }
 
-    private startServer(): void {
+    private startServer(portIndex = 0): void {
         if (this.server) return;
 
-        this.server = this.app.listen(444, () => {
-            this.logger.info('API server listening on port 444');
+        const port = LOCAL_API_PORTS[portIndex];
+        const server = this.app.listen(port, LOCAL_LOOPBACK_HOST, () => {
+            this.logger.info(`API server listening on http://${LOCAL_LOOPBACK_HOST}:${port}`);
+        });
+        this.server = server;
+        server.once('error', (error: NodeJS.ErrnoException) => {
+            this.server = null;
+            const fallbackIndex = portIndex + 1;
+            if (fallbackIndex < LOCAL_API_PORTS.length) {
+                this.logger.warn(`Local API port ${port} is unavailable (${error.code ?? 'unknown'}); trying ${LOCAL_API_PORTS[fallbackIndex]}`);
+                this.startServer(fallbackIndex);
+                return;
+            }
+            this.logger.error(`Could not start the local API server on ports ${LOCAL_API_PORTS.join(' or ')}:`, error);
+            if (!this.mainWindow.isDestroyed()) {
+                this.mainWindow.webContents.send(
+                    'show-toast',
+                    `The local overlay server could not start on ports ${LOCAL_API_PORTS.join(' or ')}.`,
+                    'error',
+                    7000
+                );
+            }
         });
     }
 
     public updateSettings(settings: Settings): void {
         this.theme = settings.theme;
         this.refresh = true;
+        setTimeout(() => {
+            this.refresh = false;
+        }, 1000);
     }
     public gtsHideSongFromView(): void {
         this.hideSongFromView = true;

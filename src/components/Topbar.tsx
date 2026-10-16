@@ -6,12 +6,14 @@ import { toast } from 'sonner';
 
 interface TopbarProps {
   title?: string;
+  isMac?: boolean;
   onMinimize?: () => void;
   onClose?: () => void;
 }
 
 export function Topbar({ 
   title = 'Request+', 
+  isMac = false,
   onMinimize, 
   onClose 
 }: TopbarProps) {

@@ -4,6 +4,35 @@ All notable changes to Request+ will be documented in this file.
 
 ---
 
+## [3.0.3] - 2026-06-23 - I hate figma
+
+- Figma got rid of some major shit in the UI, so I had to readd it.
+- Notifications now popup as modal so that it doesn't interupt your gaming sessions. I am so sorry for this.
+- Cider now FINALLY works again in v3.
+
+
+@AndrBel
+
+- YouTube Music Searching, and various bug fixes.
+
+---
+
+## [3.0.1] - 2026-06-21 - Quick Patch
+
+- Added back the channel point's settings in the UI
+
+---
+
+## [3.0.0] - 2026-06-21 - OOBE update.
+
+- Added a OOBE
+
+- UI redesign
+
+- Settings sync with API
+
+---
+
 ## [2.3.0] - 2026-06-13 - After Furality Patch
 
 ### Queue Updates

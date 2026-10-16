@@ -1,415 +1,351 @@
+import { useState, useEffect, useRef } from "react";
 import { createRoot } from 'react-dom/client';
-import { useState, useEffect } from 'react';
-import { t } from './i18n';
-import { MusicPlayer } from './components/MusicPlayer';
-import { Settings } from './components/Settings';
-import { Navigation } from './components/Navigation';
-import { Toaster } from './components/ui/sonner';
-import { Topbar } from './components/Topbar';
-import { QueuePage } from './components/Queue';
-import { Queue, QueueItem } from './queueHandler';
-import { toast } from 'sonner';
+import {
+  Music, Settings, List, X, Minus, Play, Pause, SkipBack, SkipForward,
+  Heart, Shuffle, Repeat, Repeat1, Volume2, Trash2, Check, Copy, Eye,
+  Headphones, ListChecks, Lock, Radio, Shield, Sparkles, UserRound,
+  ExternalLink, RefreshCw, LogOut, User as UserIcon, ArrowLeft,
+  ArrowRight, Music2,
+} from "lucide-react";
+import { Toaster, toast } from "sonner";
+import { Topbar as RedesignedTopbar } from "./components/redesign/Topbar";
+import { Navigation as RedesignedNavigation } from "./components/redesign/Navigation";
+import { MusicPlayer as RedesignedMusicPlayer } from "./components/redesign/MusicPlayer";
+import { QueuePage as RedesignedQueuePage } from "./components/redesign/QueuePage";
+import { SettingsView as RedesignedSettingsView } from "./components/redesign/SettingsView";
+import { ErrorBoundary } from "./components/redesign/ErrorBoundary";
+import { t } from "./i18n";
 
-const emptyQueue: Queue = {
-  items: [],
-  currentCount: 0,
-  currentlyPlayingIndex: -1
-};
+
+
+type View = "player" | "queue" | "settings";
 
 interface Track {
-  title: string;
-  artist: string;
-  album: string;
-  duration: number;
-  progress: number;
-  cover: string;
-  isPlaying: boolean;
-  volume: number;
-  shuffle: boolean;
-  repeat: number;
-  isLiked: boolean;
+  title: string; artist: string; album: string;
+  duration: number; progress: number; cover: string;
+  isPlaying: boolean; volume: number; shuffle: boolean;
+  repeat: number; isLiked: boolean;
 }
 
-interface songInfo {
-  title: string;
-  artist: string;
-  album: string;
-  duration: number;
-  progress: number;
-  cover: string;
-  isPlaying: boolean;
-  volume: number;
-  shuffle: boolean;
-  repeat: number;
-  isLiked: boolean;
+interface QueueItem {
+  id: string; title: string; artist: string; cover: string;
+  duration: number; iscurrentlyPlaying: boolean; isQueued: boolean;
+  requestedBy?: string;
 }
 
-interface User {
-  display_name: string;
-  profile_image_url: string;
-  email: string;
+interface AppUser {
+  display_name: string; profile_image_url: string; email: string;
 }
 
-interface UpdateSettings {
-  checkPreReleases: boolean;
+interface AppSettings {
+  enableRequests: boolean; modsOnly: boolean; subsOnly: boolean;
+  requestLimitEnabled: boolean; requestLimit: number; autoPlay: boolean;
+  autoAcceptSearchResults: boolean; useChannelPoints: boolean;
+  channelPointRequestsEnabled: boolean; telemetryEnabled: boolean;
+  platform: string; filterExplicit: boolean; gtsEnabled: boolean;
+  theme: string; appleMusicAppToken: string; ciderApiVersion: "3" | "4";
+  ciderV4AppToken: string; primarySearchPlatform: string;
+  showNotifications: boolean; [key: string]: any;
 }
 
-const App = () => {
-  const [currentView, setCurrentView] = useState<'player' | 'settings' | 'queue'>('player');
-  
-  // Global state for track info
-  const [currentTrack, setCurrentTrack] = useState<Track>({
-    title: 'No track playing',
-    artist: 'Unknown Artist', 
-    album: 'Unknown Album',
-    duration: 210,
-    progress: 0,
-    cover: 'styles/unknown.png',
-    isPlaying: false,
-    volume: 0.75,
-    shuffle: false,
-    repeat: 0,
-    isLiked: false
-  });
+// â”€â”€â”€ Defaults & mock data â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-  // Global state for settings
-  const [userd, setUserd] = useState<User | null>(null);
-  const [overlayPath, setOverlayPath] = useState('');
-  const [updateSettings, setUpdateSettings] = useState<UpdateSettings>({ checkPreReleases: false });
-  const [settings, setSettings] = useState({
-    showNotifications: true,
-    theme: 'default',
-    enableRequests: true,
-    modsOnly: false,
-    requestLimit: 10,
-    autoAcceptSearchResults: false,
-    useChannelPoints: false,
-    telemetryEnabled: true,
-    platform: 'spotify',
-    appleMusicAppToken: '',
-    ciderApiVersion: '3',
-    ciderV4AppToken: ''
-  });
-  const [queue, setQueue] = useState<Queue>(emptyQueue);
-  const [experimentalFeatureEnabled, setExperimentalFeatureEnabled] = useState<boolean>(false);
-  const [locale, setLocale] = useState<string>('en');
+const defaultSettings: AppSettings = {
+  enableRequests: true, modsOnly: false, subsOnly: false,
+  requestLimitEnabled: false, requestLimit: 10, autoPlay: true,
+  autoAcceptSearchResults: false, useChannelPoints: false,
+  channelPointRequestsEnabled: true, telemetryEnabled: true,
+  platform: "spotify", filterExplicit: false, gtsEnabled: false,
+  theme: "default", appleMusicAppToken: "", ciderApiVersion: "3",
+  ciderV4AppToken: "", primarySearchPlatform: "spotify", showNotifications: true,
+  reducedMotion: false, hardwareAcceleration: true,
+};
+
+const initialTrack: Track = {
+  title: "Unknown Track",
+  artist: "Unknown Artist",
+  album: "",
+  duration: 0,
+  progress: 0,
+  cover: "",
+  isPlaying: false,
+  volume: 1,
+  shuffle: false,
+  repeat: 0,
+  isLiked: false,
+};
+
+
+// â”€â”€â”€ Utils â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+const fmt = (ms: number) => {
+  const s = Math.floor(ms / 1000);
+  return `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, "0")}`;
+};
+
+// â”€â”€â”€ Global injected CSS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+const CSS = `
+  *, *::before, *::after { font-family: 'Manrope', system-ui, sans-serif; }
+
+  .no-sb::-webkit-scrollbar { display: none; }
+  .no-sb { scrollbar-width: none; }
+
+  @keyframes blob {
+    0%   { transform: translate(0,0) scale(1); }
+    33%  { transform: translate(28px,-46px) scale(1.08); }
+    66%  { transform: translate(-18px,18px) scale(0.93); }
+    100% { transform: translate(0,0) scale(1); }
+  }
+  .blob  { animation: blob 8s infinite ease-in-out; }
+  .d2    { animation-delay: 2.5s; }
+  .d4    { animation-delay: 4.5s; }
+
+  /* Reduced motion mode: freeze the background glow and drop backdrop blur panels,
+     for lowest GPU/CPU usage while the window just sits open (e.g. during a stream). */
+  .reduce-motion .blob { animation: none; }
+  .reduce-motion .backdrop-blur,
+  .reduce-motion .backdrop-blur-sm,
+  .reduce-motion .backdrop-blur-xl {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+
+  .vol::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px; height: 14px; border-radius: 50%;
+    background: linear-gradient(to right, #8b5cf6, #10b981);
+    cursor: pointer; margin-top: -5px;
+    box-shadow: 0 0 8px rgba(139,92,246,.55);
+  }
+  .vol::-moz-range-thumb {
+    width: 14px; height: 14px; border-radius: 50%;
+    background: linear-gradient(to right, #8b5cf6, #10b981);
+    border: none; cursor: pointer;
+    box-shadow: 0 0 8px rgba(139,92,246,.55);
+  }
+  .vol::-webkit-slider-runnable-track { height: 4px; border-radius: 2px; }
+  .vol::-moz-range-track { height: 4px; border-radius: 2px; background: #1e293b; }
+  .vol { -webkit-appearance: none; appearance: none; background: transparent;
+         width: 100%; height: 4px; border-radius: 2px; cursor: pointer; }
+`;
+
+// â”€â”€â”€ Art placeholder â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+function TrackArt({ cover, title, artist, className = "" }: { cover: string; title: string; artist: string; className?: string }) {
+  const [err, setErr] = useState(false);
+  // Reset the error latch when the cover changes, otherwise one failed load
+  // pins the placeholder for every subsequent track (the component isn't remounted).
+  useEffect(() => { setErr(false); }, [cover]);
+  const hue = ((title.charCodeAt(0) || 65) * 47 + (artist.charCodeAt(0) || 65) * 19) % 360;
+
+  if (cover && !err) {
+    return <img src={cover} alt={`${title} - ${artist}`} className={`${className} object-cover`} onError={() => setErr(true)} />;
+  }
+  return (
+    <div
+      className={`${className} flex items-center justify-center`}
+      style={{ background: `linear-gradient(135deg, hsl(${hue},55%,22%), hsl(${(hue+90)%360},55%,18%))` }}
+    >
+      <Music className="size-[35%] text-white/25" />
+    </div>
+  );
+}
+
+// â”€â”€â”€ Switch â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+function Switch({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      onClick={() => onChange(!checked)}
+      className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 ${
+        checked ? "bg-gradient-to-r from-violet-500 to-emerald-500" : "bg-slate-700"
+      }`}
+    >
+      <span className={`pointer-events-none block size-4 rounded-full bg-white shadow transition-transform duration-200 my-0.5 ${
+        checked ? "translate-x-[18px]" : "translate-x-0.5"
+      }`} />
+    </button>
+  );
+}
+
+// â”€â”€â”€ Blobs background â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+function Blobs({ opacity = "opacity-20" }: { opacity?: string }) {
+  return (
+    <div className={`pointer-events-none absolute inset-0 overflow-hidden ${opacity}`}>
+      <div className="blob absolute -left-10 -top-10 h-80 w-80 rounded-full bg-violet-600 blur-[80px]" />
+      <div className="blob d2 absolute -right-10 top-16 h-80 w-80 rounded-full bg-emerald-500 blur-[80px]" />
+      <div className="blob d4 absolute -bottom-16 left-24 h-96 w-96 rounded-full bg-cyan-500 blur-[80px]" />
+    </div>
+  );
+}
+
+
+// â”€â”€â”€ Settings section helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="overflow-hidden rounded-xl border border-violet-500/15 bg-slate-900/60">
+      <div className="border-b border-white/[0.05] px-4 py-2.5">
+        <h4 className="text-[9px] font-black uppercase tracking-[0.18em] text-violet-400/80">{title}</h4>
+      </div>
+      <div className="divide-y divide-white/[0.04]">{children}</div>
+    </div>
+  );
+}
+
+function ToggleRow({ label, desc, checked, onChange }: {
+  label: string; desc?: string; checked: boolean; onChange: (v: boolean) => void;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-4 px-4 py-3">
+      <div className="min-w-0">
+        <p className="text-[13px] font-semibold text-white">{label}</p>
+        {desc && <p className="mt-0.5 text-[11px] leading-[1.5] text-slate-600">{desc}</p>}
+      </div>
+      <Switch checked={checked} onChange={onChange} />
+    </div>
+  );
+}
+
+// â”€â”€â”€ App Root â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+export default function App() {
+  const [view, setView] = useState<View>("player");
+  const [track, setTrack] = useState<Track>(initialTrack);
+  const [queueItems, setQueueItems] = useState<QueueItem[]>([]);
+  const [settings, setSettings] = useState<AppSettings>(defaultSettings);
+  const [user, setUser] = useState<AppUser | null>(null);
   const [modal, setModal] = useState<{ id: string; title: string; message: string; buttons: string[] } | null>(null);
-
-  
-
-
-  // Initialize all API connections once at app level
+  const [overlayPath, setOverlayPath] = useState("");
+  const [locale, setLocale] = useState("en");
+  const [isMac, setIsMac] = useState<boolean>(false);
   useEffect(() => {
     const api = (window as any).api;
-    if (!api) {
-      setQueue(emptyQueue);
-      return;
-    }
-    setQueue(emptyQueue);
+    if (!api) return;
 
-    // Track info handler
-    const handleTrackInfo = (info: songInfo) => {
-      
-      
+    api.getInfo?.((info: any) => {
+      setTrack((prev) => ({
+        ...prev, ...info,
+        cover: info?.cover?.includes("spotify:image:")
+          ? info.cover.replace("spotify:image:", "https://i.scdn.co/image/")
+          : info?.cover,
+      }));
+    });
 
-      
+    const removeSettingsListener = api.onSettingsChanged?.((next: AppSettings) => {
+      setSettings(previous => ({ ...previous, ...next }));
+    });
+    api.loadSettings?.().then((s: any) => {
+      if (s) setSettings((prev) => ({ ...prev, ...s }));
+    });
 
-      const dataImage = info?.cover || null;
-      let newImage = 'styles/unknown.png';
-      
-      if (dataImage != null) {
-        if (dataImage.includes('spotify:image:')) {
-          newImage = dataImage.replace('spotify:image:', 'https://i.scdn.co/image/');
-        } else if (dataImage.includes('data:image/')) {
-          newImage = dataImage;
-        } else {
-          newImage = dataImage;
-        }
-      }
+    api.getOverlayPath?.()
+      .then((path: string) => setOverlayPath(path || ""))
+      .catch((error: unknown) => console.error("Failed to load overlay path:", error));
+    api.getLocale?.().then((nextLocale: string) => {
+      if (nextLocale) setLocale(nextLocale);
+    });
+    api.onLocaleUpdate?.((nextLocale: string) => {
+      if (nextLocale) setLocale(nextLocale);
+    });
 
-      setCurrentTrack({
-        title: info.title || 'Unknown Track',
-        artist: info.artist || 'Unknown Artist',
-        album: info.album || 'Unknown Album',
-        duration: info.duration,
-        progress: info.progress,
-        cover: newImage,
-        isPlaying: info.isPlaying,
-        volume: info.volume,
-        shuffle: info.shuffle || false,
-        repeat: info.repeat || 0,
-        isLiked: info.isLiked || false
-      });
+    const loadUser = async () => {
+      const u = await api.fetchUserData?.();
+      setUser(u || null);
     };
+    void loadUser();
 
-    // Set up track info listener
-    if (api.getInfo && typeof api.getInfo === 'function') {
-      api.getInfo(handleTrackInfo);
-    }
+    api.authSuccess?.((res: any) => {
+      if (res?.status === "logged-out" || res?.status === "error") { setUser(null); return; }
+      void loadUser();
+    });
 
-    const loadCurrentUser = async () => {
-      if (!api.fetchUserData) return;
+    api.onModal?.((data: any) => setModal(data));
 
+    api.onToast?.((event: any, data: any) => {
+      const msg = typeof data === "string" ? data : data?.message;
+      const type = typeof data === "object" ? data?.type : "info";
+      if (type === "success") toast.success(msg);
+      else if (type === "error") toast.error(msg);
+      else toast.info(msg);
+    });
+
+    api.updateQueuePage?.((q: any) => {
+      if (q?.items) setQueueItems(q.items);
+    });
+    api.getQueue?.().then((q: any) => {
+      if (q?.items) setQueueItems(q.items);
+    }).catch(() => setQueueItems([]));
+
+    api.preload?.();
+    const checkIsMac = async () => {
       try {
-        const userData = await api.fetchUserData();
-        setUserd(userData || null);
-      } catch (err) {
-        console.error('Failed to load user data from Electron:', err);
-        setUserd(null);
+        const result = await api.isMac?.();
+        setIsMac(result || false);
+      } catch (error) {
+        console.error("Failed to check if running on macOS:", error);
       }
     };
+    void checkIsMac();
+    return () => removeSettingsListener?.();
 
-    loadCurrentUser();
-
-    // Load settings
-    if (api.loadSettings) {
-      api.loadSettings().then((loadedSettings: any) => {
-        if (loadedSettings) {
-          setSettings(prev => ({ ...prev, ...loadedSettings }));
-        }
-      }).catch((err: any) => {
-        console.error('Failed to load settings from Electron:', err);
-        const savedSettings = localStorage.getItem('settings');
-        if (savedSettings) {
-          const parsed = JSON.parse(savedSettings);
-          setSettings(prev => ({ ...prev, ...parsed }));
-        }
-      });
-    } else {
-      const savedSettings = localStorage.getItem('settings');
-      if (savedSettings) {
-        const parsed = JSON.parse(savedSettings);
-        setSettings(prev => ({ ...prev, ...parsed }));
-      }
-    }
-    
-    // Get overlay path
-    api.getOverlayPath?.().then((path: string) => {
-      setOverlayPath(path);
-    });
-
-    // Load locale
-    api.getLocale?.().then((l: string) => { if (l) setLocale(l); });
-    api.onLocaleUpdate?.((l: string) => { if (l) setLocale(l); });
-
-    // Get update settings
-    api.getUpdateSettings?.().then((updateSettings: UpdateSettings) => {
-      setUpdateSettings(updateSettings);
-    });
-
-    // Listen for auth success
-    api.authSuccess?.((response: any) => {
-      if (response.status === 'started') {
-        toast.info('Authentication flow started. Please complete the process in your browser.');
-        return
-      } else if (response.status === 'logged-out') {
-        setUserd(null);
-        return;
-      } else if (response.status !== 'error') {
-        toast.success('Authentication successful!');
-      } else {
-        toast.error(`Authentication failed: ${response.error}`);
-        setUserd(null);
-        return;
-      }
-      loadCurrentUser();
-      
-    });
-
-    api.authCheck?.((isAuthenticated: boolean) => {
-      if (isAuthenticated) {
-        loadCurrentUser();
-      } else {
-        setUserd(null);
-      }
-    })
-
-
-    // Call preload if available
-    if (api.preload && typeof api.preload === 'function') {
-      api.preload();
-    }
-
-    // toast notification listener
-    // Toast notification listener
-    const handleToast = (event: any, toastData: any) => {
-      // Handle different toast data formats for backward compatibility
-      let message, type, duration;
-      
-      if (typeof toastData === 'object' && toastData.message) {
-        // New format: object with message, type, duration
-        message = toastData.message;
-        type = toastData.type || 'info';
-        duration = toastData.duration || 5000;
-      } else if (typeof toastData === 'string') {
-        // Fallback: just a string message
-        message = toastData;
-        type = 'info';
-        duration = 5000;
-      } else {
-        console.warn('Invalid toast data format:', toastData);
-        return;
-      }
-      
-      // Use sonner toast with appropriate styling based on type
-      switch (type) {
-        case 'success':
-          toast.success(message, { duration });
-          break;
-        case 'error':
-          toast.error(message, { duration });
-          break;
-        case 'warning':
-          toast.warning(message, { duration });
-          break;
-        case 'info':
-        default:
-          toast.info(message, { duration });
-          break;
-      }
-    };
-
-    // Set up the toast listener
-    if (api.onToast) {
-      api.onToast(handleToast);
-    } else if ((window as any).electronAPI) {
-      // Alternative approach if using different IPC setup
-      (window as any).electronAPI.onToast?.(handleToast);
-    }
-
-    // Modal listener
-    api.onModal?.((data) => {
-      setModal(data);
-    });
-// Queue handling - fetch initial data
-  const handleQueueUpdate = (updatedQueue: Queue) => {
-    console.log(updatedQueue)
-    setQueue(updatedQueue);
-  };
-  const fetchInitialQueue = async () => {
-    try {
-      const queueData = await api.getQueue();
-      if (queueData) {
-        setQueue(queueData);
-      }
-    } catch (err) {
-      console.error('Failed to fetch initial queue:', err);
-      setQueue({
-        items: [],
-        currentCount: 0,
-        currentlyPlayingIndex: -1
-      });
-    }
-  };
-
-  // Set up queue update listener BEFORE fetching initial data
-  
-
-// Then set up listener with the defined callback
-  api.updateQueuePage(handleQueueUpdate);
-  api.experimentalFeatureEnabled(async (isEnabled: boolean) => {
-    setExperimentalFeatureEnabled(isEnabled);
-  });
-
-  // Fetch initial queue data
-  fetchInitialQueue();
-
-  // ... rest of your existing setup (toast handler, etc.) ...
-
-  // Cleanup function
-  return () => {
-    api.removeToastListener?.();
-    api.removeQueueListener?.();
-  };
   }, []);
 
-  // Function to handle track selection from queue
-const handleTrackSelect = (track: QueueItem) => {
-    // Update the current track and mark it as playing
-    const updatedTrack = {
-      ...track,
-      progress: 0,
-      isPlaying: true
-    };
-    setCurrentTrack(updatedTrack);
-    
-    // Update queue to reflect the currently playing song
-    const updatedQueueItems: QueueItem[] = queue.items.map((track: QueueItem) => ({
-      ...track,
-      iscurrentlyPlaying: track.id === updatedTrack.id
-    }));
-    const updatedQueue = {
-      ...queue,
-      items: updatedQueueItems
-    }
-    setQueue(updatedQueue);
-  };
-
-  const renderCurrentView = () => {
-    switch (currentView) {
-      case 'player':
-        return (
-          <MusicPlayer
-            currentTrack={currentTrack}
-            setCurrentTrack={setCurrentTrack}
-            queue={queue}
-            settings={settings}
-            locale={locale}
-          />
-        );
-      case 'queue':
-        return (
-          <QueuePage
-            queue={queue}
-            setQueue={setQueue}
-            onTrackSelect={handleTrackSelect}
-            locale={locale}
-          />
-        );
-      case 'settings':
-        return (
-          <Settings
-            userd={userd}
-            setUserd={setUserd}
-            overlayPath={overlayPath}
-            updateSettings={updateSettings}
-            setUpdateSettings={setUpdateSettings}
-            settings={settings}
-            setSettings={setSettings}
-            expermintalFeatureEnabled={experimentalFeatureEnabled}
-            setExperimentalFeatureEnabled={setExperimentalFeatureEnabled}
-            locale={locale}
-          />
-        );
-      default:
-        return <MusicPlayer currentTrack={currentTrack} setCurrentTrack={setCurrentTrack} queue={queue} settings={settings} locale={locale} />;
-    }
-  };
+  useEffect(() => {
+    document.documentElement.classList.toggle("reduce-motion", !!settings.reducedMotion);
+  }, [settings.reducedMotion]);
 
   return (
-    <div className="h-screen w-screen bg-background flex flex-col overflow-hidden">
-      {/* Topbar */}
-      <Topbar />
-      {/* Main Content */}
-      <div className="flex-1 overflow-auto">
-        {renderCurrentView()}
+    <div className="h-screen w-screen overflow-hidden bg-slate-950 text-white">
+      <style>{CSS}</style>
+      <RedesignedTopbar title="Request+" isMac={isMac} />
+
+      <div className="h-full pt-8 pb-[52px] overflow-hidden">
+        {view === "player" && (
+          <RedesignedMusicPlayer
+            track={track}
+            setTrack={setTrack}
+            queueItems={queueItems}
+            platform={settings.platform}
+            locale={locale}
+          />
+        )}
+        {view === "queue" && (
+          <RedesignedQueuePage items={queueItems} setItems={setQueueItems} locale={locale} />
+        )}
+        {view === "settings" && (
+          <RedesignedSettingsView
+            settings={settings}
+            setSettings={setSettings}
+            user={user}
+            setUser={setUser}
+            overlayPath={overlayPath}
+            locale={locale}
+          />
+        )}
       </div>
 
-      {/* Navigation */}
-      <Navigation currentView={currentView} onViewChange={setCurrentView} settings={settings} locale={locale} />
+      <RedesignedNavigation
+        current={view}
+        onNavigate={setView}
+        showQueue={settings.autoPlay !== false}
+        locale={locale}
+      />
 
-      {/* Toast Notifications */}
-      <Toaster position="top-right" richColors />
-
-      {/* Web-UI Modal */}
+      {/* Modal */}
       {modal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-          <div className="bg-slate-800 border border-purple-500/30 rounded-xl p-6 max-w-md w-full mx-4 shadow-2xl">
-            <h2 className="text-white font-bold text-lg mb-3">{modal.title}</h2>
-            <p className="text-gray-300 text-sm whitespace-pre-wrap mb-6">{modal.message}</p>
-            <div className="flex gap-2 justify-end flex-wrap">
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/85 px-5">
+          <div className="w-full max-w-[340px] rounded-2xl border border-violet-500/25 bg-slate-900 p-5 shadow-2xl">
+            <h2 className="text-base font-extrabold text-white">{modal.title}</h2>
+            <p className="mt-2 text-[13px] leading-6 text-slate-400 whitespace-pre-wrap">{modal.message}</p>
+            <div className="mt-5 flex flex-wrap justify-end gap-2">
               {modal.buttons.map((btn, i) => {
-                const isDecline = btn.toLowerCase() === 'decline';
+                const isDecline = btn.toLowerCase() === "decline";
                 const isPrimary = i === 0;
                 return (
                   <button
@@ -417,14 +353,14 @@ const handleTrackSelect = (track: QueueItem) => {
                     onClick={() => {
                       const id = modal.id;
                       setModal(null);
-                      (window as any).api?.respondToModal(id, i);
+                      (window as any).api?.respondToModal?.(id, i);
                     }}
                     className={
                       isDecline
-                        ? 'px-4 py-2 rounded-lg text-sm font-medium bg-red-500/20 hover:bg-red-500/30 text-red-400 transition-colors'
+                        ? "rounded-xl bg-red-500/15 px-3 py-1.5 text-xs font-bold text-red-400 hover:bg-red-500/25 transition-colors"
                         : isPrimary
-                        ? 'px-4 py-2 rounded-lg text-sm font-medium bg-gradient-to-r from-purple-600 to-green-600 hover:from-purple-500 hover:to-green-500 text-white transition-all'
-                        : 'px-4 py-2 rounded-lg text-sm font-medium bg-slate-700/50 hover:bg-slate-600/50 text-white transition-colors'
+                        ? "rounded-xl bg-gradient-to-r from-violet-600 to-emerald-600 px-3 py-1.5 text-xs font-bold text-white hover:from-violet-500 hover:to-emerald-500 transition-all"
+                        : "rounded-xl bg-slate-700 px-3 py-1.5 text-xs font-bold text-white hover:bg-slate-600 transition-colors"
                     }
                   >
                     {btn}
@@ -435,12 +371,17 @@ const handleTrackSelect = (track: QueueItem) => {
           </div>
         </div>
       )}
+
+      <Toaster position="top-right" richColors />
     </div>
   );
 }
 
-const container = document.getElementById('root');
+const container = document.getElementById("root");
 if (container) {
-    const root = createRoot(container);
-    root.render(<App />);
+  createRoot(container).render(
+    <ErrorBoundary>
+      <App />
+    </ErrorBoundary>
+  );
 }

@@ -164,13 +164,18 @@ export default class AMHandler {
     private cachedIsPlaying: boolean = false;
     private cachedVolume: number = 0;
     private hasPluginData: boolean = false;
+    private isPluginConnected: boolean = false;
+    private lastPluginMessageAt: number = 0;
     private lastV1PollAt: number = 0;
     private lastV2PollAt: number = 0;
     private lastTokenRequestFailedAt: number = 0;
     private readonly v1PollIntervalMs = 3000;
     private readonly v2PollIntervalMs = 900;
+    private readonly pluginFreshMs = 5000;
     private readonly tokenRequestCooldownMs = 10000;
     private readonly appImageUrl = "https://requestplus.xyz/hotlink-ok/logo.png";
+
+    public setWindow(window: BrowserWindow): void { this.mainWindow = window; }
 
     constructor(mainWindow: BrowserWindow, logger: Logger, settings: Settings, localWebSocket?: WebSocketServer) {
         this.mainWindow = mainWindow;
@@ -185,6 +190,13 @@ export default class AMHandler {
             if (this.preferredVersion === "3") {
                 this.handleCiderTrackMessage(message);
             }
+        });
+        localWebSocket?.on("cider-client-connected", () => {
+            this.isPluginConnected = true;
+        });
+        localWebSocket?.on("cider-client-disconnected", () => {
+            this.isPluginConnected = false;
+            this.hasPluginData = false;
         });
         if (this.canUseHttpApi()) {
             void this.testConnection();
@@ -218,6 +230,8 @@ export default class AMHandler {
 
         const playParams = data.playParams || message.item?.attributes?.playParams || {};
         const prev = this.cachedSongInfo;
+        this.isPluginConnected = true;
+        this.lastPluginMessageAt = Date.now();
         this.hasPluginData = true;
         if (typeof message.isPlaying === "boolean") {
             this.cachedIsPlaying = message.isPlaying;
@@ -285,6 +299,7 @@ export default class AMHandler {
     }
 
     private emitSongInfo(songInfo: AMCurrentSongObject): void {
+        if (this.mainWindow.isDestroyed()) return;
         this.mainWindow.webContents.send("song-info", {
             id: songInfo.playParams.catalogId || songInfo.playParams.id || "",
             title: songInfo.name || "Unknown Title",
@@ -491,7 +506,7 @@ export default class AMHandler {
     }
 
     private shouldUseCachedPoll(): boolean {
-        if (this.preferredVersion === "3" && this.hasPluginData && this.cachedSongInfo) {
+        if (this.preferredVersion === "3" && this.isCiderPluginDataFresh() && this.cachedSongInfo) {
             return true;
         }
 
@@ -503,6 +518,13 @@ export default class AMHandler {
             return true;
         }
         return false;
+    }
+
+    private isCiderPluginDataFresh(): boolean {
+        return this.isPluginConnected
+            && this.hasPluginData
+            && this.lastPluginMessageAt > 0
+            && Date.now() - this.lastPluginMessageAt < this.pluginFreshMs;
     }
 
     public async playPause(): Promise<void> {
@@ -612,7 +634,7 @@ export default class AMHandler {
             return { status: "ok", is_playing: false };
         }
 
-        if (this.preferredVersion === "3" && this.hasPluginData) {
+        if (this.preferredVersion === "3" && this.isCiderPluginDataFresh()) {
             return { status: "ok", is_playing: this.cachedIsPlaying };
         }
 
@@ -646,7 +668,7 @@ export default class AMHandler {
             return this.cachedVolume;
         }
 
-        if (this.preferredVersion === "3" && this.hasPluginData) {
+        if (this.preferredVersion === "3" && this.isCiderPluginDataFresh()) {
             return this.cachedVolume;
         }
 

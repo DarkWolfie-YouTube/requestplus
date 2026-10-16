@@ -1,7 +1,7 @@
 (function() {
   // Check if already initialized
   if (window.requestPlusInitialized) {
-    console.log("RequestPlus|Already initialized");
+    console.log("Request+|Already initialized");
     return;
   }
   window.requestPlusInitialized = true;
@@ -182,7 +182,7 @@
       }
       return 1; // Default to max volume if not found
     } catch (error) {
-      console.error("RequestPlus|Error getting volume:", error);
+      console.error("Request+|Error getting volume:", error);
       return 1;
     }
   }
@@ -282,7 +282,7 @@
           handler(createSoundCloudVolumeEvent(element, volume));
           return true;
         } catch (error) {
-          console.warn("RequestPlus|SoundCloud volume handler failed:", error);
+          console.warn("Request+|SoundCloud volume handler failed:", error);
         }
       }
     }
@@ -347,19 +347,19 @@
 
       if (callSoundCloudVolumeHandlers(volume)) {
         await delay(50);
-        console.log("RequestPlus|Volume set through SoundCloud handler:", volume);
+        console.log("Request+|Volume set through SoundCloud handler:", volume);
         return true;
       }
 
       if (nudgeVolumeUi(volume)) {
         await delay(50);
-        console.log("RequestPlus|Volume set to:", volume);
+        console.log("Request+|Volume set to:", volume);
         return true;
       }
 
       return Boolean(audio);
     } catch (error) {
-      console.error("RequestPlus|Error setting volume:", error);
+      console.error("Request+|Error setting volume:", error);
       return false;
     }
   }
@@ -372,7 +372,7 @@
       audio.dispatchEvent(new Event("timeupdate", { bubbles: true }));
       return true;
     } catch (error) {
-      console.error("RequestPlus|Error seeking:", error);
+      console.error("Request+|Error seeking:", error);
       return false;
     }
   }
@@ -513,7 +513,7 @@
       
       return true;
     } catch (error) {
-      console.error("RequestPlus|Error collecting song info:", error);
+      console.error("Request+|Error collecting song info:", error);
       return false;
     }
   }
@@ -553,19 +553,24 @@
   }
 
   /**
-   * Initializes the WebSocket client to connect to a server on port 443.
+   * Initializes the WebSocket client, falling back if the legacy port is blocked.
    */
   const initializePlaybackAPI = async () => {
     const delayTime = 200;
     await delay(delayTime);
 
     let ws;
+    const playbackPorts = [443, 45923];
+    let playbackPortIndex = 0;
     const connect = async () => {
-      ws = new WebSocket("ws://localhost:443");
+      const playbackPort = playbackPorts[playbackPortIndex];
+      let connected = false;
+      ws = new WebSocket(`ws://127.0.0.1:${playbackPort}`);
       ws.binaryType = "arraybuffer";
 
       ws.onopen = () => {
-        console.log("RequestPlus|Connected to WebSocket server");
+        connected = true;
+        console.log(`Request+|Connected to WebSocket server on port ${playbackPort}`);
         maybePlayPendingTrack();
         sendCurrentTrack(ws);
         if (window.requestPlusSoundCloudInterval) {
@@ -601,12 +606,11 @@
               type: "soundcloud", 
               version: "2.0.1" 
             }));
-            console.log("RequestPlus|Identified to server");
+            console.log("Request+|Identified to server");
             return; // Don't process as a command
           }
 
           // Only log and process actual commands
-          console.log("RequestPlus|Received command:", command);
 
           switch (normalizedCommand) {
             case "playpause":
@@ -644,7 +648,7 @@
             case "volume":
               if (messageData.data && typeof messageData.data.volume === "number") {
                 var newVolume = messageData.data.volume;
-                console.log("RequestPlus|Setting volume to:", newVolume);
+                console.log("Request+|Setting volume to:", newVolume);
                 if (await setVolume(newVolume)) {
                   await delay(50);
                   sendCurrentTrack(ws);
@@ -657,7 +661,7 @@
                   );
                 }
               } else {
-                console.warn("RequestPlus|Invalid volume data provided");
+                console.warn("Request+|Invalid volume data provided");
                 ws.send(
                   JSON.stringify({
                     command: "error",
@@ -693,25 +697,28 @@
               break;
 
             default:
-              console.warn("RequestPlus|Unknown command received:", command);
+              console.warn("Request+|Unknown command received:", command);
           }
         } catch (error) {
-          console.error("RequestPlus|Error processing WebSocket message:", error);
+          console.error("Request+|Error processing WebSocket message:", error);
         }
       };
 
       ws.onclose = async () => {
+        if (!connected) {
+          playbackPortIndex = (playbackPortIndex + 1) % playbackPorts.length;
+        }
         if (window.requestPlusSoundCloudInterval) {
           clearInterval(window.requestPlusSoundCloudInterval);
           window.requestPlusSoundCloudInterval = null;
         }
-        console.log("RequestPlus|Disconnected from WebSocket server. Attempting to reconnect in 2 seconds...");
+        console.log("Request+|Disconnected from WebSocket server. Attempting to reconnect in 2 seconds...");
         await delay(2000);
         connect();
       };
 
       ws.onerror = (error) => {
-        console.error("RequestPlus|WebSocket encountered an error:", error);
+        console.error("Request+|WebSocket encountered an error:", error);
       };
     };
 
@@ -723,5 +730,5 @@
     await initializePlaybackAPI();
   })();
 
-  console.log("RequestPlus|Integration loaded and initialized v2.1");
+  console.log("Request+|Integration loaded and initialized v2.1");
 })();
