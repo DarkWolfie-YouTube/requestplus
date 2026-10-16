@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { app } from 'electron';
 import Logger from './logger';
+import { setTimeout as wait } from 'node:timers/promises';
 
 interface songData {
     title: string;
@@ -413,12 +414,26 @@ class YTManager extends EventEmitter {
     }
 
     async pause(): Promise<void> {
-        await this.makeAuthenticatedRequest(() =>
-            this.instance.post('/pause', {}, {
-                headers: { 'Authorization': `Bearer ${this.token}` }
-            }), '/pause'
-        );
-        this.refreshSongStateSoon();
+        for (let attempt = 0; attempt < 3; attempt += 1) {
+            const result = await this.makeAuthenticatedRequest(() =>
+                this.instance.post('/pause', {}, {
+                    headers: { 'Authorization': `Bearer ${this.token}` }
+                }), '/pause'
+            );
+            if (result === null) {
+                throw new Error('Pear rejected the pause request');
+            }
+
+            await wait(200);
+            const song = await this.getCurrentSong();
+            if (song?.isPaused) {
+                this.cachedSong = song;
+                this.emit('state-update', song);
+                return;
+            }
+        }
+
+        throw new Error('Pear did not confirm that YouTube Music paused');
     }
 
     /** Pear does not always push a state change, so re-read shortly after a command. */
