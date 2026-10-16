@@ -13,6 +13,7 @@ import { Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { setTimeout as wait } from 'node:timers/promises';
 import { checkForNativeUpdate } from './nativeUpdater';
+import { WINDOWS_BRANCH_SWITCH_SCRIPT, windowsBranchSwitchArguments } from './windowsBranchSwitch';
 
 declare const __REQUESTPLUS_RELEASE_CHANNEL__: string;
 
@@ -430,20 +431,25 @@ async function scheduleWindowsBranchSwitch(
         'requestplus-updates',
         `switch-to-${selectedChannel}.ps1`
     );
-    fs.writeFileSync(helperPath, [
-        "$ErrorActionPreference = 'Stop'",
-        'Start-Sleep -Seconds 2',
-        "$uninstall = Start-Process -FilePath $args[0] -ArgumentList @('--uninstall', '--silent') -WindowStyle Hidden -PassThru",
-        '$uninstall.WaitForExit()',
-        "if ($uninstall.ExitCode -ne 0) { throw \"Request+ uninstall failed with exit code $($uninstall.ExitCode)\" }",
-        'Start-Sleep -Seconds 2',
-        'Start-Process -FilePath $args[1]'
-    ].join('\r\n'), 'utf8');
+    const logPath = path.join(
+        app.getPath('temp'),
+        'requestplus-updates',
+        `switch-to-${selectedChannel}.log`
+    );
+    const launchExecutable = path.join(path.dirname(updateExecutable), path.basename(process.execPath));
+    fs.writeFileSync(helperPath, WINDOWS_BRANCH_SWITCH_SCRIPT, 'utf8');
 
     await new Promise<void>((resolve, reject) => {
         const helper = spawn(
             'powershell.exe',
-            ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', helperPath, updateExecutable, installerPath],
+            windowsBranchSwitchArguments({
+                helperPath,
+                updateExecutable,
+                installerPath,
+                parentPid: process.pid,
+                launchExecutable,
+                logPath,
+            }),
             { detached: true, stdio: 'ignore', windowsHide: true }
         );
         helper.once('error', reject);
@@ -452,8 +458,13 @@ async function scheduleWindowsBranchSwitch(
             resolve();
         });
     });
-    logger.info(`Scheduled reinstall from ${installedUpdateChannel(DEFAULT_UPDATE_CHANNEL)} to ${selectedChannel}`);
-    app.quit();
+    logger.info(
+        `Scheduled reinstall from ${installedUpdateChannel(DEFAULT_UPDATE_CHANNEL)} to ${selectedChannel}; ` +
+        `helper log: ${logPath}`
+    );
+    // A hard exit guarantees every Electron child releases the old app directory.
+    // The detached helper has already inherited everything it needs to continue.
+    app.exit(0);
 }
 
 async function openUpdateInstaller(

@@ -178,22 +178,24 @@ export function SettingsView({ settings, setSettings, user, setUser, overlayPath
     try {
       await updateApi.setUpdateChannel(channel);
       toast.success(`Update feed changed to ${formatChannelName(channel)}.`);
+
+      // Keep the picker disabled until this feed's check and installer prompt
+      // finish. Starting several branch downloads at once can otherwise race the
+      // final handoff and install a feed the user no longer has selected.
+      if (channel !== previous && typeof updateApi.checkForUpdates === "function") {
+        try {
+          await updateApi.checkForUpdates();
+        } catch (error) {
+          console.error("Failed to check the selected update feed:", error);
+          toast.error("The update feed changed, but its update check failed.");
+        }
+      }
     } catch (error) {
       setUpdateChannelState(previous);
       console.error("Failed to save update feed:", error);
       toast.error("Failed to change the update feed.");
-      return;
     } finally {
       setUpdateChannelSaving(false);
-    }
-
-    if (channel !== previous && typeof updateApi.checkForUpdates === "function") {
-      try {
-        await updateApi.checkForUpdates();
-      } catch (error) {
-        console.error("Failed to check the selected update feed:", error);
-        toast.error("The update feed changed, but its update check failed.");
-      }
     }
   };
 
