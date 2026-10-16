@@ -438,33 +438,60 @@ async function scheduleWindowsBranchSwitch(
     );
     const launchExecutable = path.join(path.dirname(updateExecutable), path.basename(process.execPath));
     fs.writeFileSync(helperPath, WINDOWS_BRANCH_SWITCH_SCRIPT, 'utf8');
+    // A log from a previous attempt must not satisfy this run's startup handshake.
+    await rm(logPath, { force: true });
 
+    const helper = spawn(
+        'powershell.exe',
+        windowsBranchSwitchArguments({
+            helperPath,
+            updateExecutable,
+            installerPath,
+            parentPid: process.pid,
+            launchExecutable,
+            logPath,
+        }),
+        { detached: true, stdio: 'ignore', windowsHide: true }
+    );
     await new Promise<void>((resolve, reject) => {
-        const helper = spawn(
-            'powershell.exe',
-            windowsBranchSwitchArguments({
-                helperPath,
-                updateExecutable,
-                installerPath,
-                parentPid: process.pid,
-                launchExecutable,
-                logPath,
-            }),
-            { detached: true, stdio: 'ignore', windowsHide: true }
-        );
         helper.once('error', reject);
         helper.once('spawn', () => {
-            helper.unref();
             resolve();
         });
     });
+    // The spawn event only confirms that Windows created powershell.exe. A hard
+    // app exit immediately afterward can win the scheduling race and terminate
+    // the child before the script executes. Wait for its first log write, which
+    // occurs before it begins waiting for this Request+ process to close.
+    const readyDeadline = Date.now() + 10_000;
+    while (Date.now() < readyDeadline) {
+        if (helper.exitCode !== null) {
+            throw new Error(`The branch-switch helper exited before startup (code ${helper.exitCode})`);
+        }
+        try {
+            if ((await stat(logPath)).size > 0) break;
+        } catch {
+            // The helper has not reached its first log write yet.
+        }
+        await wait(100);
+    }
+    let helperReady = false;
+    try {
+        helperReady = (await stat(logPath)).size > 0;
+    } catch {
+        // Report a useful error below.
+    }
+    if (!helperReady) {
+        throw new Error('The branch-switch helper did not start within 10 seconds');
+    }
+    helper.unref();
     logger.info(
         `Scheduled reinstall from ${installedUpdateChannel(DEFAULT_UPDATE_CHANNEL)} to ${selectedChannel}; ` +
         `helper log: ${logPath}`
     );
-    // A hard exit guarantees every Electron child releases the old app directory.
-    // The detached helper has already inherited everything it needs to continue.
-    app.exit(0);
+    // Quit only after the detached helper confirms it is alive. The helper waits
+    // for this PID and then verifies that Squirrel removed the old app directory.
+    app.quit();
 }
 
 async function openUpdateInstaller(

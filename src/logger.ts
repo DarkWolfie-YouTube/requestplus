@@ -72,8 +72,20 @@ class Logger {
         const timestamp = new Date().toISOString();
         const message = args
             .map(arg => {
+                if (arg instanceof Error) {
+                    return JSON.stringify({
+                        name: arg.name,
+                        message: arg.message,
+                        stack: arg.stack,
+                        cause: arg.cause,
+                    });
+                }
                 if (typeof arg === 'object') {
-                    return JSON.stringify(arg);
+                    try {
+                        return JSON.stringify(arg);
+                    } catch {
+                        return String(arg);
+                    }
                 }
                 return String(arg);
             })
