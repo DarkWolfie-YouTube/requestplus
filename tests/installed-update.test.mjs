@@ -10,8 +10,12 @@ new Function('require', 'exports', 'module', code)(id => id === 'electron' ? { a
 const { resolveInstalledChannel: resolve } = module.exports;
 const current = { version: '3.2.1', fingerprint: 'beta-bundle' };
 test('confirmed beta installation does not become a stable-to-beta switch on restart', () => {
-  const state = { installed: { ...current, channel: 'beta' } };
+  const state = { lastInstalledBranch: 'beta', installed: { ...current, channel: 'beta' } };
   assert.equal(resolve(state, current, 'stable').channel, 'beta');
+});
+test('last installed branch survives version and bundle changes', () => {
+  const state = { lastInstalledBranch: 'feat-streamdeck', installed: { ...current, channel: 'feat-streamdeck' } };
+  assert.equal(resolve(state, { version: '3.2.2', fingerprint: 'new-bundle' }, 'stable').channel, 'feat-streamdeck');
 });
 test('new version and same-version branch installs confirm after the bundle changes', () => {
   for (const version of ['3.1.2', '3.2.1']) {
@@ -24,9 +28,11 @@ test('cancelled, failed, and unrelated installations do not confirm the requeste
   const pending = { channel: 'beta', version: '3.2.1', fingerprint: 'old-bundle' };
   assert.equal(resolve({ pending }, { version: '3.1.2', fingerprint: 'old-bundle' }, 'stable').channel, 'stable');
   assert.equal(resolve({ pending }, { version: '3.3.0', fingerprint: 'other-bundle' }, 'stable').channel, 'stable');
+  assert.equal(resolve({ lastInstalledBranch: 'stable', pending }, { ...current, fingerprint: 'old-bundle' }, 'stable').channel, 'stable');
   assert.equal(resolve({ installed: { ...current, channel: 'beta' } }, { ...current, fingerprint: 'manual-install' }, 'stable').channel, 'stable');
 });
 test('untracked installs use build metadata and reject invalid stored branches', () => {
   assert.equal(resolve({}, current, 'beta').channel, 'beta');
+  assert.equal(resolve({ lastInstalledBranch: '../bad' }, current, 'stable').channel, 'stable');
   assert.equal(resolve({ installed: { ...current, channel: '../bad' } }, current, 'stable').channel, 'stable');
 });
