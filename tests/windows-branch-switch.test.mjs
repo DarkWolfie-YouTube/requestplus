@@ -29,12 +29,14 @@ test('branch switch passes paths as distinct named PowerShell parameters', () =>
 });
 
 test('branch switch waits for the old installation before installing and relaunching', () => {
+  const readyLog = script.indexOf('Write-SwitchLog "Waiting for Request+ process');
   const waitForParent = script.indexOf('Wait-Process -Id $ParentPid');
   const uninstall = script.indexOf('$uninstall = Start-Process');
   const waitForOldApps = script.indexOf('$remaining = @($oldAppDirs');
   const install = script.indexOf('$install = Start-Process');
   const relaunch = script.indexOf('Start-Process -FilePath $LaunchExe');
-  assert.ok(waitForParent >= 0);
+  assert.ok(readyLog >= 0);
+  assert.ok(readyLog < waitForParent);
   assert.ok(waitForParent < uninstall);
   assert.ok(uninstall < waitForOldApps);
   assert.ok(waitForOldApps < install);
