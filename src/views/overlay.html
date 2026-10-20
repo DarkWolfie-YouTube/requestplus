@@ -20,12 +20,54 @@
         
     </div>
     <script>
+        // Preview-only scaling: measure each theme, including artwork outside its container.
+        if (new URLSearchParams(location.search).has('preview')) {
+            const host = document.getElementById('body-container');
+            document.documentElement.style.overflow = 'hidden';
+            document.body.style.cssText = 'margin:0;overflow:hidden;width:100vw;height:100vh;';
+            host.style.width = '100vw';
+            host.style.height = '100vh';
+            host.style.transformOrigin = '0 0';
+            let frame;
+            const fitPreview = () => {
+                cancelAnimationFrame(frame);
+                frame = requestAnimationFrame(() => {
+                    host.style.transform = 'none';
+                    const root = host.firstElementChild;
+                    if (!root) return;
+                    const boxes = [root, ...root.querySelectorAll('.overlay-image, .overlay-text, .overlay-timer, .cover, .album-art-wrapper')]
+                        .map(node => node.getBoundingClientRect()).filter(rect => rect.width && rect.height);
+                    if (!boxes.length) return;
+                    const left = Math.min(...boxes.map(rect => rect.left));
+                    const top = Math.min(...boxes.map(rect => rect.top));
+                    const width = Math.max(...boxes.map(rect => rect.right)) - left;
+                    const height = Math.max(...boxes.map(rect => rect.bottom)) - top;
+                    const scale = Math.min((window.innerWidth - 24) / width, (window.innerHeight - 24) / height, 1);
+                    const x = (window.innerWidth - width * scale) / 2 - left * scale;
+                    const y = (window.innerHeight - height * scale) / 2 - top * scale;
+                    host.style.transform = `translate(${x}px, ${y}px) scale(${scale})`;
+                });
+            };
+            const resize = new ResizeObserver(fitPreview);
+            new MutationObserver(() => {
+                resize.disconnect();
+                if (host.firstElementChild) resize.observe(host.firstElementChild);
+                fitPreview();
+            }).observe(host, { childList: true, subtree: true, characterData: true });
+            document.getElementById('theme-css').addEventListener('load', fitPreview);
+            document.fonts.ready.then(fitPreview);
+            window.addEventListener('resize', fitPreview);
+            fitPreview();
+        }
         var songProgress = document.querySelector(".overlay-timer-bar");
         let currentTrack = null;
+        let activeTheme = null;
+        let songPollTimer;
+        let textTimer;
         let hideTimeout;
         let timeElapsed = 0;
         const requestPlusApiPorts = [444, 45924];
-        let requestPlusApiPort = requestPlusApiPorts[0];
+        let requestPlusApiPort = /^https?:$/.test(location.protocol) && requestPlusApiPorts.includes(Number(location.port)) ? Number(location.port) : requestPlusApiPorts[0];
 
         function requestPlusApi(path, options) {
             const ports = [requestPlusApiPort, ...requestPlusApiPorts.filter(port => port !== requestPlusApiPort)];
@@ -33,7 +75,8 @@
                 const port = ports[index];
                 $.ajax({
                     ...options,
-                    url: `http://127.0.0.1:${port}${path}`,
+                    cache: false,
+                    url: `http://127.0.0.1:${port}${path}?source=${new URLSearchParams(location.search).has("preview") ? "setup-preview" : "overlay"}`,
                     success: function(response) {
                         requestPlusApiPort = port;
                         if (options.success) options.success(response);
@@ -86,6 +129,7 @@
                 // Apply theme if it exists in the map
                 if (themeMap[response.theme]) {
                     document.getElementById("theme-css").href = themeMap[response.theme];
+                    activeTheme = response.theme;
                 }
                 if (response.theme.includes("nowplaying")) {
                     setupNowPlaying()
@@ -105,6 +149,8 @@
 }
 
         function setupDefault() {
+            clearInterval(songPollTimer);
+            clearInterval(textTimer);
             document.getElementById('body-container').innerHTML = `
                 <div class="overlay-container" id="overlay-container">
                     <div class="overlay-image">
@@ -127,8 +173,8 @@
                 </div>`
 
             songInfoLoop();
-            setInterval(songInfoLoop, 750);
-            setInterval(() => {
+            songPollTimer = setInterval(songInfoLoop, 750);
+            textTimer = setInterval(() => {
     
 
 
@@ -143,6 +189,7 @@
             songText.style.animation = "none";
             }
 
+            const artistText = document.querySelector(".artist-name-text");
             if (artistText.getBoundingClientRect().width > maxWidth) {
                 artistText.style.animation = "scrollText 6.78s linear infinite alternate";
             } else {
@@ -154,6 +201,8 @@
         }
 
         function setupNowPlaying() {
+            clearInterval(songPollTimer);
+            clearInterval(textTimer);
             document.getElementById('body-container').innerHTML = `
                 <div class="now-playing-container" id="nowPlaying">
                     <div class="now-playing-label">♫ NOW PLAYING</div>
@@ -170,7 +219,7 @@
                 </div>`
 
             npSongInfoLoop();
-            setInterval(npSongInfoLoop, 750);
+            songPollTimer = setInterval(npSongInfoLoop, 750);
         }
 
         function npSongInfoLoop() {
@@ -180,7 +229,7 @@
                 timeout: 5000, // Add timeout
                 success: function(response) {
 
-                    if (response.refresh) {
+                    if (response.refresh || (response.theme && response.theme !== activeTheme)) {
                         settingsReload()
                         return
                     }
@@ -288,7 +337,7 @@
                 crossDomain: true,
                 success: function(response) {
 
-                    if (response.refresh) {
+                    if (response.refresh || (response.theme && response.theme !== activeTheme)) {
                         settingsReload()
                         return
                     }
@@ -408,6 +457,7 @@
                 // Apply theme if it exists in the map
                 if (themeMap[response.theme]) {
                     document.getElementById("theme-css").href = themeMap[response.theme];
+                    activeTheme = response.theme;
                 }
                 if (response.theme.includes("nowplaying")) {
                     setupNowPlaying()
