@@ -1,0 +1,44 @@
+name: Build macOS arm64
+
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: Update branch feed (REQUESTPLUS_RELEASE_BRANCH)
+        default: stable
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: macos-14
+    env:
+      REQUESTPLUS_RELEASE_ARCH: arm64
+      REQUESTPLUS_RELEASE_BRANCH: ${{ github.event.inputs.branch || 'stable' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Make arm64 app (dmg + zip)
+        run: npx electron-forge make --platform=darwin --arch=arm64
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: requestplus-macos-arm64
+          path: out/make/**/*
+          if-no-files-found: error
+
+      - name: Attach to release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            out/make/*.dmg
+            out/make/zip/darwin/arm64/*.zip
