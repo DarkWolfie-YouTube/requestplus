@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, shell} from 'electron';
+import { app, BrowserWindow, ipcMain, shell, screen} from 'electron';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
@@ -51,11 +51,9 @@ export class WindowHandler {
   private mainWindow: BrowserWindow | null = null;
   private oobeWindow: BrowserWindow | null = null;
   private readonly settingsFilePath: string;
-  private readonly onOobeComplete?: () => void | Promise<void>;
 
-  constructor(userDataPath: string = app.getPath('userData'), onOobeComplete?: () => void | Promise<void>) {
+  constructor(userDataPath: string = app.getPath('userData')) {
     this.settingsFilePath = path.join(userDataPath, 'settings.json');
-    this.onOobeComplete = onOobeComplete;
     this.registerIpcHandlers();
   }
 
@@ -146,13 +144,14 @@ export class WindowHandler {
   }
 
   private makeWindow({ kind, title = 'Request+', width = 400, height = 800 }: ManagedWindowOptions): BrowserWindow {
+    const area = screen.getPrimaryDisplay().workAreaSize;
     return new BrowserWindow({
-      width,
-      height,
-      minWidth: kind === 'oobe' ? 800 : 400,
-      minHeight: 800,
+      width: kind === 'oobe' ? Math.min(960, area.width) : width,
+      height: kind === 'oobe' ? Math.min(height, area.height) : height,
+      minWidth: kind === 'oobe' ? Math.min(480, area.width) : 400,
+      minHeight: kind === 'oobe' ? Math.min(480, area.height) : 800,
       frame: false,
-      resizable: false,
+      resizable: kind === 'oobe',
       show: false,
       title,
       autoHideMenuBar: true,
@@ -198,23 +197,6 @@ export class WindowHandler {
     ipcMain.handle('settings:save', (_event, settings: RequestPlusSettings) => {
       const current = this.loadSettings();
       return this.saveSettings({ ...current, ...settings });
-    });
-
-    ipcMain.handle('oobe:complete', async (_event, settings: RequestPlusSettings = {}) => {
-      const current = this.loadSettings();
-      this.saveSettings({ ...current, ...settings, oobeCompleted: true });
-
-      if (this.oobeWindow && !this.oobeWindow.isDestroyed()) {
-        this.oobeWindow.close();
-      }
-
-      if (this.onOobeComplete) {
-        await this.onOobeComplete();
-        return true;
-      }
-
-      this.createMainWindow();
-      return true;
     });
 
     ipcMain.handle('oobe:overlay', (): string | null => {

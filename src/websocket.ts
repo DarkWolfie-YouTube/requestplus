@@ -5,6 +5,7 @@ import * as net from 'net';
 import * as musicmetadata from 'music-metadata';
 import { BrowserWindow } from 'electron';
 import { EventEmitter } from 'events';
+import { LOCAL_LOOPBACK_HOST } from './localPorts';
 
 // Type definitions
 interface Logger {
@@ -122,6 +123,8 @@ interface SearchAPIAlbumData {
 }
 
 class WebSocketServer extends EventEmitter {
+    private ports: readonly number[];
+    private portIndex: number;
     private port: number;
     private wss: WSS | null;
     private clients: Map<WebSocket, ClientInfo>;
@@ -132,9 +135,16 @@ class WebSocketServer extends EventEmitter {
     public lastReq: RequestData | null;
     public SearchResults: Array<SearchAPITrackData> = []
 
-    constructor(port: number, mainWindow: BrowserWindow, logger: Logger) {
+    private trackReceivedAt: Record<string, number> = {};
+    public hasRecentTrack(platform: string): boolean {
+        return Date.now() - (this.trackReceivedAt[platform] || 0) < 10000;
+    }
+
+    constructor(ports: readonly number[], mainWindow: BrowserWindow, logger: Logger) {
         super();
-        this.port = port;
+        this.ports = ports;
+        this.portIndex = 0;
+        this.port = ports[0];
         this.wss = null;
         this.clients = new Map();
         this.mainWindow = mainWindow;
@@ -187,24 +197,28 @@ class WebSocketServer extends EventEmitter {
         // First, check if the port is available
         const server = net.createServer();
         
-        server.listen(this.port, () => {
+        server.listen(this.port, LOCAL_LOOPBACK_HOST, () => {
             // Port is available, close this test server
             server.close(() => {
                 // Create WebSocket server
                 this.initWSServer();
             });
         }).on('error', (err: NodeJS.ErrnoException) => {
-            if (err.code === 'EADDRINUSE') {
-                this.logger.error(`Port ${this.port} is already in use. Attempting to close existing connections.`);
-                // Optionally, you could implement logic to find an alternative port
-            } else {
-                this.logger.error('Error starting server:', err);
+            const fallbackIndex = this.portIndex + 1;
+            if (fallbackIndex < this.ports.length) {
+                const failedPort = this.port;
+                this.portIndex = fallbackIndex;
+                this.port = this.ports[fallbackIndex];
+                this.logger.warn(`WebSocket port ${failedPort} is unavailable (${err.code ?? 'unknown'}); trying ${this.port}`);
+                this.initServer();
+                return;
             }
+            this.logger.error(`Could not start the WebSocket server on ports ${this.ports.join(' or ')}:`, err);
         });
     }
 
     private initWSServer(): void {
-        this.wss = new WSS({ port: this.port });
+        this.wss = new WSS({ port: this.port, host: LOCAL_LOOPBACK_HOST });
 
         this.wss.on('connection', (ws: WebSocket) => {
             // Initialize client with unknown type
@@ -314,6 +328,7 @@ class WebSocketServer extends EventEmitter {
                         }
 
                         this.lastSInfo = data;
+                        this.trackReceivedAt.spotify = Date.now();
                         
                         // Notify main process for auto-queue monitoring
                         try {
@@ -380,6 +395,7 @@ class WebSocketServer extends EventEmitter {
                             }
 
                             this.lastSOInfo = data;
+                            this.trackReceivedAt.soundcloud = Date.now();
                             
                             // Notify main process for auto-queue monitoring
                             try {
@@ -436,7 +452,7 @@ class WebSocketServer extends EventEmitter {
             this.logger.error('WebSocket Server Error:', error);
         });
 
-        this.logger.info(`WebSocket server started on port ${this.port}`);
+        this.logger.info(`WebSocket server started on ws://${LOCAL_LOOPBACK_HOST}:${this.port}`);
     }
 
     async WSSend(message: WSCommand): Promise<void> {

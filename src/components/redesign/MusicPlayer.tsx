@@ -141,7 +141,7 @@ export function MusicPlayer({ track, setTrack, queueItems, platform, locale }: M
             <SkipBack className="size-5 fill-current" />
           </button>
           <button
-            onClick={() => api()?.playPause?.()}
+            onClick={() => (track.isPlaying ? api()?.pause?.() : api()?.playPause?.())}
             className="flex size-[68px] items-center justify-center rounded-full bg-gradient-to-br from-violet-600 to-emerald-600 text-white shadow-xl shadow-violet-900/50 transition-all hover:from-violet-500 hover:to-emerald-500 active:scale-95"
           >
             {track.isPlaying
