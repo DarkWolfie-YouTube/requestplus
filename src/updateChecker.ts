@@ -443,10 +443,18 @@ async function scheduleWindowsBranchSwitch(
         logPath,
     };
 
-    const helper = spawn(
+    const helperCommand = [
+        'start',
+        '""',
+        '/b',
         'powershell.exe',
-        windowsBranchSwitchArguments(),
+        ...windowsBranchSwitchArguments(),
+    ].join(' ');
+    const helper = spawn(
+        'cmd.exe',
+        ['/d', '/s', '/c', helperCommand],
         {
+            detached: true,
             stdio: 'ignore',
             windowsHide: true,
             env: { ...process.env, ...windowsBranchSwitchEnvironment(switchOptions) },
@@ -458,15 +466,10 @@ async function scheduleWindowsBranchSwitch(
             resolve();
         });
     });
-    // The spawn event only confirms that Windows created powershell.exe. A hard
-    // app exit immediately afterward can win the scheduling race and terminate
-    // the child before the script executes. Wait for its first log write, which
-    // occurs before it begins waiting for this Request+ process to close.
+    // cmd.exe start launches PowerShell independently from Request+. Wait for
+    // the helper's first log write before allowing the app to exit.
     const readyDeadline = Date.now() + 10_000;
     while (Date.now() < readyDeadline) {
-        if (helper.exitCode !== null) {
-            throw new Error(`The branch-switch helper exited before startup (code ${helper.exitCode})`);
-        }
         try {
             if ((await stat(logPath)).size > 0) break;
         } catch {
@@ -483,10 +486,8 @@ async function scheduleWindowsBranchSwitch(
     if (!helperReady) {
         throw new Error('The branch-switch helper did not start within 10 seconds');
     }
-    // A normal hidden Windows child survives its parent. `detached: true`
-    // causes Windows PowerShell to exit 0 without evaluating the command on
-    // some Windows builds, so release the event-loop reference only after the
-    // startup log proves that the script is running.
+    // The cmd.exe launcher exits after handing the helper to Windows. Release
+    // its event-loop reference after the startup log proves the handoff worked.
     helper.unref();
     logger.info(
         `Scheduled reinstall from ${installedUpdateChannel(DEFAULT_UPDATE_CHANNEL)} to ${selectedChannel}; ` +
@@ -506,17 +507,13 @@ async function openUpdateInstaller(
 ): Promise<void> {
     const selectedChannel = selected.channel;
     const releaseVersion = selected.latestVersion ?? selected.release?.version ?? app.getVersion();
-    const squirrelSwitch = switchingChannel &&
-        squirrelUpdateExecutable() !== null;
     const choice = await sendModal(
         window,
         switchingChannel ? 'Switch Request+ Update Feed' : 'Request+ Update Ready',
-        squirrelSwitch
-            ? `Request+ will close, remove the ${installedUpdateChannel(DEFAULT_UPDATE_CHANNEL)} build, and install the ${selectedChannel} build (${releaseVersion}). Your settings will be kept.`
-            : switchingChannel
-                ? `The ${selectedChannel} build (${releaseVersion}) has been downloaded and verified. Open its installer now?`
-                : `Request+ ${releaseVersion} has been downloaded and verified. Open the installer now?`,
-        [squirrelSwitch ? 'Restart and switch' : 'Open installer', 'Later']
+        switchingChannel
+            ? `The ${selectedChannel} build (${releaseVersion}) has been downloaded and verified. Request+ will close and run its installer.`
+            : `Request+ ${releaseVersion} has been downloaded and verified. Open its installer now?`,
+        ['Run installer', 'Later']
     );
     if (choice !== 0) {
         await sendToastWithDelay(window, 'Update downloaded. You can install it from your temporary files.', 'info', 5000, 100);
@@ -525,12 +522,23 @@ async function openUpdateInstaller(
 
     recordPendingUpdate(selectedChannel, releaseVersion);
     try {
-        if (squirrelSwitch) {
-            await scheduleWindowsBranchSwitch(destination, selectedChannel, logger);
-            return;
+        if (process.platform === 'win32' && path.extname(destination).toLowerCase() === '.exe') {
+            const installer = spawn(destination, [], {
+                detached: true,
+                stdio: 'ignore',
+                windowsHide: false,
+            });
+            await new Promise<void>((resolve, reject) => {
+                installer.once('error', reject);
+                installer.once('spawn', resolve);
+            });
+            installer.unref();
+            logger.info(`Started ${selectedChannel} branch installer: ${destination}`);
+            app.quit();
+        } else {
+            const openError = await shell.openPath(destination);
+            if (openError) throw new Error(openError);
         }
-        const openError = await shell.openPath(destination);
-        if (openError) throw new Error(openError);
     } catch (error) {
         clearPendingUpdate();
         throw error;
