@@ -135,6 +135,11 @@ class WebSocketServer extends EventEmitter {
     public lastReq: RequestData | null;
     public SearchResults: Array<SearchAPITrackData> = []
 
+    private trackReceivedAt: Record<string, number> = {};
+    public hasRecentTrack(platform: string): boolean {
+        return Date.now() - (this.trackReceivedAt[platform] || 0) < 10000;
+    }
+
     constructor(ports: readonly number[], mainWindow: BrowserWindow, logger: Logger) {
         super();
         this.ports = ports;
@@ -323,6 +328,7 @@ class WebSocketServer extends EventEmitter {
                         }
 
                         this.lastSInfo = data;
+                        this.trackReceivedAt.spotify = Date.now();
                         
                         // Notify main process for auto-queue monitoring
                         try {
@@ -389,6 +395,7 @@ class WebSocketServer extends EventEmitter {
                             }
 
                             this.lastSOInfo = data;
+                            this.trackReceivedAt.soundcloud = Date.now();
                             
                             // Notify main process for auto-queue monitoring
                             try {

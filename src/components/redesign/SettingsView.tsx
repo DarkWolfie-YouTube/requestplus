@@ -1,3 +1,4 @@
+import { overlayThemes } from "../../onboarding";
 import { useEffect, useState } from "react";
 import { Music, Settings, List, X, Minus, Play, Pause, SkipBack, SkipForward, Heart, Shuffle, Repeat, Repeat1, Volume2, Trash2, Check, Copy, Eye, Headphones, ListChecks, Lock, Radio, Shield, Sparkles, UserRound, ExternalLink, RefreshCw, LogOut, User as UserIcon, ArrowLeft, ArrowRight, Music2 } from "lucide-react";
 import { toast } from "sonner";
@@ -177,22 +178,24 @@ export function SettingsView({ settings, setSettings, user, setUser, overlayPath
     try {
       await updateApi.setUpdateChannel(channel);
       toast.success(`Update feed changed to ${formatChannelName(channel)}.`);
+
+      // Keep the picker disabled until this feed's check and installer prompt
+      // finish. Starting several branch downloads at once can otherwise race the
+      // final handoff and install a feed the user no longer has selected.
+      if (channel !== previous && typeof updateApi.checkForUpdates === "function") {
+        try {
+          await updateApi.checkForUpdates();
+        } catch (error) {
+          console.error("Failed to check the selected update feed:", error);
+          toast.error("The update feed changed, but its update check failed.");
+        }
+      }
     } catch (error) {
       setUpdateChannelState(previous);
       console.error("Failed to save update feed:", error);
       toast.error("Failed to change the update feed.");
-      return;
     } finally {
       setUpdateChannelSaving(false);
-    }
-
-    if (channel !== previous && typeof updateApi.checkForUpdates === "function") {
-      try {
-        await updateApi.checkForUpdates();
-      } catch (error) {
-        console.error("Failed to check the selected update feed:", error);
-        toast.error("The update feed changed, but its update check failed.");
-      }
     }
   };
 
@@ -259,22 +262,7 @@ export function SettingsView({ settings, setSettings, user, setUser, overlayPath
 
   const isMultiPlatform = settings.platform in multiPlatformMembers;
 
-  const themes = [
-    { value: 'default', label: t("CLIENT_THEME_DEFAULT", locale) },
-    { value: 'custom', label: t("CLIENT_THEME_CUSTOM", locale) },
-    { value: 'gojo', label: t("CLIENT_THEME_GOJO", locale) },
-    { value: 'hologram', label: t("CLIENT_THEME_HOLOGRAM", locale) },
-    { value: 'mdev', label: t("CLIENT_THEME_MDEV", locale) },
-    { value: 'moonkingbean', label: t("CLIENT_THEME_MOONKINGBEAN", locale) },
-    { value: 'twinGhost', label: t("CLIENT_THEME_TWINGHOST", locale) },
-    { value: 'nowplaying-default', label: t("CLIENT_THEME_NOWPLAYING_DEFAULT", locale) },
-    { value: 'nowplaying-custom', label: t("CLIENT_THEME_NOWPLAYING_CUSTOM", locale) },
-    { value: 'nowplaying-gojo', label: t("CLIENT_THEME_NOWPLAYING_GOJO", locale) },
-    { value: 'nowplaying-hologram', label: t("CLIENT_THEME_NOWPLAYING_HOLOGRAM", locale) },
-    { value: 'nowplaying-mdev', label: t("CLIENT_THEME_NOWPLAYING_MDEV", locale) },
-    { value: 'nowplaying-moonkingbean', label: t("CLIENT_THEME_NOWPLAYING_MOONKINGBEAN", locale) },
-    { value: 'nowplaying-twinGhost', label: t("CLIENT_THEME_NOWPLAYING_TWINGHOST", locale) }
-  ];
+  const themes = overlayThemes.map(theme => ({ value: theme.value, label: t(theme.label, locale) }));
 
   return (
     <div className="relative flex h-full flex-col overflow-hidden bg-slate-950">
@@ -291,6 +279,8 @@ export function SettingsView({ settings, setSettings, user, setUser, overlayPath
             <p className="text-[11px] text-violet-400">Request+</p>
           </div>
         </div>
+
+        <button type="button" className="w-full rounded-xl border border-violet-400/30 bg-slate-800 px-4 py-3 text-sm text-white" onClick={() => void api().openSetup().catch(() => toast.error(t("SETUP_ACTION_FAILED", locale)))}>{t("SETUP_REOPEN", locale)}</button>
 
         {/* Account */}
         <Section title={t("CLIENT_ACCOUNT_TITLE", locale)}>
@@ -450,7 +440,7 @@ export function SettingsView({ settings, setSettings, user, setUser, overlayPath
 
         {/* Modules */}
         <Section title={t("CLIENT_MODULES_TITLE", locale)} desc={t("CLIENT_MODULES_DESC", locale)}>
-          <ToggleRow label={t("CLIENT_MOD_QUEUE_TITLE", locale)} desc={t("CLIENT_MOD_QUEUE_DESC", locale)} checked={!!settings.autoPlay} onChange={(v) => p({ autoPlay: v })} />
+          {<ToggleRow label={t("CLIENT_MOD_QUEUE_TITLE", locale)} desc={t("CLIENT_MOD_QUEUE_DESC", locale)} checked={!!settings.autoPlay} onChange={(v) => p({ autoPlay: v })} />}
           <ToggleRow label={t("CLIENT_GTS_TITLE", locale)} desc={t("CLIENT_GTS_DESC", locale)} checked={!!settings.gtsEnabled} onChange={(v) => p({ gtsEnabled: v })} />
           {settings.platform !== "youtube" && (
             <ToggleRow label={t("CLIENT_FILTER_EXPLICIT", locale)} desc={t("CLIENT_FILTER_EXPLICIT_DESC", locale)} checked={!!settings.filterExplicit} onChange={(v) => p({ filterExplicit: v })} />

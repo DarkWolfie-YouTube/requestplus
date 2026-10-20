@@ -2,7 +2,7 @@ import express, { Express, Request, Response } from 'express';
 import cors from 'cors';
 import { Settings } from './settingsHandler';
 import * as path from 'path';
-import { BrowserWindow } from 'electron';
+import { app, BrowserWindow } from 'electron';
 import PlaybackHandler from './playbackHandler';
 import type { Server } from 'node:http';
 import { LOCAL_API_PORTS, LOCAL_LOOPBACK_HOST } from './localPorts';
@@ -67,6 +67,8 @@ class APIHandler {
     private server: Server | null = null;
     public hideSongFromView: boolean = false;
 
+    public setWindow(window: BrowserWindow): void { this.mainWindow = window; }
+
     constructor(
         mainWindow: BrowserWindow, 
         playbackHandler: PlaybackHandler, 
@@ -85,6 +87,13 @@ class APIHandler {
         this.startServer();
     }
 
+    private lastOverlayPoll = 0;
+    public isOverlayConnected(): boolean { return Date.now() - this.lastOverlayPoll < 10000; }
+    public getOverlayPreviewUrl(): string | null {
+        const address = this.server?.address();
+        return address && typeof address !== 'string' ? `http://127.0.0.1:${address.port}/overlay/overlay.html?preview=1` : null;
+    }
+
     private setupMiddleware(): void {
         this.app.use(express.json());
         this.app.use(express.urlencoded({ extended: true }));
@@ -96,6 +105,7 @@ class APIHandler {
     }
 
     private setupRoutes(): void {
+        this.app.use('/overlay', express.static(path.join(app.getPath('userData'), 'overlay'), { etag: false, maxAge: 0, setHeaders: res => res.setHeader('Cache-Control', 'no-store') }));
         // Serve a simple HTML page that can extract the hash fragment
         this.app.get("/", (req: Request, res: Response): void => {
             const html = `
@@ -330,19 +340,21 @@ class APIHandler {
         
 
         this.app.get("/info", (req: Request, res: Response): void => {
+            if (req.query.source === "overlay") this.lastOverlayPoll = Date.now();
             if (this.refresh) {
-                res.json({ ...this.playbackHandler.currentSong, refresh: this.refresh });
+                res.json({ ...this.playbackHandler.currentSong, theme: this.theme, refresh: this.refresh });
                 this.refresh = false;
                 return;
             }
             if (this.hideSongFromView) {
-                res.json({ songHidden: true, gtsActive: true });
+                res.json({ songHidden: true, gtsActive: true, theme: this.theme });
                 return;
             };
-            res.json(this.playbackHandler.currentSong);
+            res.json({ ...this.playbackHandler.currentSong, theme: this.theme });
         });
 
         this.app.get("/settings", (req: Request, res: Response): void => {
+            res.setHeader('Cache-Control', 'no-store');
             res.json({ theme: this.theme });
         });
         

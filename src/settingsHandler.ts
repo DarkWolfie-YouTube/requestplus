@@ -1,5 +1,6 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { randomUUID } from 'node:crypto';
 
 // Type definitions for settings structure
 interface Settings {
@@ -98,11 +99,15 @@ class SettingsHandler {
     }
 
     save(settings: Settings): boolean {
+        const temporaryPath = `${this.settingsFilePath}.${randomUUID()}.tmp`;
         try {
             const { multiPlatform: _multiPlatform, platforms: _platforms, ...persistedSettings } = settings;
-            fs.writeFileSync(this.settingsFilePath, JSON.stringify(persistedSettings, null, 2), 'utf-8');
+            fs.mkdirSync(path.dirname(this.settingsFilePath), { recursive: true });
+            fs.writeFileSync(temporaryPath, JSON.stringify(persistedSettings, null, 2), { encoding: 'utf-8', flag: 'wx' });
+            fs.renameSync(temporaryPath, this.settingsFilePath);
             return true;
         } catch (error) {
+            try { if (fs.existsSync(temporaryPath)) fs.unlinkSync(temporaryPath); } catch {}
             console.error('Error saving settings:', error);
             return false;
         }
