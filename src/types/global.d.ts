@@ -38,6 +38,7 @@ interface Settings {
 
 interface UpdateSettings {
   checkPreReleases: boolean;
+  channel: string;
   [key: string]: any;
 }
 
@@ -68,6 +69,8 @@ interface ElectronAPI {
   // Update system
   checkForUpdates: () => Promise<void>;
   getUpdateSettings: () => Promise<UpdateSettings>;
+  getUpdateChannels: () => Promise<string[]>;
+  setUpdateChannel: (channel: string) => Promise<void>;
   setPreReleaseCheck: (enabled: boolean) => Promise<void>;
 
   // Overlay

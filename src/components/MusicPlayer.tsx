@@ -3,8 +3,8 @@ import { useState, useEffect, useRef } from 'react';
 import { t } from '../i18n';
 import { Volume2, Heart, SkipBack, Play, Pause, SkipForward, Repeat, Shuffle, Repeat1, Music } from 'lucide-react';
 import { ImageWithFallback } from './figma/ImageWithFallback';
-import { Queue } from 'src/queueHandler';
-import { Settings } from 'src/settingsHandler';
+import { Queue } from '../queueHandler';
+import { Settings } from '../settingsHandler';
 
 interface Track {
   title: string;

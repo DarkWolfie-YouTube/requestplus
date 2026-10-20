@@ -11,6 +11,7 @@ interface ElectronAPI {
 
   // Music controls
   playPause: () => Promise<void>;
+  pause: () => Promise<void>;
   skip: () => Promise<void>;
   previous: () => Promise<void>;
   like: () => Promise<void>;
@@ -34,7 +35,7 @@ interface ElectronAPI {
   requestPlusLogout: () => Promise<void>;
   twitchLogin: () => Promise<void>;
   twitchLogout: () => Promise<void>;
-  authSuccess: (callback: (user: any) => void) => void;
+  authSuccess: (callback: (user: any) => void) => () => void;
   authCheck: (callback: (isAuthenticated: boolean) => void) => void;
   authChecker: () => Promise<void>;
 
@@ -44,6 +45,7 @@ interface ElectronAPI {
   loadSettings: () => Promise<any>;
   saveSettings: (settings: any) => Promise<void>;
   settingsUpdated: (settings: any) => void;
+  onSettingsChanged: (callback: (settings: any) => void) => () => void;
   requestCiderToken: () => Promise<string>;
   getChannelPointReward: () => Promise<WebSocketMessage>;
   createChannelPointReward: (payload: { title: string; description: string; color: string; cooldown: number }) => Promise<WebSocketMessage>;
@@ -52,9 +54,12 @@ interface ElectronAPI {
   // Update system
   checkForUpdates: () => Promise<void>;
   getUpdateSettings: () => Promise<any>;
+  getUpdateChannels: () => Promise<string[]>;
+  setUpdateChannel: (channel: string) => Promise<void>;
   setPreReleaseCheck: (enabled: boolean) => Promise<void>;
 
   // Overlay
+  reportRendererError: (payload: { message: string; stack?: string; componentStack?: string | null }) => void;
   getOverlayPath: () => Promise<string>;
 
   // Track info
@@ -62,7 +67,14 @@ interface ElectronAPI {
 
   // First time setup
   runFirstTime: () => Promise<void>;
-  completeOnboarding: (settings: any) => Promise<void>;
+  completeOnboarding: (settings: any) => Promise<boolean>;
+  setupStatus: () => Promise<import('./onboarding').SetupStatus>;
+  setupConnections: () => Promise<import('./onboarding').SetupConnections>;
+  saveSetupDraft: (patch: unknown) => Promise<void>;
+  setupCiderToken: () => Promise<string>;
+  setupDashboard: () => Promise<void>;
+  setupBeginTest: () => Promise<void>;
+  openSetup: () => Promise<void>;
   yes: () => Promise<String>;
   yesnt: (url: string) => Promise<void>;
 
@@ -94,6 +106,8 @@ interface ElectronAPI {
 
   // Debug function
   debug: () => void;
+
+  isMac: () => Promise<boolean>;
 }
 
 // Create the API object
@@ -104,6 +118,7 @@ const electronAPI: ElectronAPI = {
 
   // Music controls
   playPause: () => ipcRenderer.invoke('song-play'),
+  pause: () => ipcRenderer.invoke('song-pause'),
   skip: () => ipcRenderer.invoke('song-skip'),
   previous: () => ipcRenderer.invoke('song-previous'),
   volume: (level) => ipcRenderer.invoke('song-volume', level),
@@ -165,7 +180,9 @@ const electronAPI: ElectronAPI = {
   twitchLogin: () => ipcRenderer.invoke('login'),
   twitchLogout: () => ipcRenderer.invoke('logout'),
   authSuccess: (callback) => {
-    ipcRenderer.on('auth-status', (_, data) => callback(data));
+    const listener = (_event: Electron.IpcRendererEvent, data: unknown) => callback(data);
+    ipcRenderer.on('auth-status', listener);
+    return () => ipcRenderer.removeListener('auth-status', listener);
   },
   authCheck: (callback) => {
     ipcRenderer.on('auth-check', (_, data) => callback(data));
@@ -178,6 +195,11 @@ const electronAPI: ElectronAPI = {
   loadSettings: () => ipcRenderer.invoke('load-settings'),
   saveSettings: (settings) => ipcRenderer.invoke('save-settings', settings),
   settingsUpdated: (settings) => ipcRenderer.send('settings-updated', settings),
+  onSettingsChanged: (callback) => {
+    const listener = (_event: Electron.IpcRendererEvent, settings: unknown) => callback(settings);
+    ipcRenderer.on('settings-updated-from-main', listener);
+    return () => ipcRenderer.removeListener('settings-updated-from-main', listener);
+  },
   requestCiderToken: () => ipcRenderer.invoke('cider:request-token'),
   getChannelPointReward: () => ipcRenderer.invoke('channel-point:get'),
   createChannelPointReward: (payload) => ipcRenderer.invoke('channel-point:create', payload),
@@ -186,7 +208,12 @@ const electronAPI: ElectronAPI = {
   // Update system
   checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
   getUpdateSettings: () => ipcRenderer.invoke('get-update-settings'),
+  getUpdateChannels: () => ipcRenderer.invoke('get-update-channels'),
+  setUpdateChannel: (channel) => ipcRenderer.invoke('set-update-channel', channel),
   setPreReleaseCheck: (enabled) => ipcRenderer.invoke('set-pre-release-check', enabled),
+
+  // Renderer-Fehler an den Main-Prozess melden, damit sie in log.txt landen
+  reportRendererError: (payload) => ipcRenderer.send('renderer-error', payload),
 
   // Overlay
   getOverlayPath: () => ipcRenderer.invoke('get-overlay-path'),
@@ -199,6 +226,13 @@ const electronAPI: ElectronAPI = {
   // First time setup
   runFirstTime: () => ipcRenderer.invoke('runFirstTime'),
   completeOnboarding: (settings) => ipcRenderer.invoke('oobe:complete', settings),
+  setupStatus: () => ipcRenderer.invoke('oobe:status'),
+  setupConnections: () => ipcRenderer.invoke('oobe:connections'),
+  saveSetupDraft: (patch) => ipcRenderer.invoke('oobe:save-draft', patch),
+  setupCiderToken: () => ipcRenderer.invoke('oobe:cider-token'),
+  setupDashboard: () => ipcRenderer.invoke('oobe:dashboard'),
+  setupBeginTest: () => ipcRenderer.invoke('oobe:begin-test'),
+  openSetup: () => ipcRenderer.invoke('oobe:open'),
   yes: () => {return ipcRenderer.invoke('oobe:overlay')},
   yesnt: (url) => ipcRenderer.invoke('oobe:openURL', url),
 
@@ -253,7 +287,10 @@ const electronAPI: ElectronAPI = {
     console.log('Debug function called from preload');
     console.log(await ipcRenderer.invoke('auth:getStatus'));
     console.log(await ipcRenderer.invoke('auth:getHardwareInfo'));
-  }
+  },
+
+  isMac: () => ipcRenderer.invoke('IsMac'),
+
 };
 
 // Expose the API to the renderer process

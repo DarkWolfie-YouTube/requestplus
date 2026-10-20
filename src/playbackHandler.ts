@@ -151,13 +151,17 @@ class PlaybackHandler {
 
             this.currentSong = {
                 id: ytSongData.videoId || '',
-                title: ytSongData.title,
+                title: ytSongData.title || 'Unknown Title',
                 artist: ytSongData.artist || 'Unknown Artist',
                 album: '',
                 duration: ytSongData.songDuration * 1000,
                 progress: ytSongData.elapsedSeconds * 1000,
                 cover: ytSongData.imageSrc || '',
-                isPlaying: !ytSongData.isPaused,
+                // Pear reports isPaused:false for a track it has merely loaded, so the
+                // player shows a pause button before anything is playing. A track
+                // sitting at 0s has not started; once it really plays, elapsedSeconds
+                // moves and this corrects itself on the next poll.
+                isPlaying: !ytSongData.isPaused && ytSongData.elapsedSeconds > 0,
                 volume: (ytVolume ? ytVolume.state / 100 : 0) || 0,
                 shuffle: ytShuffle ?? false,
                 repeat: ytRepeat ? this.convertYouTubeRepeatMode(ytRepeat.mode) : 0,

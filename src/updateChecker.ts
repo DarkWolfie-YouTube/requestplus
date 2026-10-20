@@ -1,23 +1,60 @@
+import { sendModal } from './uiDialogs';
+export { sendModal, resolveModal } from './uiDialogs';
+import { installedUpdateChannel, recordPendingUpdate, clearPendingUpdate } from './installedUpdate';
 import { app, BrowserWindow, shell } from 'electron';
 import fetch from 'node-fetch';
-import { version as currentVersion } from '../package.json';
+import { createHash } from 'node:crypto';
+import { spawn } from 'node:child_process';
 import * as fs from 'fs';
+import { createWriteStream } from 'node:fs';
+import { mkdir, rm, stat } from 'node:fs/promises';
 import * as path from 'path';
+import { Transform } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 import { setTimeout as wait } from 'node:timers/promises';
+import { checkForNativeUpdate } from './nativeUpdater';
+import { windowsBranchSwitchArguments, windowsBranchSwitchEnvironment } from './windowsBranchSwitch';
+
+declare const __REQUESTPLUS_RELEASE_CHANNEL__: string;
+
+const UPDATE_SERVER_URL = 'https://updates.requestplus.xyz/v1/updates/check';
+const UPDATE_CHANNELS_URL = 'https://updates.requestplus.xyz/v1/updates/channels';
+const UPDATE_REQUEST_TIMEOUT_MS = 10_000;
+const COMPILED_UPDATE_CHANNEL = typeof __REQUESTPLUS_RELEASE_CHANNEL__ === 'string'
+    ? __REQUESTPLUS_RELEASE_CHANNEL__
+    : 'stable';
+const DEFAULT_UPDATE_CHANNEL = validChannel(COMPILED_UPDATE_CHANNEL)
+    ? COMPILED_UPDATE_CHANNEL
+    : 'stable';
 
 // Type definitions
 interface UpdateSettings {
     checkPreReleases: boolean;
+    channel: string;
     [key: string]: any;
 }
 
-interface GitHubRelease {
-    tag_name: string;
-    prerelease: boolean;
-    html_url: string;
-    name?: string;
-    body?: string;
-    published_at?: string;
+interface UpdateServerRelease {
+    version: string;
+    publishedAt: string;
+    fileName: string;
+    downloadUrl: string;
+    sha256: string | null;
+    size: number;
+    format: string;
+}
+
+interface UpdateServerResponse {
+    product: 'Request+';
+    currentVersion: string;
+    channel: string;
+    platform: string;
+    arch: string;
+    updateAvailable: boolean;
+    latestVersion: string | null;
+    mandatory: boolean;
+    reason: 'update-available' | 'up-to-date' | 'ahead' | 'no-compatible-release';
+    release: UpdateServerRelease | null;
 }
 
 interface ToastMessage {
@@ -39,34 +76,11 @@ interface VersionParsed {
 }
 
 let settings: UpdateSettings = {
-    checkPreReleases: false
+    checkPreReleases: false,
+    channel: 'stable'
 };
 
 // ── Web-UI modal helpers ────────────────────────────────────────────────────
-
-const pendingModals = new Map<string, (response: number) => void>();
-
-/** Send a modal to the renderer and resolve with the index of the button clicked. */
-function sendModal(window: BrowserWindow | null, title: string, message: string, buttons: string[]): Promise<number> {
-    return new Promise((resolve) => {
-        if (!window || window.isDestroyed()) {
-            resolve(0);
-            return;
-        }
-        const id = Math.random().toString(36).substring(2);
-        pendingModals.set(id, resolve);
-        window.webContents.send('show-modal', { id, title, message, buttons });
-    });
-}
-
-/** Called from main.ts when the renderer sends back a modal-response event. */
-export function resolveModal(id: string, response: number): void {
-    const resolver = pendingModals.get(id);
-    if (resolver) {
-        resolver(response);
-        pendingModals.delete(id);
-    }
-}
 
 /** Shared terms-of-service modal flow used for both first-run and updates. */
 async function showTermsFlow(window: BrowserWindow | null, termsUrl: string, termsVersion: string): Promise<void> {
@@ -104,7 +118,16 @@ function loadSettings(): void {
         const settingsPath = path.join(app.getPath('userData'), 'update-settings.json');
         if (fs.existsSync(settingsPath)) {
             const data = fs.readFileSync(settingsPath, 'utf8');
-            settings = { ...settings, ...JSON.parse(data) };
+            const saved = JSON.parse(data) as Partial<UpdateSettings>;
+            settings = {
+                ...settings,
+                ...saved,
+                channel: validChannel(saved.channel)
+                    ? saved.channel
+                    : saved.checkPreReleases
+                        ? 'beta'
+                        : 'stable'
+            };
         }
     } catch (error) {
         console.error('Error loading update settings:', error);
@@ -157,6 +180,372 @@ async function sendToastWithDelay(window: BrowserWindow | null, message: string,
     sendToast(window, message, type, duration);
 }
 
+function getUpdateTarget(): { platform: string; arch: string } {
+    const platforms: Partial<Record<NodeJS.Platform, string>> = {
+        aix: 'aix',
+        android: 'android',
+        darwin: 'macos',
+        freebsd: 'freebsd',
+        haiku: 'haiku',
+        linux: 'linux',
+        openbsd: 'openbsd',
+        sunos: 'sunos',
+        win32: 'windows'
+    };
+    const architectures: Record<string, string> = {
+        arm64: 'arm64',
+        ia32: 'x86',
+        x64: 'x64'
+    };
+    return {
+        platform: platforms[process.platform] ?? process.platform,
+        arch: architectures[process.arch] ?? process.arch
+    };
+}
+
+async function requestUpdate(
+    currentVersion: string,
+    channel: string,
+    logger: Logger,
+    forceArtifact = false
+): Promise<UpdateServerResponse> {
+    const target = getUpdateTarget();
+    const endpoint = new URL(UPDATE_SERVER_URL);
+    // The update service intentionally omits the artifact when versions match.
+    // Query from a baseline version when changing feeds so a same-version branch
+    // build can still be downloaded and installed.
+    endpoint.searchParams.set('currentVersion', forceArtifact ? '0.0.0' : currentVersion);
+    endpoint.searchParams.set('platform', target.platform);
+    endpoint.searchParams.set('arch', target.arch);
+    endpoint.searchParams.set('channel', channel);
+
+    const response = await fetch(endpoint, {
+        headers: { 'User-Agent': `RequestPlus/${currentVersion} UpdateChecker` },
+        signal: AbortSignal.timeout(UPDATE_REQUEST_TIMEOUT_MS)
+    });
+    if (!response.ok) {
+        throw new Error(`Update server returned HTTP ${response.status} for ${channel}`);
+    }
+
+    const data = await response.json() as UpdateServerResponse;
+    if (
+        data?.product !== 'Request+' ||
+        typeof data.updateAvailable !== 'boolean' ||
+        (data.updateAvailable && (!data.release?.downloadUrl || !data.latestVersion))
+    ) {
+        throw new Error(`Update server returned an invalid response for ${channel}`);
+    }
+    logger.info(
+        `Update server ${channel} result: ${data.reason}` +
+        (data.latestVersion ? ` (${data.latestVersion})` : '') +
+        (forceArtifact ? ' [branch switch]' : '')
+    );
+    return data;
+}
+
+async function getAvailableUpdateChannels(): Promise<string[]> {
+    const response = await fetch(UPDATE_CHANNELS_URL, {
+        headers: { 'User-Agent': `RequestPlus/${app.getVersion()} UpdateChannelPicker` },
+        signal: AbortSignal.timeout(UPDATE_REQUEST_TIMEOUT_MS)
+    });
+    if (!response.ok) {
+        throw new Error(`Update server returned HTTP ${response.status} while listing feeds`);
+    }
+
+    const data = await response.json() as { channels?: unknown };
+    if (!Array.isArray(data.channels)) {
+        throw new Error('Update server returned an invalid feed list');
+    }
+    const channels = [...new Set(data.channels.filter(validChannel))];
+    if (channels.length === 0) {
+        throw new Error('No update feeds are currently available');
+    }
+    return channels.sort(channelSort);
+}
+
+function selectNewestUpdate(responses: UpdateServerResponse[]): UpdateServerResponse | undefined {
+    return responses
+        .filter((response) => response.updateAvailable && response.release && response.latestVersion)
+        .reduce<UpdateServerResponse | undefined>((selected, candidate) => {
+            if (!selected?.latestVersion || compareVersions(selected.latestVersion, candidate.latestVersion!)) {
+                return candidate;
+            }
+            return selected;
+        }, undefined);
+}
+
+async function downloadAndInstallLinuxUpdate(
+    release: UpdateServerRelease,
+    window: BrowserWindow | null,
+    logger: Logger
+): Promise<void> {
+    if (!release.sha256) {
+        throw new Error('Linux update is missing its required SHA-256 checksum');
+    }
+    const downloadUrl = new URL(release.downloadUrl);
+    if (downloadUrl.protocol !== 'https:') {
+        throw new Error('Update server returned a non-HTTPS download URL');
+    }
+
+    const updateDirectory = path.join(app.getPath('temp'), 'requestplus-updates', release.version);
+    await mkdir(updateDirectory, { recursive: true });
+    const fileName = path.basename(release.fileName);
+    const destination = path.join(updateDirectory, fileName);
+    const response = await fetch(downloadUrl, {
+        headers: { 'User-Agent': `RequestPlus/${app.getVersion()} LinuxUpdater` },
+        signal: AbortSignal.timeout(30 * 60 * 1000)
+    });
+    if (!response.ok || !response.body) {
+        throw new Error(`Update download returned HTTP ${response.status}`);
+    }
+
+    sendToast(window, `Downloading Request+ ${release.version}...`, 'info', 5000);
+    const hash = createHash('sha256');
+    const hashTransform = new Transform({
+        transform(chunk, _encoding, callback) {
+            hash.update(chunk);
+            callback(null, chunk);
+        }
+    });
+
+    try {
+        await pipeline(response.body, hashTransform, createWriteStream(destination));
+        const downloadedSize = (await stat(destination)).size;
+        const downloadedHash = hash.digest('hex');
+        if (downloadedSize !== release.size) {
+            throw new Error(`Update size mismatch: expected ${release.size}, received ${downloadedSize}`);
+        }
+        if (downloadedHash.toLowerCase() !== release.sha256.toLowerCase()) {
+            throw new Error('Update SHA-256 verification failed');
+        }
+    } catch (error) {
+        await rm(destination, { force: true });
+        throw error;
+    }
+
+    logger.info(`Verified Linux update package: ${destination}`);
+    const choice = await sendModal(
+        window,
+        'Request+ Update Ready',
+        `Request+ ${release.version} has been downloaded and verified. Open your system package installer now?`,
+        ['Install', 'Later']
+    );
+    if (choice === 0) {
+        const openError = await shell.openPath(destination);
+        if (openError) {
+            throw new Error(openError);
+        }
+        sendToast(window, 'Update opened in your system package installer.', 'success', 5000);
+    }
+}
+
+async function downloadUpdatePackage(
+    release: UpdateServerRelease,
+    window: BrowserWindow | null,
+    logger: Logger
+): Promise<string> {
+    if (!release.downloadUrl || !release.fileName) {
+        throw new Error('Update server did not provide a downloadable artifact');
+    }
+    const downloadUrl = new URL(release.downloadUrl);
+    if (downloadUrl.protocol !== 'https:') {
+        throw new Error('Update server returned a non-HTTPS download URL');
+    }
+
+    const fileName = path.basename(release.fileName);
+    if (fileName !== release.fileName || fileName === '.' || fileName === '..') {
+        throw new Error('Update server returned an invalid artifact filename');
+    }
+    const updateDirectory = path.join(app.getPath('temp'), 'requestplus-updates', release.version);
+    await mkdir(updateDirectory, { recursive: true });
+    const destination = path.join(updateDirectory, fileName);
+    const response = await fetch(downloadUrl, {
+        headers: { 'User-Agent': `RequestPlus/${app.getVersion()} UpdateDownloader` },
+        signal: AbortSignal.timeout(30 * 60 * 1000)
+    });
+    if (!response.ok || !response.body) {
+        throw new Error(`Update download returned HTTP ${response.status}`);
+    }
+
+    const expectedSize = release.size > 0
+        ? release.size
+        : Number(response.headers.get('content-length') ?? 0);
+    const hash = createHash('sha256');
+    let downloaded = 0;
+    let lastProgressAt = 0;
+    const progress = new Transform({
+        transform(chunk, _encoding, callback) {
+            downloaded += chunk.length;
+            hash.update(chunk);
+            const now = Date.now();
+            if (now - lastProgressAt >= 1000 || (expectedSize > 0 && downloaded >= expectedSize)) {
+                lastProgressAt = now;
+                const percent = expectedSize > 0 ? Math.min(100, downloaded / expectedSize * 100) : 0;
+                logger.info(`Downloading ${fileName}: ${percent.toFixed(1)}% (${downloaded}/${expectedSize || '?'} bytes)`);
+            }
+            callback(null, chunk);
+        }
+    });
+
+    sendToast(window, `Downloading Request+ ${release.version}...`, 'info', 5000);
+    try {
+        await pipeline(response.body, progress, createWriteStream(destination));
+        const downloadedSize = (await stat(destination)).size;
+        const downloadedHash = hash.digest('hex');
+        if (expectedSize > 0 && downloadedSize !== expectedSize) {
+            throw new Error(`Update size mismatch: expected ${expectedSize}, received ${downloadedSize}`);
+        }
+        if (release.sha256 && downloadedHash.toLowerCase() !== release.sha256.toLowerCase()) {
+            throw new Error('Update SHA-256 verification failed');
+        }
+    } catch (error) {
+        await rm(destination, { force: true });
+        throw error;
+    }
+
+    logger.info(`Verified update package: ${destination}`);
+    return destination;
+}
+
+function squirrelUpdateExecutable(): string | null {
+    if (process.platform !== 'win32') return null;
+    const updateExecutable = path.resolve(path.dirname(process.execPath), '..', 'Update.exe');
+    return fs.existsSync(updateExecutable) ? updateExecutable : null;
+}
+
+async function scheduleWindowsBranchSwitch(
+    installerPath: string,
+    selectedChannel: string,
+    logger: Logger
+): Promise<void> {
+    const updateExecutable = squirrelUpdateExecutable();
+    if (!updateExecutable) {
+        throw new Error('The Squirrel uninstaller could not be found for this installation');
+    }
+    if (path.extname(installerPath).toLowerCase() !== '.exe') {
+        throw new Error('The selected Windows branch does not provide an executable installer');
+    }
+
+    const logPath = path.join(
+        app.getPath('temp'),
+        'requestplus-updates',
+        `switch-to-${selectedChannel}.log`
+    );
+    const launchExecutable = path.join(path.dirname(updateExecutable), path.basename(process.execPath));
+    // A log from a previous attempt must not satisfy this run's startup handshake.
+    await rm(logPath, { force: true });
+
+    const switchOptions = {
+        updateExecutable,
+        installerPath,
+        parentPid: process.pid,
+        launchExecutable,
+        logPath,
+    };
+
+    const helperCommand = [
+        'start',
+        '""',
+        '/b',
+        'powershell.exe',
+        ...windowsBranchSwitchArguments(),
+    ].join(' ');
+    const helper = spawn(
+        'cmd.exe',
+        ['/d', '/s', '/c', helperCommand],
+        {
+            detached: true,
+            stdio: 'ignore',
+            windowsHide: true,
+            env: { ...process.env, ...windowsBranchSwitchEnvironment(switchOptions) },
+        }
+    );
+    await new Promise<void>((resolve, reject) => {
+        helper.once('error', reject);
+        helper.once('spawn', () => {
+            resolve();
+        });
+    });
+    // cmd.exe start launches PowerShell independently from Request+. Wait for
+    // the helper's first log write before allowing the app to exit.
+    const readyDeadline = Date.now() + 10_000;
+    while (Date.now() < readyDeadline) {
+        try {
+            if ((await stat(logPath)).size > 0) break;
+        } catch {
+            // The helper has not reached its first log write yet.
+        }
+        await wait(100);
+    }
+    let helperReady = false;
+    try {
+        helperReady = (await stat(logPath)).size > 0;
+    } catch {
+        // Report a useful error below.
+    }
+    if (!helperReady) {
+        throw new Error('The branch-switch helper did not start within 10 seconds');
+    }
+    // The cmd.exe launcher exits after handing the helper to Windows. Release
+    // its event-loop reference after the startup log proves the handoff worked.
+    helper.unref();
+    logger.info(
+        `Scheduled reinstall from ${installedUpdateChannel(DEFAULT_UPDATE_CHANNEL)} to ${selectedChannel}; ` +
+        `helper log: ${logPath}`
+    );
+    // Quit only after the detached helper confirms it is alive. The helper waits
+    // for this PID and then verifies that Squirrel removed the old app directory.
+    app.quit();
+}
+
+async function openUpdateInstaller(
+    destination: string,
+    selected: UpdateServerResponse,
+    switchingChannel: boolean,
+    window: BrowserWindow | null,
+    logger: Logger
+): Promise<void> {
+    const selectedChannel = selected.channel;
+    const releaseVersion = selected.latestVersion ?? selected.release?.version ?? app.getVersion();
+    const choice = await sendModal(
+        window,
+        switchingChannel ? 'Switch Request+ Update Feed' : 'Request+ Update Ready',
+        switchingChannel
+            ? `The ${selectedChannel} build (${releaseVersion}) has been downloaded and verified. Request+ will close and run its installer.`
+            : `Request+ ${releaseVersion} has been downloaded and verified. Open its installer now?`,
+        ['Run installer', 'Later']
+    );
+    if (choice !== 0) {
+        await sendToastWithDelay(window, 'Update downloaded. You can install it from your temporary files.', 'info', 5000, 100);
+        return;
+    }
+
+    recordPendingUpdate(selectedChannel, releaseVersion);
+    try {
+        if (process.platform === 'win32' && path.extname(destination).toLowerCase() === '.exe') {
+            const installer = spawn(destination, [], {
+                detached: true,
+                stdio: 'ignore',
+                windowsHide: false,
+            });
+            await new Promise<void>((resolve, reject) => {
+                installer.once('error', reject);
+                installer.once('spawn', resolve);
+            });
+            installer.unref();
+            logger.info(`Started ${selectedChannel} branch installer: ${destination}`);
+            app.quit();
+        } else {
+            const openError = await shell.openPath(destination);
+            if (openError) throw new Error(openError);
+        }
+    } catch (error) {
+        clearPendingUpdate();
+        throw error;
+    }
+    await sendToastWithDelay(window, 'Update installer opened.', 'success', 3000, 100);
+}
+
 async function checkForUpdates(window: BrowserWindow | null, logger: Logger): Promise<void> {
     try {
         // Load current settings
@@ -166,92 +555,100 @@ async function checkForUpdates(window: BrowserWindow | null, logger: Logger): Pr
         // Send initial checking toast
         sendToast(window, 'Checking for updates...', 'info', 3000);
 
-        // Always fetch all releases to properly handle both stable and pre-releases
-        const endpoint = 'https://api.github.com/repos/DarkWolfie-YouTube/requestplus/releases';
-    
-
-        const response = await fetch(endpoint, {
-            headers: {
-                'User-Agent': 'RequestPlus-UpdateChecker'
-            },
-        });
-
-        if (response.status !== 200) {
-            logger.warn(`GitHub API returned status ${response.status}`);
-            await sendToastWithDelay(window, 'Unable to check for updates at this time', 'error', 6000, 500);
-            return;
-        }
-
-        const data = await response.json() as GitHubRelease[];
-
-        if (!data || !Array.isArray(data) || data.length === 0) {
-            logger.warn("No releases found or invalid response format");
-            await sendToastWithDelay(window, 'No releases found', 'error', 6000, 500);
-            return;
-        }
-
-       
-
-        // Find the appropriate release based on settings
-        let latestRelease: GitHubRelease | undefined;
-        if (settings.checkPreReleases) {
-            // Find the latest release (including pre-releases)
-            latestRelease = data[0];
-
+        const currentVersion = app.getVersion();
+        const selectedChannel = validChannel(settings.channel)
+            ? settings.channel
+            : settings.checkPreReleases
+                ? 'beta'
+                : 'stable';
+        const channels = [selectedChannel];
+        const nativeBranch = selectedChannel;
+        const switchingChannel = selectedChannel !== installedUpdateChannel(DEFAULT_UPDATE_CHANNEL);
+        logger.info(
+            `Using update feed: ${selectedChannel}; installed feed: ${installedUpdateChannel(DEFAULT_UPDATE_CHANNEL)}` +
+            (switchingChannel ? '; branch reinstall required' : '')
+        );
+        if (process.windowsStore || process.mas) {
+            const storeName = process.windowsStore ? 'Microsoft Store' : 'Mac App Store';
+            logger.info(`Updates for this installation are managed by the ${storeName}`);
+            sendToast(window, `Updates for this installation are managed by ${storeName}.`, 'info', 5000);
         } else {
-            // Find the latest stable release (not pre-release)
-            latestRelease = data.find(release => !release.prerelease);
-
-        }
-
-        if (!latestRelease || !latestRelease.tag_name) {
-            logger.warn("Unable to find a suitable release.");
-            await sendToastWithDelay(window, 'Unable to find a suitable release', 'error', 6000, 500);
-            return;
-        }
-
-        const latestVersion = latestRelease.tag_name.replace(/^v/, ''); // Remove leading 'v' if present
-
-        
-        const updateAvailable = compareVersions(currentVersion, latestVersion);
-
-
-        if (updateAvailable) {
-            const releaseType = latestRelease.prerelease ? 'pre-release' : 'release';
-            
-            // Send update available toast with action
-            await sendToastWithDelay(
-                window, 
-                `New ${releaseType} (${latestVersion}) available! Current: ${currentVersion}`, 
-                'warning', 
-                8000,
-                1000
+            try {
+            const checks = await Promise.allSettled(
+                channels.map((channel) => requestUpdate(currentVersion, channel, logger, switchingChannel))
             );
+            const responses = checks
+                .filter((result): result is PromiseFulfilledResult<UpdateServerResponse> => result.status === 'fulfilled')
+                .map((result) => result.value);
+            for (const failed of checks.filter((result): result is PromiseRejectedResult => result.status === 'rejected')) {
+                logger.warn(`Update branch check failed: ${String(failed.reason)}`);
+            }
+            if (responses.length === 0) {
+                throw new Error('No update branch could be reached');
+            }
 
-            logger.info(`Update available: ${latestVersion}`);
+            const selected = selectNewestUpdate(responses);
+            if (selected?.release && selected.latestVersion) {
+                if (!switchingChannel && await checkForNativeUpdate(nativeBranch, window, logger, selected.latestVersion)) {
+                    logger.info(`Started Forge native update check on the ${nativeBranch} branch`);
+                } else {
+                    const releaseType = selected.channel === 'stable' ? 'release' : `${selected.channel} release`;
+                    await sendToastWithDelay(
+                        window,
+                        switchingChannel
+                            ? `Preparing the ${selected.channel} build (${selected.latestVersion})...`
+                            : `New ${releaseType} (${selected.latestVersion}) available! Current: ${currentVersion}`,
+                        'warning',
+                        8000,
+                        1000
+                    );
+                    logger.info(
+                        `Update available: ${selected.latestVersion}; ` +
+                        `file=${selected.release.fileName}; sha256=${selected.release.sha256 ?? 'unavailable'}`
+                    );
 
-            // Open download page automatically after a short delay
-            setTimeout(async () => {
-                try {
-                    await shell.openExternal(latestRelease.html_url);
-                    await sendToastWithDelay(window, 'Opening download page...', 'success', 3000, 100);
-                } catch (error) {
-                    console.error('Error opening download page:', error);
-                    await sendToastWithDelay(window, 'Failed to open download page', 'error', 4000, 100);
+                    setTimeout(() => {
+                        void (async () => {
+                        try {
+                            if (process.platform === 'linux') {
+                                await downloadAndInstallLinuxUpdate(selected.release!, window, logger);
+                            } else {
+                                const destination = await downloadUpdatePackage(selected.release!, window, logger);
+                                await openUpdateInstaller(destination, selected, switchingChannel, window, logger);
+                            }
+                        } catch (error) {
+                            logger.error('Error opening update download:', error);
+                            await sendToastWithDelay(window, 'Failed to download or install the update', 'error', 6000, 100);
+                        }
+                        })();
+                    }, 2000);
                 }
-            }, 2000);
-
-        } else {
-            logger.info(`No updates available: ${currentVersion}`);
-            
-            // Wait a bit longer to ensure the checking toast has been displayed
+            } else {
+                logger.info(
+                    switchingChannel
+                        ? `No compatible build is available on ${selectedChannel}`
+                        : `No updates available: ${currentVersion}`
+                );
+                await sendToastWithDelay(
+                    window,
+                    switchingChannel
+                        ? `No compatible ${selectedChannel} build is currently available for this system.`
+                        : `You're running the latest version (${currentVersion})`,
+                    switchingChannel ? 'warning' : 'success',
+                    5000,
+                    2000
+                );
+            }
+            } catch (error) {
+            logger.error('Update server check failed:', error);
             await sendToastWithDelay(
-                window, 
-                `You're running the latest version (${currentVersion})`, 
-                'success', 
-                5000,
-                2000 // Wait 2 seconds after the checking toast
+                window,
+                'Unable to check for updates at this time',
+                'error',
+                6000,
+                500
             );
+            }
         }
 
         const endpoint2 = "https://api.requestplus.xyz/termsUpdate";
@@ -414,7 +811,24 @@ function compareVersions(current: string, latest: string): boolean {
 }
 
 function setPreReleaseCheck(enabled: boolean): void {
+    loadSettings();
     settings.checkPreReleases = enabled;
+    // Keep a custom feed selected when the legacy pre-release toggle is used.
+    // The toggle only changes the stable/beta choice; it should not silently
+    // move users off a branch they selected in the feed picker.
+    if (!enabled || settings.channel === 'stable' || settings.channel === 'beta') {
+        settings.channel = enabled ? 'beta' : 'stable';
+    }
+    saveSettings();
+}
+
+function setUpdateChannel(channel: string): void {
+    if (!validChannel(channel)) {
+        throw new Error('Invalid update feed');
+    }
+    loadSettings();
+    settings.channel = channel;
+    settings.checkPreReleases = channel !== 'stable';
     saveSettings();
 }
 
@@ -423,4 +837,19 @@ function getSettings(): UpdateSettings {
     return settings;
 }
 
-export { checkForUpdates, setPreReleaseCheck, getSettings };
+function validChannel(value: unknown): value is string {
+    return typeof value === 'string' && /^[a-z0-9][a-z0-9-]{0,29}$/.test(value);
+}
+
+function channelSort(left: string, right: string): number {
+    const priority = (value: string): number => value === 'stable' ? 0 : value === 'beta' ? 1 : 2;
+    return priority(left) - priority(right) || left.localeCompare(right);
+}
+
+export {
+    checkForUpdates,
+    getAvailableUpdateChannels,
+    getSettings,
+    setPreReleaseCheck,
+    setUpdateChannel
+};

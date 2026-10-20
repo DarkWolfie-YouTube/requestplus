@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Request+ setup test fixture</title><link rel="stylesheet" href="/src/styles/globals.css"></head>
+<body><div id="root"></div>
+<script>
+// Browser-only fixture. Never packaged as an Electron entry point; no external calls.
+const scenario = new URLSearchParams(location.search).get('scenario') || 'ready';
+let settings = { platform: 'apple', ciderApiVersion: '3', appleMusicAppToken: 'preserve-me', ciderV4AppToken: '', theme: 'custom', enableRequests: true, modsOnly: false, subsOnly: false, requestLimitEnabled: true, requestLimit: 3, autoPlay: false, autoAcceptSearchResults: false, telemetryEnabled: false, reducedMotion: true, oobeCompleted: false };
+let request = null;
+let loads = 0;
+window.setupCalls = [];
+if (scenario === 'clipboard-fail') Object.defineProperty(navigator, 'clipboard', { value: { writeText: async () => { throw new Error('Clipboard denied'); } } });
+window.api = {
+  getLocale: async () => scenario === 'account-language' ? 'de' : 'en',
+  loadSettings: async () => { if (scenario === 'load-fail' && loads++ === 0) throw new Error('Disk unavailable'); return structuredClone(settings); },
+  fetchUserData: async () => scenario === 'offline' ? null : ({ display_name: 'Test Streamer', profile_image_url: '', email: 'test@example.invalid' }),
+  setupConnections: async () => { if (scenario === 'connections-fail') throw new Error('Network unavailable'); return { twitch: { connected: scenario !== 'velora', username: 'test_streamer', expired: scenario === 'expired' }, kick: { connected: false }, youtube: { connected: false }, velora: { connected: scenario === 'velora', displayName: 'Velora Streamer' }, experimentalAccess: scenario === 'velora' || scenario === 'experimental' }; },
+  setupStatus: async () => ({ cloud: scenario !== 'offline', music: scenario !== 'offline', platform: settings.platform, track: scenario === 'offline' ? null : { title: 'Test song', artist: 'Test artist', cover: '' }, overlay: scenario !== 'offline', overlayPath: 'C:\\RequestPlus-test\\overlay\\overlay.html', previewUrl: null, request }),
+  saveSetupDraft: async patch => { window.setupCalls.push({ action: 'draft', patch: structuredClone(patch) }); if (scenario === 'save-fail') throw new Error('Disk full'); settings = { ...settings, ...patch }; },
+  completeOnboarding: async payload => { window.setupCalls.push({ action: 'finish', payload, settings }); if (scenario === 'finish-fail') throw new Error('Disk full'); document.title = payload.deferred ? 'Setup deferred successfully' : 'Setup completed successfully'; return true; },
+  requestPlusLogin: async () => { throw new Error('Fixture never opens real login'); },
+  setupCiderToken: async () => 'fixture-cider4-token',
+  setupDashboard: async () => { window.setupCalls.push({ action: 'dashboard' }); },
+  yesnt: async () => { window.setupCalls.push({ action: 'docs' }); },
+  setupBeginTest: async () => { request = { accepted: scenario !== 'request-fail', code: scenario === 'request-fail' ? 'ERR_MODS_ONLY' : 'OKAY_AM_QUEUED', songName: 'Test song' }; },
+  getQueue: async () => ({ items: [] }),
+  playTrackAtIndex: async () => true,
+  minimize: async () => {}, close: async () => {},
+  authSuccess: () => () => {},
+};
+</script>
+<script type="module" src="/src/oobe.tsx"></script>
+</body></html>

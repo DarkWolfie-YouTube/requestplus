@@ -1,5 +1,6 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { randomUUID } from 'node:crypto';
 
 // Type definitions for settings structure
 interface Settings {
@@ -26,6 +27,10 @@ interface Settings {
     ciderApiVersion?: '3' | '4';
     /** Scoped Cider 4 API token. Cider 3 keeps using appleMusicAppToken. */
     ciderV4AppToken?: string;
+    /** Freeze background animations and drop backdrop blur, for lowest GPU/CPU usage while idle. */
+    reducedMotion?: boolean;
+    /** When false, GPU acceleration is disabled at app startup (takes effect after restart). */
+    hardwareAcceleration?: boolean;
     [key: string]: any; // Allow additional properties
 }
 
@@ -94,11 +99,15 @@ class SettingsHandler {
     }
 
     save(settings: Settings): boolean {
+        const temporaryPath = `${this.settingsFilePath}.${randomUUID()}.tmp`;
         try {
             const { multiPlatform: _multiPlatform, platforms: _platforms, ...persistedSettings } = settings;
-            fs.writeFileSync(this.settingsFilePath, JSON.stringify(persistedSettings, null, 2), 'utf-8');
+            fs.mkdirSync(path.dirname(this.settingsFilePath), { recursive: true });
+            fs.writeFileSync(temporaryPath, JSON.stringify(persistedSettings, null, 2), { encoding: 'utf-8', flag: 'wx' });
+            fs.renameSync(temporaryPath, this.settingsFilePath);
             return true;
         } catch (error) {
+            try { if (fs.existsSync(temporaryPath)) fs.unlinkSync(temporaryPath); } catch {}
             console.error('Error saving settings:', error);
             return false;
         }
